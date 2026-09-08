@@ -1,0 +1,201 @@
+Camera name: Starling 2 Max (VOXL 2 / QRB5165), C29 camera config (stereo + ToF)
+Rig name: netted mocap volume, indoor, person-following flight test
+Vehicle: ModalAI Starling 2 Max, PX4 running on the VOXL 2 sensors DSP
+Firmware: PX4 (voxl-px4), autopilot component 1
+
+INDOOR PROFILE -- committed 15-week internship scope (8 Sep - 20 Dec 2026).
+
+Flight context this file is tuned for:
+  - Flown inside a netted OptiTrack/mocap volume, walls and net a few metres
+    from the takeoff point in every direction.
+  - A person (the "operator") stands or walks inside or at the edge of the
+    same volume while the vehicle follows them.
+  - Autonomous following runs the vehicle in PX4 Offboard mode, driven by
+    voxl-mapper trajectories relayed through voxl-vision-hub
+    (offboard_mode="trajectory", see config/voxl-vision-hub.conf).
+  - A safety pilot holds a live RC link at all times and can take manual
+    Position-mode control instantly (see docs/SAFETY.md for the full
+    protocol and roles).
+
+Load with: QGroundControl > Vehicle Setup > Parameters > Tools > Load from
+file. Or on the VOXL shell: `param load /path/to/this/file` after copying
+it to the vehicle (adjust extension/tooling to your PX4 param loader).
+
+File format (matches the schema this repo uses for exported params):
+  index    0-based line index in this file, informational only
+  vehicle_id     MAVLink system id the parameter applies to (1 = this vehicle)
+  component_id   MAVLink component id (1 = autopilot)
+  param_name     PX4 parameter name
+  value          parameter value as written to the FMU
+  type           MAVLink param type: 6 = INT32 (enums/bitmasks/counts),
+                 9 = FLOAT32 (continuous/physical quantities)
+
+RESEARCH-VERIFIED FACTS THIS FILE IS BUILT AROUND (see docs/SAFETY.md for the
+full citations and the failsafe matrix that follows from them):
+  (1) PX4 Collision Prevention (CP_*) only functions in Position mode with
+      MPC_POS_MODE set to an acceleration-based mode. It is NOT active in
+      Offboard mode. It is a piloted-testing safety net, never the
+      autonomous avoidance layer -- that job belongs to voxl-mapper/VOA.
+  (2) PX4's geofence is REACTIVE: it fires only after the boundary has
+      already been crossed. PX4's own docs say a strict boundary needs
+      GF_ACTION=Hold plus a safety margin built into the fence size, since
+      the vehicle will have already breached the fence line by the time the
+      action triggers.
+  (3) When multiple failsafes trigger at once, PX4 executes the MOST SEVERE
+      action. Severity order (least to most): None, Warning, Hold, Return,
+      Land, Disarm, Flight termination.
+  (4) Collision Prevention restricts velocity to ZERO in any direction with
+      no sensor data unless CP_GO_NO_DATA=1. There is a hard watchdog: more
+      than 0.5 s with no range data blocks all further movement in that
+      direction, and 5 s with no data forces a HOLD.
+
+# Vehicle-Id, Component-Id, Name, Value, Type
+0	1	1	GF_MAX_HOR_DIST	8.000000	9
+1	1	1	GF_MAX_VER_DIST	3.000000	9
+2	1	1	GF_ACTION	2	6
+3	1	1	COM_OF_LOSS_T	0.500000	9
+4	1	1	COM_OBL_RC_ACT	0	6
+5	1	1	COM_RC_LOSS_T	0.500000	9
+6	1	1	NAV_RCL_ACT	3	6
+7	1	1	COM_RCL_EXCEPT	0	6
+8	1	1	CP_DIST	1.000000	9
+9	1	1	CP_DELAY	0.400000	9
+10	1	1	CP_GUIDE_ANG	30.000000	9
+11	1	1	CP_GO_NO_DATA	0	6
+12	1	1	MPC_POS_MODE	4	6
+13	1	1	MPC_XY_VEL_MAX	1.000000	9
+14	1	1	MPC_Z_VEL_MAX_UP	1.000000	9
+15	1	1	MPC_Z_VEL_MAX_DN	0.700000	9
+16	1	1	MPC_TILTMAX_AIR	20.000000	9
+17	1	1	COM_OBS_AVOID	1	6
+
+# -----------------------------------------------------------------------
+# Per-parameter rationale (why this value, for THIS indoor/netted profile)
+# -----------------------------------------------------------------------
+#
+# GF_MAX_HOR_DIST = 8.0 m (float)
+#   Cylindrical geofence radius from the arming point. Sized to sit INSIDE
+#   the netting with margin: measure your actual mocap volume's usable
+#   radius and set this to (usable radius - 1.5 m) at minimum, because
+#   fact (2) means the vehicle will already be past this line before the
+#   fence action fires -- the margin is what keeps it off the net. 8 m
+#   assumes a ~10-11 m diameter tracked volume; MEASURE YOUR ROOM and
+#   adjust down if your net is closer than that.
+#
+# GF_MAX_VER_DIST = 3.0 m (float)
+#   Vertical geofence half-extent. Assumes a typical ceiling-mounted mocap
+#   rig with usable ceiling height around 4-4.5 m; leaves margin above the
+#   follow altitude (FollowParams.height_m = 2.0 m in follow_core) for
+#   overshoot before the reactive fence engages. MEASURE YOUR CEILING
+#   HEIGHT and the mocap camera mounting height and adjust so this stays
+#   at least 1 m below both.
+#
+# GF_ACTION = 2 (Hold) [int32]
+#   Per fact (2): PX4's own guidance for a strict/tight boundary is Hold,
+#   not Return, because Return still commands lateral flight (back toward
+#   home) after an already-reactive trigger, covering more ground next to
+#   a person and the net. Hold simply stops the vehicle where it is and
+#   waits for the safety pilot.
+#
+# COM_OF_LOSS_T = 0.5 s (float)
+#   Offboard-loss timeout: how long the FMU waits without a fresh Offboard
+#   setpoint before declaring offboard control lost. Kept short indoors --
+#   near a person, a stalled companion computer / voxl-mapper trajectory
+#   feed should hand control back to the pilot fast, not coast for seconds
+#   on the last setpoint.
+#
+# COM_OBL_RC_ACT = 0 (Position) [int32]
+#   Action taken on offboard loss WHEN RC is present (this is the indoor
+#   case -- the safety pilot always holds a live RC link, see SAFETY.md).
+#   Falls back to Position mode rather than Land/RTL so the pilot regains
+#   normal manual control immediately and can fly the vehicle away from
+#   the person/net by hand. NOTE: Position mode is also the only mode in
+#   which Collision Prevention (CP_*) is active per fact (1), so this
+#   fallback is also what re-arms the CP safety net.
+#
+# COM_RC_LOSS_T = 0.5 s (float)
+#   RC-signal-loss timeout. PX4 default; short on purpose so a genuine RC
+#   dropout indoors (short range, lots of multipath off the net/mocap
+#   rig) is declared quickly rather than flying on into the volume.
+#
+# NAV_RCL_ACT = 3 (Land) [int32]
+#   Action on RC loss. Land, not Return, because indoors "Return" means
+#   flying laterally back across the netted volume -- possibly toward
+#   the operator -- with no RC override available. Landing in place is
+#   the lower-energy, more predictable outcome in a confined space.
+#
+# COM_RCL_EXCEPT = 0 (no exceptions) [int32]
+#   Bitmask of conditions that are allowed to suppress the RC-loss
+#   failsafe (e.g. during a mission). Left at 0 indoors: there is no
+#   mission phase where continuing to fly without RC is acceptable next
+#   to a person, so no exception bits are set.
+#
+# CP_DIST = 1.0 m (float)
+#   Collision Prevention keep-out distance. Only meaningful in Position
+#   mode per fact (1) -- this is the piloted-testing safety net, not the
+#   autonomous avoidance layer. Set tighter than the 1.25 m PX4 default
+#   because the room is small; if CP_DIST were left larger than half the
+#   room, CP could refuse motion almost everywhere. MEASURE your room and
+#   keep CP_DIST comfortably smaller than the tightest wall clearance you
+#   need to fly through.
+#
+# CP_DELAY = 0.4 s (float)
+#   PX4 default system-latency compensation for Collision Prevention
+#   (sensor + processing delay). Not changed for this profile; there is
+#   no indoor-specific reason to move it and it has not been re-measured
+#   against the VOXL 2's actual pipeline latency.
+#
+# CP_GUIDE_ANG = 30 deg (float)
+#   PX4 default guidance angle (how far CP will steer around an obstacle
+#   edge instead of just stopping). Left at default; only relevant in
+#   Position mode per fact (1), and 30 deg is a reasonable compromise in
+#   a small room where there usually isn't space to route far around.
+#
+# CP_GO_NO_DATA = 0 (disabled) [int32]
+#   Per fact (4): with this at 0 (PX4 default), CP commands ZERO velocity
+#   in any direction lacking sensor data, with a hard watchdog (0.5 s no
+#   data blocks movement that way, 5 s forces HOLD). Left at 0 (the
+#   conservative choice) deliberately: with a person in the same small
+#   volume, "no sensor data = don't move that way" is the correct default,
+#   even though it means CP will refuse motion into sensor blind spots.
+#
+# MPC_POS_MODE = 4 (Smooth Position Control, acceleration-based) [int32]
+#   Per fact (1), Collision Prevention ONLY functions when MPC_POS_MODE is
+#   an acceleration-based mode -- this is the parameter that makes the CP_*
+#   safety net (above) actually active during piloted Position-mode
+#   testing. Mode 4 (jerk-limited smooth position control) is used instead
+#   of the plain acceleration-based mode 3 for gentler stick response
+#   next to a person.
+#
+# MPC_XY_VEL_MAX = 1.0 m/s (float)
+#   Horizontal speed cap. Conservative on purpose: this is an order of
+#   magnitude below the outdoor cap (config/px4_starling_outdoor.params)
+#   because the vehicle operates within a few metres of a person inside a
+#   netted volume. Cross-check against the follow_core FollowParams
+#   near-target speed cap (speed_cap_near_m_s = 0.6 m/s) so the autonomy
+#   layer's commanded speed is already inside what the FMU will accept.
+#
+# MPC_Z_VEL_MAX_UP = 1.0 m/s (float)
+#   Vertical ascent speed cap. Matched to the horizontal cap; no reason
+#   for climb to be faster than horizontal travel in this small volume.
+#
+# MPC_Z_VEL_MAX_DN = 0.7 m/s (float)
+#   Vertical descent speed cap, kept slower than ascent (PX4 convention)
+#   since an uncommanded fast descent is the worse failure mode with a
+#   person standing underneath.
+#
+# MPC_TILTMAX_AIR = 20 deg (float)
+#   Max tilt angle in flight, well below the PX4 default (~45 deg).
+#   Directly bounds both max achievable acceleration and how "sharp" any
+#   avoidance or follow maneuver can look right next to a person -- a
+#   deliberate trade of agility for predictability indoors.
+#
+# COM_OBS_AVOID = 1 (enabled) [int32]
+#   Enables the onboard obstacle-avoidance data path (the OBSTACLE_DISTANCE
+#   / VOA plumbing from voxl-vision-hub) so PX4 accepts and displays it.
+#   NOTE: enabling this does not itself make avoidance "active" in
+#   Offboard mode the way Collision Prevention is in Position mode -- in
+#   Offboard, voxl-mapper is the component that must route around the ESDF
+#   obstacle map (config/voxl-mapper.conf) BEFORE it ever hands PX4 a
+#   trajectory. Treat this flag as "let the data through," not "avoidance
+#   is guaranteed."

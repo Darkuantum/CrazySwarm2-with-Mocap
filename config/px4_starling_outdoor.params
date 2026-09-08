@@ -1,0 +1,143 @@
+Vehicle: ModalAI Starling 2 Max, PX4 running on the VOXL 2 sensors DSP
+
+##############################################################################
+#  OUTDOOR PROFILE -- NOT PART OF THE COMMITTED 15-WEEK INTERNSHIP SCOPE
+#  (8 Sep - 20 Dec 2026). The committed scope is indoor, netted-mocap-volume
+#  flight only (see config/px4_starling_indoor.params and docs/SAFETY.md).
+#
+#  This file is provided as a forward-looking reference for a possible
+#  post-internship outdoor phase. DO NOT LOAD THIS ONTO A VEHICLE without
+#  ALL of the following in place:
+#    - A licensed remote pilot in command for the flight (this project's
+#      regulatory permits assume licensed-pilot supervision; that pilot
+#      must physically be the one accepting outdoor risk, not the intern).
+#    - A briefed, surveyed site: measured usable radius/height, obstacles,
+#      wind limits, people/property nearby, and a written go/no-go brief
+#      the pilot has signed off on for that specific site and day.
+#    - Values below marked "MEASURE/CONFIRM" actually re-derived for that
+#      site -- they are illustrative, not a substitute for a site survey.
+##############################################################################
+
+Flight context this file is tuned for:
+  - Open outdoor site, line-of-sight RC and telemetry, no netting.
+  - Same autonomy stack as indoor (Offboard mode, voxl-mapper trajectories
+    via voxl-vision-hub offboard_mode="trajectory"), but with more space to
+    both maneuver and to fail safely.
+  - A licensed safety pilot holds a live RC link at all times, per
+    docs/SAFETY.md.
+
+File format: identical to config/px4_starling_indoor.params -- see that
+file's header for the full column/type legend and the shared
+research-verified facts (PX4 severity ordering, CP behaviour, reactive
+geofence, etc.) that both profiles are built around. Only the deltas and
+outdoor-specific rationale are repeated below.
+
+# Vehicle-Id, Component-Id, Name, Value, Type
+0	1	1	GF_MAX_HOR_DIST	50.000000	9
+1	1	1	GF_MAX_VER_DIST	30.000000	9
+2	1	1	GF_ACTION	3	6
+3	1	1	COM_OF_LOSS_T	1.000000	9
+4	1	1	COM_OBL_RC_ACT	0	6
+5	1	1	COM_RC_LOSS_T	0.500000	9
+6	1	1	NAV_RCL_ACT	2	6
+7	1	1	COM_RCL_EXCEPT	0	6
+8	1	1	CP_DIST	3.000000	9
+9	1	1	CP_DELAY	0.400000	9
+10	1	1	CP_GUIDE_ANG	30.000000	9
+11	1	1	CP_GO_NO_DATA	0	6
+12	1	1	MPC_POS_MODE	4	6
+13	1	1	MPC_XY_VEL_MAX	5.000000	9
+14	1	1	MPC_Z_VEL_MAX_UP	2.000000	9
+15	1	1	MPC_Z_VEL_MAX_DN	1.500000	9
+16	1	1	MPC_TILTMAX_AIR	35.000000	9
+17	1	1	COM_OBS_AVOID	1	6
+
+# -----------------------------------------------------------------------
+# Per-parameter rationale (deltas from the indoor profile, and why)
+# -----------------------------------------------------------------------
+#
+# GF_MAX_HOR_DIST = 50.0 m (float)  -- MEASURE/CONFIRM against the site
+#   Illustrative radius for a modest open field. PX4's geofence is still
+#   REACTIVE (it fires only after the boundary is crossed), so this must
+#   be set with real margin inside whatever hard boundary the site brief
+#   defines (property line, other airspace users, spectators), not set to
+#   the boundary itself.
+#
+# GF_MAX_VER_DIST = 30.0 m (float)  -- MEASURE/CONFIRM against the
+#   permit/site brief's altitude ceiling; set with margin below it for the
+#   same reactive-geofence reason as above.
+#
+# GF_ACTION = 3 (Return) [int32]
+#   Unlike indoor (Hold), Return is viable here because there is room to
+#   fly a return path without it crossing close to people, obstacles, or
+#   a net. PX4's own guidance is still that a STRICT boundary should use
+#   Hold -- if the surveyed site is tight (proximity to a fence line,
+#   spectators, or other restricted airspace), override this back to 2
+#   (Hold) for that site's brief. Do not assume Return is always correct;
+#   re-decide it per site.
+#
+# COM_OF_LOSS_T = 1.0 s (float)
+#   Slightly longer than indoor's 0.5 s: outdoors, transient telemetry
+#   dropouts (link range, terrain multipath) are more likely and less
+#   immediately dangerous than indoors next to a person, so a little more
+#   tolerance before declaring offboard lost is reasonable.
+#
+# COM_OBL_RC_ACT = 0 (Position) [int32]
+#   Same reasoning as indoor: falls back to Position mode (not Land/RTL)
+#   so the licensed pilot regains ordinary manual control immediately.
+#   This is also what re-arms Collision Prevention per fact (1).
+#
+# COM_RC_LOSS_T = 0.5 s (float)
+#   PX4 default; kept the same as indoor. No outdoor-specific reason to
+#   relax an RC-loss detection timeout.
+#
+# NAV_RCL_ACT = 2 (Return) [int32]
+#   Outdoors, with room to fly a return path, Return-to-launch is the
+#   standard and generally safer choice on RC loss (get the vehicle back
+#   to a known, cleared point) versus landing wherever it happens to be.
+#   If the site brief identifies terrain/obstacles along the likely return
+#   path, override to Land (3) for that site instead.
+#
+# COM_RCL_EXCEPT = 0 (no exceptions) [int32]
+#   Unchanged from indoor; no mission phase in this project's scope
+#   should suppress the RC-loss failsafe.
+#
+# CP_DIST = 3.0 m (float)
+#   Larger than indoor's 1.0 m simply because there is more open space to
+#   keep as standoff. Still only active in Position mode per fact (1) --
+#   this is the piloted-testing safety net, not the autonomy layer's
+#   avoidance.
+#
+# CP_DELAY, CP_GUIDE_ANG = unchanged (PX4 defaults, see indoor file for
+#   rationale -- no outdoor-specific reason to move either).
+#
+# CP_GO_NO_DATA = 0 (disabled) [int32]
+#   Kept conservative even outdoors: per fact (4), 0 means CP commands
+#   zero velocity into any direction lacking sensor data (0.5 s watchdog,
+#   5 s forces HOLD). With a person still being followed at close range
+#   outdoors, "no data = don't move that way" remains the right default.
+#
+# MPC_POS_MODE = 4 (Smooth Position Control, acceleration-based) [int32]
+#   Unchanged from indoor -- required for Collision Prevention to be
+#   active at all per fact (1).
+#
+# MPC_XY_VEL_MAX = 5.0 m/s (float)  -- MEASURE/CONFIRM
+#   Illustrative outdoor cap, well above the indoor 1.0 m/s. Must be
+#   checked against the specific permit's speed limit (if any) and the
+#   site's line-of-sight/reaction-distance budget for the safety pilot
+#   before use.
+#
+# MPC_Z_VEL_MAX_UP / MPC_Z_VEL_MAX_DN = 2.0 / 1.5 m/s (float)
+#   Scaled up from indoor in the same ratio, still keeping descent slower
+#   than ascent.
+#
+# MPC_TILTMAX_AIR = 35 deg (float)
+#   More permissive than indoor's 20 deg but still below the PX4 default
+#   of ~45 deg, since the vehicle is still following a person at close
+#   range even outdoors -- this is not an aerobatic/racing profile.
+#
+# COM_OBS_AVOID = 1 (enabled) [int32]
+#   Unchanged from indoor -- see that file's note: this only lets
+#   obstacle data through to PX4/telemetry, it does not itself make
+#   avoidance active in Offboard mode. voxl-mapper routing around the
+#   ESDF map remains the actual autonomous avoidance layer.
