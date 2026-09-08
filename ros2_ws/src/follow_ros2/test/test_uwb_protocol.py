@@ -20,6 +20,7 @@ from follow_ros2.uwb_protocol import (  # noqa: E402
     GestureId,
     Heartbeat,
     PacketType,
+    RangeReport,
     crc8,
     parse_frame,
 )
@@ -47,6 +48,11 @@ def _estop_frame(seq=3, pressed=1, press_count=7):
 
 def _ack_frame(seq=4):
     return _build_frame(PacketType.ACK, seq, b"")
+
+
+def _range_frame(seq=5, tag_id=1, range_m=2.5, quality=200):
+    payload = struct.pack("<HfB", tag_id, range_m, quality)
+    return _build_frame(PacketType.RANGE, seq, payload)
 
 
 # -- CRC-8 --------------------------------------------------------------
@@ -105,6 +111,15 @@ def test_parse_ack():
     pkt = parse_frame(frame)
     assert isinstance(pkt, Ack)
     assert pkt.seq == 9
+
+
+def test_parse_range():
+    frame = _range_frame(tag_id=3, range_m=4.25, quality=180)
+    pkt = parse_frame(frame)
+    assert isinstance(pkt, RangeReport)
+    assert pkt.tag_id == 3
+    assert abs(pkt.range_m - 4.25) < 1e-5
+    assert pkt.quality == 180
 
 
 def test_bad_magic_rejected():

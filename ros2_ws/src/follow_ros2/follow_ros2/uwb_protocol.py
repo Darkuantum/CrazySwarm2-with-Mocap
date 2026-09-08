@@ -20,6 +20,19 @@ Payloads:
     ACK:       (no defined payload; treated as zero-length)
 
 Gesture IDs: 1=FOLLOW 2=STOP 3=ORBIT 4=LAND 5=COME
+
+-- RANGE (type 5): NOT part of the given spec, flagged clearly ------------
+uwb_node's job is to publish follow_msgs/UwbRange from "UWB two-way-ranging
+results" read off this same serial link, but the wire spec above -- as
+handed down -- only defines HEARTBEAT/GESTURE/ESTOP/ACK, none of which carry
+a distance. Rather than silently invent a distance out of a status flag
+(`uwb_ok`), this module adds an explicit, clearly-labelled type=5 RANGE
+packet using the SAME framing/CRC scheme, payload `uint16 tag_id, float32
+range_m, uint8 quality`. This is an assumption, not a confirmed hardware
+spec -- CONFIRM the real byte layout against your UWB module's actual
+firmware/ranging-engine output before flying, and edit `_decode_payload`
+(only) if it differs. Everything else in this module (framing, CRC,
+HEARTBEAT/GESTURE/ESTOP/ACK) matches the given spec exactly.
 """
 from __future__ import annotations
 
@@ -37,6 +50,8 @@ class PacketType(IntEnum):
     GESTURE = 2
     ESTOP = 3
     ACK = 4
+    # See module docstring: an assumed extension, not part of the given spec.
+    RANGE = 5
 
 
 class GestureId(IntEnum):
@@ -54,6 +69,7 @@ PAYLOAD_SIZES = {
     PacketType.GESTURE: 1 + 1,  # gesture_id, confidence
     PacketType.ESTOP: 1 + 2,  # pressed, press_count
     PacketType.ACK: 0,
+    PacketType.RANGE: 2 + 4 + 1,  # tag_id, range_m, quality -- see docstring
 }
 
 _HEADER_LEN = 5  # magic, version, type, seq(2)
@@ -106,7 +122,17 @@ class Ack:
     seq: int
 
 
-Packet = "Heartbeat | Gesture | Estop | Ack"  # type-hint alias for docs only
+@dataclass(frozen=True)
+class RangeReport:
+    """type=5 -- see module docstring: an assumed extension, not the given spec."""
+
+    seq: int
+    tag_id: int
+    range_m: float
+    quality: int
+
+
+Packet = "Heartbeat | Gesture | Estop | Ack | RangeReport"  # doc-only alias
 
 
 class FrameError(ValueError):
@@ -131,6 +157,9 @@ def _decode_payload(ptype: int, seq: int, payload: bytes):
         return Estop(seq=seq, pressed=bool(pressed), press_count=press_count)
     if ptype == PacketType.ACK:
         return Ack(seq=seq)
+    if ptype == PacketType.RANGE:
+        tag_id, range_m, quality = struct.unpack("<HfB", payload)
+        return RangeReport(seq=seq, tag_id=tag_id, range_m=range_m, quality=quality)
     raise FrameError(f"unknown packet type {ptype}")
 
 

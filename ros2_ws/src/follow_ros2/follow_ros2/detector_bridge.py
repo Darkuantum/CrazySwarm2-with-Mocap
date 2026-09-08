@@ -131,7 +131,9 @@ class DetectorBridge(Node):
         )
         out.std_rad = float(0.04 if near_edge else 0.02)
         out.score = float(msg.score)
-        out.detection_id = msg.class_id if False else 0  # see NOTE below
+        # DetectionBox2D carries no per-detection track id (only a class
+        # id); left at 0 unless/until the upstream bridge adds one.
+        out.detection_id = 0
         self._pub.publish(out)
 
 
