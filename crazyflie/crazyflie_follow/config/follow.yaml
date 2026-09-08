@@ -1,0 +1,130 @@
+# crazyflie_follow parameters.
+#
+# Loaded via `parameters:=[...]` in launch/follow_launch.py, which resolves
+# this file through get_package_share_directory() -- never an absolute path
+# -- so it works wherever this package has been dropped in. The `/**` key
+# applies these to whatever node name loads them; follow_node's actual ROS
+# node name is fixed by Crazyswarm() to `CrazyflieAPI` (crazyflie_py's own
+# choice, not this package's), so `/**` is used deliberately instead of
+# naming that node explicitly and being fragile to it changing upstream.
+#
+# Every one of these also has a matching default in follow_node.py's
+# load_config(), so the node still runs safely (though generically) if this
+# file is ever missing entirely -- see that function's docstring.
+
+/**:
+  ros__parameters:
+
+    # -- which rigid bodies, on /poses -----------------------------------
+    # `drone_name` must be one of the *enabled* names in this workspace's
+    # crazyflies.yaml (fleet is cf1, cf2, cf3, cf10, cf12 on one radio,
+    # per CLAUDE.md -- cf6 is dead, cf5/cf11 are disabled spares). Default
+    # here is cf1, arbitrarily but consistently with crazyflie_shows.
+    drone_name: "cf1"
+    # `operator_name` must match the rigid-body name Motive streams for the
+    # person being followed -- see README.md "Building the operator rigid
+    # body in Motive". It is NOT one of the drones' names.
+    operator_name: "operator"
+    poses_topic: "/poses"
+    # std_msgs/String channel keyboard_cmd (or a future tablet/band bridge)
+    # publishes mode tokens to -- see keyboard_cmd.py and follow_node.py.
+    command_topic: "/follow/cmd"
+
+    # Control loop rate. 20 Hz keeps `cmdPosition` comfortably faster than
+    # the ~27 Hz *measured* /poses rate on this rig (crazyflie_shows/
+    # HANDOVER.md Sec 4a item 13, 2026-09-07) without commanding faster than
+    # the mocap data actually updates.
+    rate_hz: 20.0
+
+    # -- safety envelope, enforced in follow_node.SetpointGuard ----------
+    # ROOM_CENTER: hand-measured value already used throughout this rig
+    # (multi_trajectory_formation.py, CLAUDE.md), cross-checked in
+    # crazyflie_shows/HANDOVER.md Sec 3 against an independently computed
+    # 5-drone swarm centroid (0.068, -0.109) -- agreement to ~2 cm on both
+    # axes. Not this package's number to own; do not "correct" it here if
+    # the room is re-measured -- fix it at the source and this file follows.
+    room_center_x: 0.0467
+    room_center_y: -0.1037
+    # 8 x 8 m soft boundary box around room_center. TODO(bench session 1):
+    # this has not been checked against the actual usable mocap volume on
+    # this rig -- crazyflie_shows/HANDOVER.md Sec 8 item 11 flags the exact
+    # same gap for that package's own arena_radius/ceiling. Measure the
+    # volume Motive actually covers before trusting this number, the same
+    # way that item asks for the show package.
+    boundary_half_width_m: 4.0
+    altitude_floor_m: 0.05
+    # TODO(bench session 1): unmeasured, chosen only to sit comfortably
+    # under crazyflie_shows/safety.py's own CEILING=2.0 with margin for a
+    # standing adult operator underneath the drone. Revisit once the mocap
+    # volume's actual vertical coverage is known.
+    altitude_ceiling_m: 1.5
+
+    # Hard, config-level caps -- independent of, and generally tighter than,
+    # follow_core's own speed_cap_*/max_accel_m_s2 below. Sized for a human
+    # backup pilot's reaction time, not for follow performance: see
+    # follow_node.SetpointGuard's docstring and safety.py's
+    # check_speed_consistency for why these numbers have to be consistent
+    # with governor_far_m/min_standoff_m, not just individually "small".
+    hard_speed_cap_m_s: 0.6
+    hard_accel_cap_m_s2: 1.0
+    max_yaw_rate_rad_s: 1.0
+
+    # Operator-staleness backstop -- see follow_node.py's main loop. Distinct
+    # from, and faster than, follow_core's own lost_timeout_s below: that one
+    # only ever downgrades FOLLOW/ORBIT to HOLD (supervisor.py deliberately
+    # never auto-lands, see its docstring); these two are this node's own,
+    # additional behaviour, and operator_stale_land_s is the one place this
+    # package disagrees with follow_core's philosophy on purpose -- flying
+    # near a person with no idea where they are for 2+ seconds is worse than
+    # landing uninvited.
+    operator_stale_hold_s: 0.4
+    operator_stale_land_s: 2.0
+    # If the DRONE's own body drops out of /poses for this long, the node
+    # cannot trust anything it would compute (it does not know where the
+    # vehicle is) and holds the last streamed setpoint verbatim instead of
+    # computing a new one -- see follow_node.py's main loop.
+    drone_stale_s: 0.3
+
+    # -- bring-up / tear-down (high-level crazyflie_py calls) ------------
+    takeoff_height_m: 1.0
+    takeoff_duration_s: 2.5
+    land_height_m: 0.04
+    land_duration_s: 3.5
+
+    # Low-pass corner for mocap_target.BodyTracker's finite-difference
+    # velocity. See mocap_target.py's module docstring for why 4 Hz.
+    mocap_lowpass_hz: 4.0
+
+    # -- follow_core.FollowParams -----------------------------------------
+    # standoff_m/height_m intentionally smaller than follow_core's own
+    # library defaults (2.5 m / 2.0 m): this is a single Crazyflie in a room
+    # sized for the swarm show's 2.5 m ARENA_RADIUS
+    # (crazyflie_shows/safety.py), not the Starling's outdoor operating
+    # envelope, so the standoff has to fit inside boundary_half_width_m with
+    # room to spare -- see safety.py's check_boundary_feasible.
+    standoff_m: 2.0
+    height_m: 1.2
+    # pi = directly behind the operator's direction of travel.
+    follow_angle_rad: 3.14159265
+    orbit_rate_rad_s: 0.35
+
+    # min_standoff_m / speed_cap_near_m_s: these two are called out
+    # explicitly in the project brief as the two numbers that must not be
+    # loosened without a real reason. They match follow_core's own library
+    # defaults (FollowParams in follow_core/types.py) -- restated here, not
+    # overridden, so an operator reading this file sees the actual flight
+    # values without having to cross-reference the source.
+    min_standoff_m: 1.5
+    speed_cap_near_m_s: 0.6
+    # Far cap and governor_far_m are both tighter than follow_core's library
+    # defaults (3.0 m/s, 4.0 m) -- this is a ~4 x 4 x 1.5 m room, not an
+    # outdoor field; there is no straight-line distance in it over which
+    # 3.0 m/s would ever be reached, tracked, or survived.
+    speed_cap_far_m_s: 1.0
+    governor_far_m: 3.0
+    max_accel_m_s2: 1.0
+
+    # -- follow_core timeouts (see follow_core/types.py FollowParams) -----
+    lost_timeout_s: 2.0
+    command_timeout_s: 2.0
+    estop_timeout_s: 1.5

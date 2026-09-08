@@ -20,7 +20,8 @@ plumbing and the safety envelope on top of it:
   - enforce, independently of follow_core, an 8x8 m soft boundary around
     ROOM_CENTER, a hard altitude ceiling, capped velocity/acceleration/turn
     rate, and an immediate hold-then-land if the operator body goes stale --
-    see `SetpointGuard` below
+    see `SetpointGuard` in safety.py (kept there so it is importable, and
+    therefore testable, without crazyflie_py or rclpy)
 
 Streaming vs. high-level commands (crazyflie_py's own documented behaviour,
 crazyflie.py Crazyflie.notifySetpointsStop docstring): the instant this node
@@ -52,6 +53,7 @@ from std_msgs.msg import String
 
 from crazyflie_follow.mocap_target import MocapTargetTracker
 from crazyflie_follow import safety
+from crazyflie_follow.safety import SetpointGuard
 from follow_core import (
     Command,
     CommandSource,
@@ -192,131 +194,6 @@ def load_config(node) -> NodeConfig:
     )
 
 
-class SetpointGuard:
-    """The last thing between follow_core's output and the radio.
-
-    follow_core.governor.SpeedGovernor already clamps standoff and slews its
-    own speed cap (governor.py) -- this is deliberately redundant with that,
-    not a replacement for it:
-
-      - it re-derives the min-standoff clamp from THIS node's own reading of
-        the operator, not from follow_core's internal target estimate, so a
-        bug in the EKF/estimate plumbing cannot silently defeat it;
-      - it adds hard, config-level caps on velocity, acceleration and yaw
-        rate that do not vary with a FollowParams mistake upstream -- "so a
-        backup pilot can take over" per the project brief, i.e. sized for
-        human reaction time rather than for follow performance;
-      - it clamps to the 8x8 m boundary box and the altitude ceiling, neither
-        of which follow_core knows about at all (they are properties of this
-        rig, not of the follow algorithm).
-
-    safety.py proves, offline, that the *unclamped* geometry should rarely
-    reach these clamps in normal operation. This class is what actually
-    enforces them at runtime regardless of whether that proof held.
-    """
-
-    def __init__(self, cfg: NodeConfig) -> None:
-        self.cfg = cfg
-        self._last_pos: Optional[np.ndarray] = None
-        self._last_yaw: float = 0.0
-        self._last_vel = np.zeros(3)
-        self._last_t: Optional[float] = None
-
-    @property
-    def last_position(self) -> np.ndarray:
-        assert self._last_pos is not None, 'reset_to() was never called'
-        return self._last_pos
-
-    @property
-    def last_yaw(self) -> float:
-        return self._last_yaw
-
-    def reset_to(self, position, yaw: float, now: float) -> None:
-        """Seed the guard's notion of "current setpoint" (e.g. after takeoff,
-        before the first streamed command, so the first tick is not a jump).
-        """
-        self._last_pos = np.asarray(position, dtype=float).reshape(3)
-        self._last_yaw = float(yaw)
-        self._last_vel = np.zeros(3)
-        self._last_t = now
-
-    def apply(self, goal_position, goal_yaw: float,
-             operator_xy: Optional[Tuple[float, float]], now: float
-             ) -> Tuple[np.ndarray, float, List[str]]:
-        """Clamp+slew one commanded setpoint. Returns (position, yaw, reasons)."""
-        cfg = self.cfg
-        pos = np.asarray(goal_position, dtype=float).reshape(3).copy()
-        reasons: List[str] = []
-
-        # -- altitude ---------------------------------------------------
-        if pos[2] > cfg.altitude_ceiling_m:
-            pos[2] = cfg.altitude_ceiling_m
-            reasons.append(f'altitude ceiling {cfg.altitude_ceiling_m:.2f} m')
-        if pos[2] < cfg.altitude_floor_m:
-            pos[2] = cfg.altitude_floor_m
-            reasons.append(f'altitude floor {cfg.altitude_floor_m:.2f} m')
-
-        # -- 8x8 m boundary box around ROOM_CENTER -----------------------
-        cx, cy = cfg.room_center
-        hw = cfg.boundary_half_width_m
-        clamped_x = min(max(pos[0], cx - hw), cx + hw)
-        clamped_y = min(max(pos[1], cy - hw), cy + hw)
-        if clamped_x != pos[0]:
-            pos[0] = clamped_x
-            reasons.append('x boundary')
-        if clamped_y != pos[1]:
-            pos[1] = clamped_y
-            reasons.append('y boundary')
-
-        # -- min standoff, re-derived from this node's own operator read --
-        if operator_xy is not None:
-            op = np.asarray(operator_xy, dtype=float)
-            delta = pos[:2] - op
-            d = float(np.linalg.norm(delta))
-            if d < cfg.follow.min_standoff_m:
-                direction = delta / d if d > 1e-6 else np.array([1.0, 0.0])
-                pos[:2] = op + direction * cfg.follow.min_standoff_m
-                reasons.append('min standoff (node re-check)')
-
-        if self._last_pos is None or self._last_t is None:
-            self.reset_to(pos, goal_yaw, now)
-            return self._last_pos.copy(), self._last_yaw, reasons
-
-        dt = max(1e-3, now - self._last_t)
-
-        # -- velocity cap: limit how far the position may step this tick --
-        step = pos - self._last_pos
-        dist = float(np.linalg.norm(step))
-        max_step = cfg.hard_speed_cap_m_s * dt
-        if dist > max_step and dist > 1e-9:
-            pos = self._last_pos + step * (max_step / dist)
-            reasons.append(f'speed cap {cfg.hard_speed_cap_m_s:.2f} m/s')
-
-        # -- acceleration cap: limit the change in the realised velocity ---
-        realized_vel = (pos - self._last_pos) / dt
-        dv = realized_vel - self._last_vel
-        dv_norm = float(np.linalg.norm(dv))
-        max_dv = cfg.hard_accel_cap_m_s2 * dt
-        if dv_norm > max_dv and dv_norm > 1e-9:
-            realized_vel = self._last_vel + dv * (max_dv / dv_norm)
-            pos = self._last_pos + realized_vel * dt
-            reasons.append(f'accel cap {cfg.hard_accel_cap_m_s2:.2f} m/s^2')
-        else:
-            realized_vel = (pos - self._last_pos) / dt
-
-        # -- yaw turn-rate cap --------------------------------------------
-        dyaw = float(wrap_pi(goal_yaw - self._last_yaw))
-        max_dyaw = cfg.max_yaw_rate_rad_s * dt
-        if abs(dyaw) > max_dyaw:
-            dyaw = max_dyaw if dyaw > 0.0 else -max_dyaw
-            reasons.append(f'yaw rate cap {cfg.max_yaw_rate_rad_s:.2f} rad/s')
-        yaw = float(wrap_pi(self._last_yaw + dyaw))
-
-        self._last_vel = realized_vel
-        self._last_pos = pos.copy()
-        self._last_yaw = yaw
-        self._last_t = now
-        return pos, yaw, reasons
 
 
 def main(args=None):

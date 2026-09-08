@@ -17,11 +17,11 @@ Full specification, requirements and schedule:
 
 | Path | What it is | Verified? |
 |---|---|---|
-| `follow_core/` | All the logic. Pure Python, no ROS, no hardware imports. | **60 unit tests, all passing** |
+| `follow_core/` | All the logic. Pure Python, no ROS, no hardware imports. | **72 unit tests, all passing** |
 | `tools/sim.py` | Closed-loop simulation, scores against FR-1 | **4/4 scenarios pass** |
 | `tests/` | pytest suite, including the PRD acceptance criteria | — |
-| `ros2_ws/src/` | ROS 2 nodes for VOXL 2 (thin adapters over `follow_core`) | builds; untested on hardware |
-| `crazyflie/` | Drop-in package for the OptiTrack rig | not built (needs the other workspace) |
+| `ros2_ws/src/` | ROS 2 nodes for VOXL 2 (thin adapters over `follow_core`) | **builds on Humble; 4/4 nodes start; end-to-end message test passes** |
+| `crazyflie/` | Drop-in package for the OptiTrack rig | compiles; not built (needs the other workspace) |
 | `firmware/band/` | ESP32 wearable: gestures, hardware E-stop, UWB tag | **not compiled** — no PlatformIO here |
 | `config/` | PX4 params, voxl-vision-hub, voxl-mapper, mocap | not applied to hardware |
 | `docs/` | `ARCHITECTURE.md`, `BRINGUP.md`, `SAFETY.md` | — |
@@ -29,7 +29,7 @@ Full specification, requirements and schedule:
 ## Quick start
 
 ```bash
-python3 -m pytest tests/ -q          # 60 tests, ~1.5 s
+python3 -m pytest tests/ -q          # 72 tests, ~1.6 s
 python3 tools/sim.py --scenario straight
 python3 tools/sim.py --scenario occlude --plot /tmp/follow.png
 ```
@@ -72,8 +72,10 @@ Nothing in this repository has flown. What has actually been executed here:
   checks on both measurement models, covariance symmetry/PSD under sustained
   fusion, and the identity-gating behaviour behind FR-2.
 - `tools/sim.py` — all four scenarios meet FR-1 across four random seeds.
-- ROS 2 packages — build only; no hardware, and the target runs **Foxy** while
-  this machine runs **Humble**.
+- ROS 2 packages — `colcon build` succeeds on Humble, all four nodes start, and
+  a synthetic end-to-end run (odometry + UWB range + bearing + command in) puts
+  the goal exactly 2.5 m behind the operator with 117/117 measurements accepted.
+  No hardware, and the target runs **Foxy** while this machine runs **Humble**.
 - Band firmware — written, never compiled. The DW3220 driver is deliberately
   stubbed with the required vendor calls named.
 - Configs — never applied to a vehicle. Treat every value as a starting point to
@@ -89,6 +91,11 @@ because each was a plausible in-flight failure:
 3. The estimator diverged silently whenever vision dropped out, because
    range-only updates are consistent with any point on the range sphere and
    produce no rejections while doing it.
+4. The Crazyflie node's `SetpointGuard` clamped minimum standoff *before* its
+   speed and acceleration slew, and the slew then interpolated back toward the
+   previous setpoint — so whenever the operator walked toward a drone holding
+   station, the clamp silently did nothing. The clamp is now re-asserted after
+   the slew; remove it and `tests/test_setpoint_guard.py` fails immediately.
 
 ## First things to do on hardware
 

@@ -46,6 +46,8 @@ ensure_follow_core()
 from follow_core import (  # noqa: E402
     BearingMeasurement,
     Command,
+    CommandSource,
+    FollowMode,
     FollowParams,
     Follower,
     RangeMeasurement,
@@ -274,6 +276,17 @@ class FollowNode(Node):
             self.get_logger().warn(
                 f"FollowCommand with unknown mode={msg.mode} source={msg.source} ignored"
             )
+            return
+
+        # Reserved sentinel: MODE_IDLE from SOURCE_ESTOP_BUTTON means "the
+        # band reported its ESTOP release edge" -- see uwb_node.py's module
+        # docstring. CommandArbiter.estop_latched can ONLY be lifted by
+        # calling clear_estop() directly (no FollowMode value means "clear
+        # the latch"), so this is handled here rather than via on_command().
+        # `.arbiter` is a public attribute of Follower (follow_core/follower.py).
+        if source is CommandSource.ESTOP_BUTTON and mode is FollowMode.IDLE:
+            self.follower.arbiter.clear_estop()
+            self.get_logger().warn("follow_node: ESTOP latch cleared by band release")
             return
 
         def _override(value: float):
