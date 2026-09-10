@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>crazyflie_shows</name>
+  <version>0.1.0</version>
+  <description>Swarm show choreography built on crazyflie_py.</description>
+  <maintainer email="hwehuang.stengg@gmail.com">jeremy</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>crazyflie_py</depend>
+  <depend>crazyflie_interfaces</depend>
+  <depend>geometry_msgs</depend>
+  <depend>python3-numpy</depend>
+  <!-- plan_show reads crazyflies.yaml directly, so it can verify a show with
+       no ROS graph running at all. -->
+  <depend>python3-yaml</depend>
+  <!-- Optional: only the plot output of plan_show needs it; the tool
+       degrades to text when it is absent. -->
+  <exec_depend>python3-matplotlib</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

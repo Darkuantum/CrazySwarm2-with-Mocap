@@ -1,0 +1,44 @@
+mocap_verify.sh
+date   : 2026-09-09T12:26:26+08:00
+config : /home/jeremy/CrazySwarm2-with-Mocap/src/crazyswarm2/crazyflie_shows/config/motion_capture.yaml
+output : /home/jeremy/CrazySwarm2-with-Mocap/src/crazyswarm2/crazyflie_shows/scripts/mocap_verify_as-mx16-jeremy_20260909-122626.txt
+
+==================== 0. PRECONDITIONS ====================
+    4:    type:  "optitrack" #"optitrack_closed_source"
+    9:    hostname: "192.168.9.124" #"192.168.8.63"
+    32:    interface_ip: "192.168.9.108"   # inert; see above
+    this machine: 192.168.9.108 141.23.110.162 172.17.0.1 172.31.0.1 
+    OK: 141.23.110.162 is present -- the hardcoded multicast join can succeed.
+
+==================== 1. START THE NODE (25s, unbuffered) ====================
+    node stdout so far:
+      logClouds=0
+      timeout: the monitored command dumped core
+      ./mocap_verify.sh: line 73: 21078 Segmentation fault      stdbuf -oL -eL timeout 25 "$NODE" --ros-args -r __node:=motion_capture_tracking --params-file "$TMP"
+    *** NODE ALREADY DEAD -- read the what(): line above. ***
+
+==================== 2. IS /poses PUBLISHING? ====================
+    -- topic info --
+      Unknown topic '/poses'
+    -- topic hz over 10s (THE number that matters) --
+      WARNING: topic [/poses] does not appear to be published yet
+
+==================== 3. WHICH RIGID BODIES IS MOTIVE STREAMING? ====================
+    These names must match the robot keys in crazyflies.yaml.
+  no rigid bodies parsed; raw head follows:
+WARNING: topic [/poses] does not appear to be published yet
+Could not determine the type for the passed topic
+
+
+==================== 4. NODE OUTPUT AT SHUTDOWN ====================
+    exit status: 139
+      logClouds=0
+      timeout: the monitored command dumped core
+      ./mocap_verify.sh: line 73: 21078 Segmentation fault      stdbuf -oL -eL timeout 25 "$NODE" --ros-args -r __node:=motion_capture_tracking --params-file "$TMP"
+
+    'receive_from: Interrupted system call' at the END is the normal
+    teardown abort -- it says nothing about whether data was flowing.
+    Section 2 is what decides that.
+
+==================== DONE ====================
+Wrote: /home/jeremy/CrazySwarm2-with-Mocap/src/crazyswarm2/crazyflie_shows/scripts/mocap_verify_as-mx16-jeremy_20260909-122626.txt

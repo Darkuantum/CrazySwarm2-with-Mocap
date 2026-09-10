@@ -1,0 +1,45 @@
+mocap_verify.sh
+date   : 2026-09-07T16:14:10+08:00
+config : /home/jeremy/near-intern/swarm-shows/crazyflie_shows/config/motion_capture.yaml
+output : /home/jeremy/near-intern/swarm-shows/crazyflie_shows/scripts/mocap_verify_as-mx16-jeremy_20260907-161410.txt
+
+==================== 0. PRECONDITIONS ====================
+    4:    type:  "optitrack" #"optitrack_closed_source"
+    6:    hostname: "192.168.9.124" #"192.168.8.63"
+    20:    interface_ip: "192.168.9.108"
+    this machine: 192.168.9.108 172.31.0.1 172.17.0.1 
+
+==================== 1. START THE NODE (25s, unbuffered) ====================
+    node stdout so far:
+      logClouds=0
+      terminate called after throwing an instance of 'boost::wrapexcept<boost::system::system_error>'
+        what():  set_option: No such device
+      timeout: the monitored command dumped core
+      ./mocap_verify.sh: line 64: 19376 Aborted                 stdbuf -oL -eL timeout 25 "$NODE" --ros-args -r __node:=motion_capture_tracking --params-file "$TMP"
+    *** NODE ALREADY DEAD -- read the what(): line above. ***
+
+==================== 2. IS /poses PUBLISHING? ====================
+    -- topic info --
+      Unknown topic '/poses'
+    -- topic hz over 10s (THE number that matters) --
+      WARNING: topic [/poses] does not appear to be published yet
+
+==================== 3. WHICH RIGID BODIES IS MOTIVE STREAMING? ====================
+    These names must match the robot keys in crazyflies.yaml.
+      WARNING: topic [/poses] does not appear to be published yet
+      Could not determine the type for the passed topic
+
+==================== 4. NODE OUTPUT AT SHUTDOWN ====================
+    exit status: 134
+      logClouds=0
+      terminate called after throwing an instance of 'boost::wrapexcept<boost::system::system_error>'
+        what():  set_option: No such device
+      timeout: the monitored command dumped core
+      ./mocap_verify.sh: line 64: 19376 Aborted                 stdbuf -oL -eL timeout 25 "$NODE" --ros-args -r __node:=motion_capture_tracking --params-file "$TMP"
+
+    'receive_from: Interrupted system call' at the END is the normal
+    teardown abort -- it says nothing about whether data was flowing.
+    Section 2 is what decides that.
+
+==================== DONE ====================
+Wrote: /home/jeremy/near-intern/swarm-shows/crazyflie_shows/scripts/mocap_verify_as-mx16-jeremy_20260907-161410.txt

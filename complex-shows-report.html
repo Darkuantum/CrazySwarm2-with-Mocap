@@ -1,0 +1,576 @@
+<title>Beyond the Carousel</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+  :root{
+    --ground:#EFF2F5;
+    --surface:#FFFFFF;
+    --surface-sunk:#E4E9EE;
+    --ink:#16202B;
+    --ink-soft:#3A4959;
+    --muted:#64768A;
+    --rule:#CBD5DE;
+    --rule-soft:#DFE5EB;
+    --accent:#0E7280;
+    --accent-deep:#0A5561;
+    --accent-wash:#DDEDEF;
+    --ok:#1C7256;
+    --ok-wash:#DCEDE5;
+    --warn:#9C6510;
+    --warn-wash:#F5E9D5;
+    --stop:#A63B2B;
+    --stop-wash:#F5E0DB;
+    --shadow:0 1px 2px rgba(22,32,43,.06),0 8px 24px -16px rgba(22,32,43,.28);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#0F151B;
+      --surface:#161F27;
+      --surface-sunk:#1D2831;
+      --ink:#E5EDF3;
+      --ink-soft:#B9C7D3;
+      --muted:#8698A8;
+      --rule:#2C3A46;
+      --rule-soft:#232F39;
+      --accent:#43B4C2;
+      --accent-deep:#7FD2DC;
+      --accent-wash:#12323A;
+      --ok:#5FC79C;
+      --ok-wash:#12312A;
+      --warn:#D9A44E;
+      --warn-wash:#33270F;
+      --stop:#E08573;
+      --stop-wash:#37201B;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -16px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0F151B;
+    --surface:#161F27;
+    --surface-sunk:#1D2831;
+    --ink:#E5EDF3;
+    --ink-soft:#B9C7D3;
+    --muted:#8698A8;
+    --rule:#2C3A46;
+    --rule-soft:#232F39;
+    --accent:#43B4C2;
+    --accent-deep:#7FD2DC;
+    --accent-wash:#12323A;
+    --ok:#5FC79C;
+    --ok-wash:#12312A;
+    --warn:#D9A44E;
+    --warn-wash:#33270F;
+    --stop:#E08573;
+    --stop-wash:#37201B;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -16px rgba(0,0,0,.8);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--ground);
+    color:var(--ink);
+    font-family:"Source Serif 4",Georgia,"Times New Roman",serif;
+    font-size:17px;
+    line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 28px 96px}
+  .col{max-width:68ch}
+
+  h1,h2,h3,h4,.eyebrow,.chip,.tag,th{font-family:Archivo,"Helvetica Neue",Arial,sans-serif}
+  code,.mono,.num,td.n{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+
+  .eyebrow{
+    font-size:11.5px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;
+    color:var(--accent);margin:0 0 14px;
+  }
+
+  /* ---------- masthead ---------- */
+  header.mast{padding:60px 0 34px;border-bottom:2px solid var(--ink);margin-bottom:0}
+  h1{
+    font-size:clamp(38px,6.2vw,66px);font-weight:700;line-height:1.02;
+    letter-spacing:-.026em;margin:0 0 18px;text-wrap:balance;
+  }
+  .standfirst{font-size:20px;line-height:1.5;color:var(--ink-soft);margin:0;max-width:60ch}
+  .standfirst em{color:var(--ink);font-style:italic}
+
+  .rig{
+    display:flex;flex-wrap:wrap;gap:0;margin-top:34px;
+    border-top:1px solid var(--rule);
+  }
+  .rig div{
+    flex:1 1 150px;padding:13px 18px 13px 0;border-right:1px solid var(--rule-soft);
+  }
+  .rig div:last-child{border-right:0}
+  .rig dt{
+    font-family:Archivo,sans-serif;font-size:10.5px;font-weight:600;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--muted);margin:0 0 5px;
+  }
+  .rig dd{margin:0;font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--ink)}
+
+  /* ---------- sections ---------- */
+  section{padding-top:56px}
+  h2{
+    font-size:13px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;
+    color:var(--muted);margin:0 0 8px;
+    padding-bottom:10px;border-bottom:1px solid var(--rule);
+  }
+  h2 span{color:var(--accent)}
+  h3{
+    font-size:clamp(24px,3.2vw,32px);font-weight:600;line-height:1.14;
+    letter-spacing:-.018em;margin:30px 0 12px;text-wrap:balance;
+  }
+  h4{font-size:19px;font-weight:600;line-height:1.25;margin:0 0 8px;letter-spacing:-.01em}
+  p{margin:0 0 16px}
+  a{color:var(--accent);text-underline-offset:2px}
+  strong{font-weight:600}
+
+  /* ---------- headline findings ---------- */
+  .finding{
+    background:var(--surface);border:1px solid var(--rule);border-left:4px solid var(--accent);
+    padding:28px 30px;margin:22px 0;box-shadow:var(--shadow);
+  }
+  .finding .eyebrow{margin-bottom:8px}
+  .finding p:last-child{margin-bottom:0}
+
+  .ratio{
+    display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+    margin:20px 0;padding:16px 0;border-top:1px solid var(--rule-soft);border-bottom:1px solid var(--rule-soft);
+  }
+  .ratio b{
+    font-family:Archivo,sans-serif;font-size:40px;font-weight:700;line-height:1;
+    letter-spacing:-.03em;color:var(--accent);font-variant-numeric:tabular-nums;
+  }
+  .ratio span{font-size:15px;color:var(--ink-soft);max-width:46ch}
+
+  /* ---------- recommendation blocks ---------- */
+  .rec{
+    background:var(--surface);border:1px solid var(--rule);
+    padding:24px 26px 0;margin:20px 0;box-shadow:var(--shadow);
+  }
+  .rec > p{max-width:66ch}
+  .rec-head{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;margin-bottom:12px}
+  .chip{
+    flex:none;font-size:10.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
+    padding:5px 10px;border-radius:2px;white-space:nowrap;margin-top:3px;
+  }
+  .chip.v{background:var(--ok-wash);color:var(--ok)}
+  .chip.p{background:var(--warn-wash);color:var(--warn)}
+  .chip.n{background:var(--stop-wash);color:var(--stop)}
+
+  .slots{
+    display:grid;grid-template-columns:repeat(3,1fr);gap:0;
+    margin:20px -26px 0;border-top:1px solid var(--rule-soft);
+  }
+  .slots div{padding:16px 20px;border-right:1px solid var(--rule-soft);background:var(--surface-sunk)}
+  .slots div:last-child{border-right:0}
+  .slots dt{
+    font-family:Archivo,sans-serif;font-size:10px;font-weight:600;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--muted);margin:0 0 6px;
+  }
+  .slots dd{margin:0;font-size:14.5px;line-height:1.5;color:var(--ink-soft)}
+
+  /* ---------- tables ---------- */
+  .scroll{overflow-x:auto;margin:22px 0;border:1px solid var(--rule);background:var(--surface)}
+  table{border-collapse:collapse;width:100%;min-width:560px;font-size:14.5px}
+  th{
+    text-align:left;font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--muted);padding:12px 16px;border-bottom:1px solid var(--rule);white-space:nowrap;
+  }
+  td{padding:11px 16px;border-bottom:1px solid var(--rule-soft);vertical-align:top;color:var(--ink-soft)}
+  tr:last-child td{border-bottom:0}
+  td.n{font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
+  td.k{color:var(--ink);font-family:"IBM Plex Mono",monospace;font-size:13px;white-space:nowrap}
+
+  code{
+    background:var(--surface-sunk);padding:1.5px 5px;border-radius:2px;
+    font-size:.87em;color:var(--ink);
+  }
+  .rec .slots code,.callout code{background:transparent;padding:0}
+
+  /* ---------- callouts ---------- */
+  .callout{
+    border-left:3px solid var(--warn);background:var(--warn-wash);
+    padding:18px 22px;margin:22px 0;font-size:15.5px;
+  }
+  .callout.stop{border-left-color:var(--stop);background:var(--stop-wash)}
+  .callout .eyebrow{color:inherit;opacity:.8}
+  .callout p:last-child{margin-bottom:0}
+
+  ul{margin:0 0 16px;padding-left:20px}
+  li{margin-bottom:8px}
+  li::marker{color:var(--accent)}
+
+  /* ---------- footer ---------- */
+  footer{margin-top:64px;padding-top:26px;border-top:2px solid var(--ink);font-size:14.5px;color:var(--muted)}
+  footer h4{color:var(--ink);margin-bottom:10px}
+  .srcs{columns:2;column-gap:36px;font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.75}
+  .srcs a{display:block;break-inside:avoid;word-break:break-all}
+
+  @media (max-width:720px){
+    .slots{grid-template-columns:1fr}
+    .slots div{border-right:0;border-bottom:1px solid var(--rule-soft)}
+    .slots div:last-child{border-bottom:0}
+    .srcs{columns:1}
+    body{font-size:16px}
+  }
+  a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">Crazyflie show rig · research dossier · 2026-09-09</p>
+  <h1>Beyond the Carousel</h1>
+  <p class="standfirst">What more complex choreography this five-drone rig can fly <em>as it stands</em> — and the two constraints that decide almost everything else.</p>
+  <dl class="rig">
+    <div><dt>Fleet</dt><dd>5 × CF 2.x, one radio</dd></div>
+    <div><dt>Link</dt><dd>radio://0/80/2M</dd></div>
+    <div><dt>Tracking</dt><dd>OptiTrack Motive → /poses</dd></div>
+    <div><dt>Stack</dt><dd>ROS 2 Humble · Crazyswarm2</dd></div>
+    <div><dt>Show</dt><dd>~63 s · 28 / 31 pieces</dd></div>
+  </dl>
+</header>
+
+<section>
+  <h2>The short version</h2>
+  <div class="col">
+    <p>The choreography engine is not what limits this show. Two numbers do: a separation margin that is the wrong <em>shape</em>, and a 31-piece firmware ceiling that cannot be lifted the obvious way because of how the show reuses its figures. Fix the first and the arena roughly triples in usable density. Understand the second and you stop planning a rewrite that the firmware would reject.</p>
+    <p>Everything below is restricted to what runs on the rig as configured. Where a technique needs hardware you do not have, or a port you have not done, that is stated rather than glossed.</p>
+  </div>
+
+  <div class="finding">
+    <p class="eyebrow">Finding 01 — the unlock</p>
+    <h4>Your separation margin is a sphere. The real constraint is an ellipsoid.</h4>
+    <p><code>safety.py</code> enforces one scalar: <code>MIN_SEPARATION = 0.8 m</code>, planned at <code>0.90 m</code> after the measured <code>TRACKING_MARGIN</code>. That is isotropic — it treats a drone passing <em>beside</em> another exactly like one passing <em>beneath</em> it. Downwash does not work that way, and the difference was measured on this exact airframe.</p>
+    <p>Preiss, Hönig et al. flew two Crazyflies directly above one another, logging position error at 100 Hz across separations, and fitted an axis-aligned ellipsoid: <strong>r<sub>z</sub> = 0.30 m vertically, r<sub>x</sub> = r<sub>y</sub> = 0.12 m horizontally</strong>. The pairwise safety test becomes the closed form ‖E<sup>−1</sup>(p − q)‖₂ ≥ 2 with E = diag(r<sub>x</sub>, r<sub>y</sub>, r<sub>z</sub>) — i.e. <strong>0.60 m centre-to-centre vertically, but only 0.24 m horizontally</strong>. Bitcraze's own firmware agrees on the shape: the stock collision-avoidance module defaults to a tall ellipsoid of 0.3 / 0.3 / 0.9 m.</p>
+    <div class="ratio">
+      <b>3.75×</b>
+      <span>How much more horizontal clearance the current isotropic margin demands than the measured downwash requirement — on a show that flies almost entirely planar at <code>form_height = 1.00 m</code>, so <em>every</em> pair is a horizontal pair.</span>
+    </div>
+    <p>This is why <code>scale</code> below 0.99 is rejected: the show is pressed against a budget that is mostly imaginary in the axis it actually uses. Replacing the scalar test in <code>transition_min_sep</code> and <code>sample_min_sep</code> with the ellipsoidal norm is a contained change to one module, and it stays a <em>pure offline check</em> — <code>plan_show</code> keeps refusing rather than warning.</p>
+  </div>
+
+  <div class="finding">
+    <p class="eyebrow">Finding 02 — the trap</p>
+    <h4>Compression would buy you pieces, and break the show's tempo.</h4>
+    <p>The 31-piece cap is real and exactly as documented: <code>crtp_commander_high_level.c</code> allocates <code>TRAJECTORY_MEMORY_SIZE 4096</code> with the comment "4k allows us to store 31 poly4d pieces", because one uncompressed piece is 8 float coefficients × 4 axes + 1 duration float = 132 bytes. You use 28.</p>
+    <p>The obvious relief is the compressed format — 2-byte millimetre integers, per-axis Bézier degree selectable down to constant — which fits far more segments in the same 4 KB. <strong>It would break this show.</strong> The firmware rejects a compressed trajectory started with any timescale other than 1.0, or with <code>reversed</code> set, returning <code>ENOEXEC</code>. Your tempo column runs figures at ×1.15, ×0.90 and ×0.80, and the reversed carousel is a reversed playback of an already-uploaded figure. Compression and the reuse strategy are mutually exclusive.</p>
+    <p>The compatible way to escape 31 pieces is to <strong>re-upload mid-show</strong>: trajectories are written to a chosen <code>start_addr</code> in trajectory memory and selected by id, so figures can be swapped between phases rather than all held resident. That trades piece count against radio activity at a known moment in the timeline — schedulable, and verifiable on the ground.</p>
+  </div>
+</section>
+
+<section>
+  <h2>01 · <span>Richer choreography</span></h2>
+
+  <div class="rec">
+    <div class="rec-head">
+      <h4>Adopt the ellipsoidal separation test</h4>
+      <span class="chip v">Offline-verifiable</span>
+    </div>
+    <p>Swap the scalar distance in the two separation routines for ‖E<sup>−1</sup>(p − q)‖₂ ≥ 2. Keep <code>TRACKING_MARGIN</code> — the measured 0.057 m is controller lag, additive to whatever geometry you use, and the counterflow asymmetry that produced it is unchanged. Inflate the ellipsoid radii by the margin rather than adding it to a scalar.</p>
+    <dl class="slots">
+      <div><dt>What it takes</dt><dd>One change in <code>safety.py</code>; the closed-form quadratic minimisation in <code>transition_min_sep</code> still works, in the E-scaled coordinates.</dd></div>
+      <div><dt>Live-show risk</dt><dd>Low, but it removes conservatism you have been flying behind. Re-measure lag on hardware before spending all of it.</dd></div>
+      <div><dt>plan_show</dt><dd>Unchanged contract — still a pure geometric predicate, still refuses.</dd></div>
+    </dl>
+  </div>
+
+  <div class="rec">
+    <div class="rec-head">
+      <h4>Use the vertical axis you are not using</h4>
+      <span class="chip v">Offline-verifiable</span>
+    </div>
+    <p>The show is planar at 1.00 m apart from the bloom's 0.45 m rise. Under the ellipsoid the axes trade against each other: horizontal packing gets much cheaper, vertical stacking gets <em>more</em> expensive than your current margin assumes (0.60 m required, and downwash is the reason). That asymmetry is itself choreographic material — tight interleaved rings that would be illegal as a stack, staggered-altitude waves where the vertical offsets are deliberately larger than the horizontal ones.</p>
+    <dl class="slots">
+      <div><dt>What it takes</dt><dd>New figures in <code>figures.py</code> with a z-component; the 360° composition rule and piece budget apply unchanged.</dd></div>
+      <div><dt>Live-show risk</dt><dd>Real. Vertical proximity is where downwash actually bites, and where a lagging drone is least recoverable.</dd></div>
+      <div><dt>plan_show</dt><dd>Already samples 3-D positions at 200 Hz; the anisotropic test covers it directly.</dd></div>
+    </dl>
+  </div>
+
+  <div class="rec">
+    <div class="rec-head">
+      <h4>Optimise assignment for makespan, not total distance</h4>
+      <span class="chip v">Offline-verifiable</span>
+    </div>
+    <p><code>assign_min_distance</code> brute-forces the permutation minimising summed travel — the Hungarian objective, and at n=5 the 120 permutations are free. But a formation change is <em>simultaneous</em>: what you care about is when the <em>last</em> drone arrives, which is the linear bottleneck assignment problem, not sum-of-costs. Hönig et al. make exactly this distinction and use the Threshold algorithm before planning. Changing the key from a sum to a max is a one-line edit that shortens every gather leg to its true critical path.</p>
+    <dl class="slots">
+      <div><dt>What it takes</dt><dd>Change the <code>key</code> in <code>assign_min_distance</code> to <code>max(...)</code>; <code>scaled_duration</code> already scales to the longest path, so the two now agree.</dd></div>
+      <div><dt>Live-show risk</dt><dd>None beyond the figures it enables — shorter legs mean the same distance in less time, so re-check the speed budget.</dd></div>
+      <div><dt>plan_show</dt><dd>Fully covered; assignment is chosen on the ground and baked into the plan.</dd></div>
+    </dl>
+  </div>
+
+  <div class="rec">
+    <div class="rec-head">
+      <h4>Certify corridors with Bézier control points instead of sampling</h4>
+      <span class="chip v">Offline-verifiable</span>
+    </div>
+    <p>Your 200 Hz sampling note is honest about its own weakness: a grid can step over a brief close approach. There is a stronger guarantee available. A polynomial in the Bernstein basis is guaranteed to lie within the convex hull of its control points, so constraining control points to a safe polyhedron <em>proves</em> containment without sampling at all — the property the T-RO 2018 planner is built on, at the same degree-7 / C⁴ form the Crazyflie already executes. <code>figures.py</code> has <code>bezier_to_poly</code> already.</p>
+    <dl class="slots">
+      <div><dt>What it takes</dt><dd>Meaningful work: express figures in control points, define per-drone corridors. Worth it if figures get dense enough that sampling confidence drops.</dd></div>
+      <div><dt>Live-show risk</dt><dd>None added — it is a strictly stronger pre-flight proof than the current one.</dd></div>
+      <div><dt>plan_show</dt><dd>Upgrades it from "checked at 200 Hz" to "proved". Keep the sampler as a cross-check.</dd></div>
+    </dl>
+  </div>
+</section>
+
+<section>
+  <h2>02 · <span>New capabilities</span></h2>
+
+  <div class="rec">
+    <div class="rec-head">
+      <h4>Light choreography — needs five LED-ring decks first</h4>
+      <span class="chip p">Hardware, then verifiable</span>
+    </div>
+    <p>This is the one item on the list that is <em>not</em> buildable as the rig stands: the LED ring is an expansion deck, 3.3 g and up to 1 A per drone, not part of a stock CF 2.x. With decks fitted it is genuinely easy — the firmware exposes a whole <code>ring</code> parameter group over the normal Crazyswarm2 param path, no custom firmware:</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Parameter</th><th>Does what</th><th>Notes for a timed show</th></tr></thead>
+      <tbody>
+        <tr><td class="k">ring.effect</td><td>Selects one of 19 effects by id</td><td>7 = solid colour, 13 = per-LED memory, 14 = fade, 17 = onboard timeline</td></tr>
+        <tr><td class="k">ring.solidRed/Green/Blue</td><td>RGB for effect 7</td><td>uint8 each; three writes per cue</td></tr>
+        <tr><td class="k">ring.fadeColor</td><td>Target colour, packed <code>0x00RRGGBB</code></td><td>With <code>ring.fadeTime</code> in seconds; fadeTime 0 = instant</td></tr>
+        <tr><td class="k">deck.bcLedRing</td><td>Read-only deck presence</td><td>Use it as a pre-flight check that all five decks enumerated</td></tr>
+      </tbody>
+    </table></div>
+    <p>Two ceilings matter. The ring is repainted by a 50 ms FreeRTOS timer — <strong>20 Hz, so no sub-50 ms strobe exists</strong> regardless of how precisely ROS 2 schedules the write. And effect 17 plays a colour timeline from onboard memory against the drone's own clock, which is the right mechanism for beat-sync because it is immune to radio jitter — but the buffer holds only <code>LEDRING_TIME_MEM_SIZE = 10</code> entries, each a duration in 1/25 s units. Ten cues per drone, then you are back on the radio.</p>
+    <dl class="slots">
+      <div><dt>What it takes</dt><dd>Buy and fit 5 decks. Then <code>setParam</code> cues, or a 24-byte RGB565 frame per drone via <code>MEM_TYPE_LED12</code>.</dd></div>
+      <div><dt>Live-show risk</dt><dd>Payload and current draw cut endurance; and see the controller-mass warning below — added deck mass mistracks Mellinger.</dd></div>
+      <div><dt>plan_show</dt><dd>Can validate every cue against the legal effect-id set and the 10-entry timeline cap. Colour needs no trajectory check.</dd></div>
+    </dl>
+  </div>
+
+  <div class="rec">
+    <div class="rec-head">
+      <h4>Music synchronisation — you have already built the mechanism</h4>
+      <span class="chip v">Offline-verifiable</span>
+    </div>
+    <p>The show is a timed plan with a per-figure <code>timescale</code> column. Beat-sync is not new machinery; it is choosing those timescales so figure boundaries land on bars, which <code>build_plan</code> already composes and <code>plan_show</code> already totals. Because every figure returns each drone to its starting angle, figures retime independently without disturbing the geometry — the composition rule pays off exactly here.</p>
+    <dl class="slots">
+      <div><dt>What it takes</dt><dd>Solve timescales against a bar grid instead of hand-tuning. Speed and acceleration scale with 1/timescale², so the budget check does the policing.</dd></div>
+      <div><dt>Live-show risk</dt><dd>Low. The risk is musical, not mechanical: audio playback and the flight node share no clock, so cue the music from the show, not the reverse.</dd></div>
+      <div><dt>plan_show</dt><dd>Already covers it — retiming is what the existing budgets are for.</dd></div>
+    </dl>
+  </div>
+
+  <div class="rec">
+    <div class="rec-head">
+      <h4>Shape and text formations — five drones is five points</h4>
+      <span class="chip v">Offline-verifiable</span>
+    </div>
+    <p>Worth stating plainly to avoid a wasted effort: the canonical text-forming demo (the "USC" letters) used <strong>32</strong> Crazyflies. With five you are placing five points, so the honest target is recognisable constellations and silhouettes — an arrow, a chevron, a rotating cross — not glyphs. <code>ngon_slots</code>, <code>line_slots</code> and <code>grid_slots</code> already give you the primitive; what is missing is a slot-set-to-slot-set transition planner, which is Findings 01 and 03 above.</p>
+    <dl class="slots">
+      <div><dt>What it takes</dt><dd>A shape → slot list function plus the makespan assignment; both are small next to what exists.</dd></div>
+      <div><dt>Live-show risk</dt><dd>Low — these are goTo legs, the case <code>transition_min_sep</code> solves exactly rather than by sampling.</dd></div>
+      <div><dt>plan_show</dt><dd>Fully covered, including the phase sweep in <code>best_phase_ngon</code>.</dd></div>
+    </dl>
+  </div>
+</section>
+
+<section>
+  <h2>03 · <span>Scale and robustness</span></h2>
+  <div class="col">
+    <p>Radio is not your constraint. Bitcraze put ~15 Crazyflies on one radio while broadcasting pose at 100 Hz; a Crazyswarm2 maintainer reports 10 on one radio with log topics stripped to status. The hard ceiling is <strong>1000 packets per second</strong> in Crazyradio firmware, roughly 1 packet per millisecond. Five drones at 2M is comfortable — but every log topic you add spends the same budget, so treat telemetry as a cost, not a freebie.</p>
+    <p>The failure modes are where the attention belongs, and they are sharper than they look.</p>
+  </div>
+
+  <div class="callout stop">
+    <p class="eyebrow">Failure semantics</p>
+    <p><strong>A lost link is a fall, not a hover.</strong> The firmware supervisor arms a keepalive watchdog on the first keepalive packet; thereafter one must arrive at least every <strong>1000 ms</strong> or the drone emergency-stops, cuts motors and enters a <em>latching locked state that requires a reboot</em>. Tumble detection behaves the same way — crashed state, motors off, free fall, no recovery attempt. Plan clearance on the assumption that a dropped drone descends immediately and does not stop.</p>
+  </div>
+
+  <div class="scroll"><table>
+    <thead><tr><th>Concern</th><th>Stock mechanism</th><th>What to do about it</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Mid-show abort</td>
+        <td class="k">emergency() / cmdStop()</td>
+        <td>Terminal and latching — ends the flight, needs a power cycle. Make a staged <code>/all/land</code> the default abort and reserve emergency for genuine loss of control.</td>
+      </tr>
+      <tr>
+        <td>Silent command refusal</td>
+        <td class="k">EBUSY from HL commander</td>
+        <td>When the supervisor blocks the commander it calls <code>plan_stop()</code> and every subsequent takeoff/goTo/startTrajectory returns <code>EBUSY</code>. If the client ignores the status byte a drone silently stops flying the show. Check it.</td>
+      </tr>
+      <tr>
+        <td>Low battery</td>
+        <td class="k">voltage_warning 3.8 / critical 3.7</td>
+        <td>Declarative per robot_type in <code>crazyflies.yaml</code>. Add <code>pm.vbat</code> as a logging topic only if you accept the radio cost.</td>
+      </tr>
+      <tr>
+        <td>Identity swap</td>
+        <td class="k">Motive rigid bodies</td>
+        <td>Motive requires non-congruent marker arrangements; two congruent bodies that come close can <em>swap labels</em> — the wrong pose to the wrong drone, mid-figure. Highest-consequence mocap failure for tight choreography.</td>
+      </tr>
+      <tr>
+        <td>Tracking dropout</td>
+        <td class="k">min markers to boot / continue</td>
+        <td>Per-asset thresholds in Motive define when a drone is declared untracked. That is the trigger to wire an abort to.</td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <div class="rec">
+    <div class="rec-head">
+      <h4>Consider single-marker tracking — and weigh what it costs you</h4>
+      <span class="chip p">Trade-off</span>
+    </div>
+    <p>Crazyswarm2's own recommendation for most experiments is <em>not</em> vendor rigid bodies: it is one marker per drone with <code>librigidbodytracker</code> and <code>default_single_marker</code>, which re-runs optimal task assignment every mocap frame and is therefore robust to exactly the close-proximity label swap above. The cost is direct: <strong>yaw becomes unobservable without motion in the xy-plane</strong>. Your figures sweep yaw and your composition rule is built on whole multiples of 360°, so this is a real trade, not a free win — but with a shared Motive server whose rigid-body list may be someone else's configuration on any given day, it removes a class of failure you do not control.</p>
+    <dl class="slots">
+      <div><dt>What it takes</dt><dd>Config change in the mocap tracking setup; no code. Reversible.</dd></div>
+      <div><dt>Live-show risk</dt><dd>Shifts risk rather than removing it: fewer identity swaps, weaker yaw. Test with the yaw-heavy figures specifically.</dd></div>
+      <div><dt>plan_show</dt><dd>Out of scope — this is a tracking-layer property, invisible to the planner.</dd></div>
+    </dl>
+  </div>
+
+  <div class="callout">
+    <p class="eyebrow">Verify on the rig before relying on it</p>
+    <p>Sources conflict on whether your backend broadcasts. Crazyswarm v1 documentation describes group-masked commands reaching a subset "without needing to send more than one radio packet", and a Crazyswarm2 maintainer describes mocap pose going out as one broadcast for all drones. Against that, the Crazyswarm2 backend support table reportedly lists the <strong>CFlib backend as "Broadcasts: No"</strong>, with <code>all/*</code> services implemented as a per-URI unicast loop. You run cflib on hardware. This decides both your bandwidth arithmetic and whether "simultaneous" figure starts are truly simultaneous or serialised across five unicast calls — worth ten minutes with a timestamped log before designing phase-locked sub-formations on top of it.</p>
+  </div>
+</section>
+
+<section>
+  <h2>04 · <span>Autonomy and control</span></h2>
+
+  <div class="rec">
+    <div class="rec-head">
+      <h4>Onboard collision avoidance is one parameter away — and it voids your guarantee</h4>
+      <span class="chip n">Not offline-verifiable</span>
+    </div>
+    <p>Buffered Voronoi Cell avoidance ships in stock firmware and turns on with <code>colAv.enable = 1</code>, declaratively in <code>crazyflies.yaml</code> or at runtime. It is decentralised, takes neighbour positions from <code>peer_localization</code> for drones on the same radio channel — exactly your topology — and tracks up to 10 neighbours. No new hardware, no custom firmware.</p>
+    <p>Then the caveats, all from the module's own source. It rewrites the setpoint between commander and controller and <strong>does not smooth the result</strong>, so output may be discontinuous or far from the current state. <strong>Only the PID controller is confirmed to work with it</strong>; high-gain controllers like Mellinger may go unstable. And when the buffered cell is empty it holds position — a drone can simply stop mid-figure. None of that is reproducible in an offline planner.</p>
+    <dl class="slots">
+      <div><dt>What it takes</dt><dd>One parameter. Hyperparameters at <code>collision_avoidance.c</code> lines 348–428 may need tuning.</dd></div>
+      <div><dt>Live-show risk</dt><dd>Substantial and of a different kind: it trades a predicted show for an unpredictable safety net.</dd></div>
+      <div><dt>plan_show</dt><dd>Broken by it. Use it during hardware bring-up as a net over rehearsals, then fly the verified show without it.</dd></div>
+    </dl>
+  </div>
+
+  <div class="rec">
+    <div class="rec-head">
+      <h4>Controller choice couples to two other decisions</h4>
+      <span class="chip p">Re-measure required</span>
+    </div>
+    <p><code>stabilizer.controller</code> selects PID (1) or Mellinger (2) from <code>crazyflies.yaml</code> — a config change, not a rebuild. Mellinger is the minimum-snap controller and tracks uploaded polynomials more tightly, which is the direct lever on your measured 0.057 m tracking lag. Two couplings decide whether you can take it:</p>
+    <ul>
+      <li><strong>Mellinger is mass-dependent.</strong> It computes thrust from the firmware's platform mass, so fitting LED decks without updating that mass mistracks. PID does not care.</li>
+      <li><strong>Mellinger and BVCA conflict.</strong> Only PID is confirmed against onboard avoidance, so "tight polynomial tracking" and "onboard net" are mutually exclusive choices.</li>
+    </ul>
+    <p>Note also that <code>TRACKING_MARGIN</code> is a PID-lag measurement. Switching controllers invalidates it in the safe direction, but it must be re-measured before being spent.</p>
+    <dl class="slots">
+      <div><dt>What it takes</dt><dd>A YAML value, then a sim re-fly and a fresh lag measurement from <code>/tf</code>.</dd></div>
+      <div><dt>Live-show risk</dt><dd>Moderate: higher gains track better and punish bad setpoints harder.</dd></div>
+      <div><dt>plan_show</dt><dd>Indirect — it verifies against <code>MAX_SPEED</code>/<code>MAX_ACCEL</code>, which are described as the envelope where PID still tracks closely. Revisit them together.</dd></div>
+    </dl>
+  </div>
+
+  <div class="rec">
+    <div class="rec-head">
+      <h4>The published multi-robot planners: what each would actually cost</h4>
+      <span class="chip p">Research path</span>
+    </div>
+    <p>Crazyswarm2's maintainers state plainly that there is still no easy-to-use library for multi-robot trajectory generation, and point at two options: onboard avoidance, or offline pre-planning. Of the pre-planners with public code:</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Project</th><th>Hardware pedigree</th><th>What blocks a drop-in</th></tr></thead>
+      <tbody>
+        <tr><td class="k">IMRCLab/db-CBS</td><td>4 × CF 2.1 via Crazyswarm2, 3.5 × 3.5 × 2.75 m room</td><td>Its ROS 2 bridge streams <code>cmdFullState</code> at 10 Hz rather than uploading polynomials — radio-bound, not onboard. Planar only (z pinned to 0.5 m, 4-element state). Plans in 12–80 s. Needs motion primitives from an external link plus configs from a non-public package.</td></tr>
+        <tr><td class="k">whoenig/multi-robot-<br>trajectory-planning</td><td>The T-RO 2018 pipeline; 32 CF 2.0</td><td>Public release is <strong>2D only</strong>. Smoothing stage requires MATLAB plus a compiled libsvm. Tested on Ubuntu 18.04; no commits since Jan 2020.</td></tr>
+        <tr><td class="k">RuslanAgishev/<br>adaptive_swarm</td><td>3 Crazyflies, APF + RRT, MIT</td><td>ROS 1 Kinetic on <code>crazyflie_ros</code> and <code>vicon_bridge</code>. Planar, leader-follower, 0.3 m spacing. The planner maths ports; the integration does not.</td></tr>
+      </tbody>
+    </table></div>
+    <p>The common thread: all three plan in 2D, and the one validated on Crazyswarm2 abandons the onboard-polynomial path that makes your show robust to radio hiccups. <strong>Your existing architecture — fit polynomials offline, upload, trigger, verify on the ground — is the same one the 32-drone T-RO work flew.</strong> The gap is the anisotropic separation model and the transition planner, not the execution pipeline.</p>
+    <dl class="slots">
+      <div><dt>What it takes</dt><dd>Weeks, not days, for any of them — and a port in every case.</dd></div>
+      <div><dt>Live-show risk</dt><dd>db-CBS's streaming execution reintroduces the 1 s keepalive exposure across the whole show.</dd></div>
+      <div><dt>plan_show</dt><dd>All three are offline planners, so their output can be verified — but only db-CBS enforces dynamic limits at plan time.</dd></div>
+    </dl>
+  </div>
+
+  <div class="rec">
+    <div class="rec-head">
+      <h4>Peer-to-peer: not worth it on this rig</h4>
+      <span class="chip n">Custom firmware</span>
+    </div>
+    <p>For completeness, since decentralised control usually starts here. Crazyflie P2P is <strong>broadcast-only</strong> today (unicast is still in development), capped at 60 bytes per packet, and exposed only as a C API requiring a flashed firmware app — unreachable from <code>crazyflie_py</code> and invisible to <code>plan_show</code>. It also shares the 2.4 GHz channel with CRTP, so with a Crazyradio PA polling continuously you must rate-limit the link. With five drones and a working mocap feed, it buys nothing you do not already have; BVCA already consumes peer positions through the same mechanism without any of the work.</p>
+    <dl class="slots">
+      <div><dt>What it takes</dt><dd>Firmware app development and flashing all five drones.</dd></div>
+      <div><dt>Live-show risk</dt><dd>Contends for airtime with the pose stream your show depends on.</dd></div>
+      <div><dt>plan_show</dt><dd>Entirely outside it.</dd></div>
+    </dl>
+  </div>
+</section>
+
+<section>
+  <h2>Corrections worth carrying</h2>
+  <div class="col">
+    <p>Two claims that survive casual reading and did not survive verification against source.</p>
+  </div>
+  <div class="callout">
+    <p class="eyebrow">Correction</p>
+    <p><strong><code>uav_trajectories</code> is minimum-<em>jerk</em>, and its limits are soft.</strong> It is widely described as minimum-snap; <code>genTrajectory.cpp</code> sets <code>derivative_order::JERK</code> with <code>N = 8</code>, and upstream documentation is explicit that snap-continuity needs N ≥ 10. More consequentially, its <code>--v_max</code> / <code>--a_max</code> are <em>soft penalty terms</em> (<code>use_soft_constraints = true</code>, weight 100, tolerance 0.1), not enforced bounds — a generated trajectory can exceed them. If you ever adopt this toolchain, <code>plan_show</code> must still check the result independently. Which it does: your refuse-don't-warn design is the right one precisely because generators like this one warn at best.</p>
+  </div>
+  <div class="callout">
+    <p class="eyebrow">Correction</p>
+    <p><strong>Group masks are a firmware feature; single-packet delivery may not be.</strong> Up to 8 groups exist, and each drone stores its membership in <code>hlCommander.groupmask</code> (the older <code>COMMAND_SET_GROUP_MASK</code> path is deprecated). That much is firmware-verified. The claim that a group command therefore reaches its subset in one radio packet comes from Crazyswarm v1 docs and may not hold for the cflib backend you run — see the verification note in section 03.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Measured constants</h2>
+  <div class="col"><p>The numbers this report leans on, with where each comes from. Everything here is from primary documentation, firmware source, or hardware-validated papers.</p></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Quantity</th><th>Value</th><th>Source</th></tr></thead>
+    <tbody>
+      <tr><td>Downwash ellipsoid, vertical</td><td class="n">r<sub>z</sub> = 0.30 m</td><td>Measured, 2 × CF at 100 Hz — Preiss/Hönig et al.</td></tr>
+      <tr><td>Downwash ellipsoid, horizontal</td><td class="n">r<sub>x</sub> = r<sub>y</sub> = 0.12 m</td><td>Same</td></tr>
+      <tr><td>Firmware BVCA default radii</td><td class="n">0.3 / 0.3 / 0.9 m</td><td><code>collision_avoidance.c</code></td></tr>
+      <tr><td>Trajectory memory</td><td class="n">4096 bytes</td><td><code>TRAJECTORY_MEMORY_SIZE</code></td></tr>
+      <tr><td>Uncompressed piece size</td><td class="n">132 bytes</td><td>8 coeff × 4 axes + duration, all float32</td></tr>
+      <tr><td>Max uncompressed pieces</td><td class="n">31</td><td>Firmware comment, matches your <code>MAX_PIECES</code></td></tr>
+      <tr><td>Compressed workspace bound</td><td class="n">≈ 64 m per axis</td><td>2-byte mm fixed point</td></tr>
+      <tr><td>Keepalive timeout</td><td class="n">1000 ms</td><td>Supervisor; expiry = emergency stop, latching</td></tr>
+      <tr><td>Crazyradio packet ceiling</td><td class="n">1000 packets/s</td><td>Radio firmware limit</td></tr>
+      <tr><td>Drones per radio, practical</td><td class="n">~10–15</td><td>10 with logging stripped; ~15 at 100 Hz broadcast pose</td></tr>
+      <tr><td>LED ring refresh</td><td class="n">50 ms (20 Hz)</td><td>FreeRTOS timer in <code>ledring12.c</code></td></tr>
+      <tr><td>LED onboard timeline</td><td class="n">10 entries, 40 ms units</td><td><code>LEDRING_TIME_MEM_SIZE</code></td></tr>
+      <tr><td>PID loop rates</td><td class="n">500 Hz attitude / 100 Hz position</td><td>Mellinger and Lee run attitude at 250 Hz</td></tr>
+      <tr><td>Battery thresholds</td><td class="n">3.8 V warn / 3.7 V critical</td><td>Crazyswarm2 <code>crazyflies.yaml</code> defaults</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<footer>
+  <h4>Method and confidence</h4>
+  <p>Assembled from 225 extracted claims across 24 sources — 20 primary (Bitcraze firmware and library documentation, firmware source, Crazyswarm/Crazyswarm2 documentation, peer-reviewed papers with public code) and 4 forum threads, weighted accordingly. Claims were put through adversarial verification, but that phase completed only partially: the run exhausted its session budget twice, so a subset of claims carry a full 3-vote check and the rest rest on primary-source quotation alone. Both corrections above came from votes that did complete. Where sources disagreed — the cflib broadcast question — the disagreement is reported rather than resolved, and flagged for a check on the rig.</p>
+  <p>Rig-specific readings (piece counts, flight heights, margin values, module names) were taken from the working tree at <code>~/near-intern/swarm-shows</code>, not assumed.</p>
+  <h4 style="margin-top:24px">Sources</h4>
+  <div class="srcs">
+    <a href="https://www.bitcraze.io/documentation/repository/crazyflie-firmware/master/functional-areas/trajectory_formats/">bitcraze · trajectory formats</a>
+    <a href="https://github.com/bitcraze/crazyflie-firmware/blob/master/src/modules/src/crtp_commander_high_level.c">firmware · crtp_commander_high_level.c</a>
+    <a href="https://github.com/bitcraze/crazyflie-firmware/blob/master/src/modules/src/collision_avoidance.c">firmware · collision_avoidance.c</a>
+    <a href="https://github.com/bitcraze/crazyflie-firmware/blob/master/src/deck/drivers/src/ledring12.c">firmware · ledring12.c</a>
+    <a href="https://www.bitcraze.io/documentation/repository/crazyflie-firmware/master/functional-areas/supervisor/">bitcraze · supervisor</a>
+    <a href="https://www.bitcraze.io/documentation/repository/crazyflie-firmware/master/functional-areas/sensor-to-control/controllers/">bitcraze · controllers</a>
+    <a href="https://www.bitcraze.io/documentation/repository/crazyflie-firmware/master/functional-areas/p2p_api/">bitcraze · P2P API</a>
+    <a href="https://www.bitcraze.io/documentation/repository/crazyflie-firmware/master/functional-areas/memory-subsystem/MEM_TYPE_LED12/">bitcraze · MEM_TYPE_LED12</a>
+    <a href="https://www.bitcraze.io/documentation/repository/crazyflie-lib-python/master/api/cflib/crazyflie/mem/trajectory_memory/">cflib · trajectory memory</a>
+    <a href="https://www.bitcraze.io/documentation/system/positioning/mocap-positioning/">bitcraze · mocap positioning</a>
+    <a href="https://wiki.bitcraze.io/projects:crazyflie2:expansionboards:ledring">bitcraze wiki · LED ring deck</a>
+    <a href="https://imrclab.github.io/crazyswarm2/usage.html">crazyswarm2 · usage</a>
+    <a href="https://imrclab.github.io/crazyswarm2/howto.html">crazyswarm2 · howto</a>
+    <a href="https://crazyswarm.readthedocs.io/en/latest/api.html">crazyswarm v1 · API</a>
+    <a href="https://github.com/IMRCLab/crazyswarm2/discussions/619">crazyswarm2 · scaling discussion</a>
+    <a href="https://forum.bitcraze.io/viewtopic.php?t=2232">bitcraze forum · radio bandwidth</a>
+    <a href="https://arxiv.org/pdf/1704.04852">Downwash-Aware Trajectory Planning (IROS 2017)</a>
+    <a href="http://act.cs.brown.edu/publications/Hoenig_TRO2018.pdf">Trajectory Planning for Quadrotor Swarms (T-RO 2018)</a>
+    <a href="https://github.com/whoenig/uav_trajectories">whoenig/uav_trajectories</a>
+    <a href="https://github.com/whoenig/multi-robot-trajectory-planning">whoenig/multi-robot-trajectory-planning</a>
+    <a href="https://github.com/IMRCLab/db-CBS">IMRCLab/db-CBS</a>
+    <a href="https://github.com/RuslanAgishev/adaptive_swarm">RuslanAgishev/adaptive_swarm</a>
+    <a href="https://docs.optitrack.com/motive/rigid-body-tracking">OptiTrack Motive · rigid body tracking</a>
+    <a href="https://github.com/bitcraze/crazyflie-lib-python">cflib · compressed trajectory example</a>
+  </div>
+</footer>
+
+</div>
