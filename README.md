@@ -1,4 +1,4 @@
-# follow_drone
+# follow-drone
 
 A person-following drone that takes commands from a tablet and a wearable
 gesture band, and plans around obstacles with its own onboard perception.

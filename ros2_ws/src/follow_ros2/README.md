@@ -56,7 +56,7 @@ the ESP32 firmware's own `crc8()` and checks all three implementations agree.
 source /opt/ros/humble/setup.bash
 cd ros2_ws && colcon build --symlink-install
 source install/setup.bash
-export PYTHONPATH=/path/to/follow_drone:$PYTHONPATH   # so follow_core resolves
+export PYTHONPATH=/path/to/follow-drone:$PYTHONPATH   # so follow_core resolves
 
 ros2 launch follow_ros2 follow.launch.py
 ```

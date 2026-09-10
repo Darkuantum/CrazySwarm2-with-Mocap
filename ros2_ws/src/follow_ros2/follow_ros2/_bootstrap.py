@@ -72,6 +72,6 @@ def ensure_follow_core() -> None:
     except ImportError as exc:
         raise ImportError(
             "follow_core is not importable. Set FOLLOW_CORE_PATH to the "
-            "follow_drone repo root, pip install it, or add it to "
+            "follow-drone repo root, pip install it, or add it to "
             "PYTHONPATH. See ros2_ws/src/follow_ros2/README.md."
         ) from exc

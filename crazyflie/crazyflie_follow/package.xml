@@ -37,7 +37,7 @@
   <!-- NOTE: follow_core (the platform-independent control law this package
        adapts) is deliberately NOT declared here -- it is not a ROS/rosdep
        package, it is a plain Python package at
-       ~/near-intern/follow_drone/follow_core with no setup.py of its own.
+       ~/near-intern/follow-drone/follow_core with no setup.py of its own.
        See crazyflie_follow/__init__.py and HANDOVER.md for how it is made
        importable after this package is copied into another workspace. -->
 
