@@ -5,31 +5,31 @@ robots:
   cf1:
     enabled: true
     uri: radio://*/80/2M/E7E7E7E701
-    initial_position: [1.037, 0.7885, 0]
+    initial_position: [0.6678, 0.8248, 0]
     type: cf21  # see robot_types
 
   cf2:
     enabled: true
     uri: radio://0/80/2M/E7E7E7E702
-    initial_position: [1.146, -1.196, 0]
+    initial_position: [1.111, -0.6509, 0]
     type: cf21  # see robot_types
 
   cf4:
     enabled: true
     uri: radio://0/80/2M/E7E7E7E704
-    initial_position: [-0.9355, 0.7465, 0]
+    initial_position: [-1.203, 0.4346, 0]
     type: cf21  # see robot_types
 
   cf5:
     enabled: true
     uri: radio://0/80/2M/E7E7E7E705
-    initial_position: [-0.9562, -1.1519, 0]
+    initial_position: [-1.116, -0.6089, 0]
     type: cf21  # see robot_types
 
   cf8:
     enabled: true
     uri: radio://0/80/2M/E7E7E7E708
-    initial_position: [0.0807, -0.1098, 0]
+    initial_position: [-0.0545, -0.1400, 0]
     type: cf21  # see robot_types
 
 robot_types:
