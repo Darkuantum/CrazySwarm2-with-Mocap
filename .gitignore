@@ -8,6 +8,10 @@
 # ---- crash dumps ----
 core.*
 
+# ---- cflib TOC caches (regenerated on every cflib connect) ----
+/log[0-9]*.csv
+/params[0-9]*.csv
+
 # ---- python ----
 __pycache__/
 *.py[cod]

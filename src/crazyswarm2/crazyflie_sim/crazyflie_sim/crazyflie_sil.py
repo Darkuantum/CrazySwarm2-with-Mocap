@@ -7,6 +7,8 @@ Crazyflie Software-In-The-Loop Wrapper that uses the firmware Python bindings.
 """
 from __future__ import annotations
 
+import inspect as _inspect
+
 import cffirmware as firm
 import numpy as np
 import rowan
@@ -22,6 +24,13 @@ class TrajectoryPolynomialPiece:
         self.poly_z = poly_z
         self.poly_yaw = poly_yaw
         self.duration = duration
+
+
+try:
+    _PLAN_START_TRAJECTORY_ARITY = len(
+        _inspect.signature(firm.plan_start_trajectory).parameters)
+except (TypeError, ValueError):     # not introspectable -> assume the new one
+    _PLAN_START_TRAJECTORY_ARITY = 7
 
 
 def copy_svec(v):
@@ -181,12 +190,24 @@ class CrazyflieSIL:
             traj.t_begin = self.time_func()
             traj.timescale = timescale
             startfrom = self.cmdHl_pos
-            # Newer cffirmware bindings split `relative` into relative_position
-            # and relative_yaw and require the current position/yaw. Mirror the
-            # firmware's legacy start_trajectory handler: relative_yaw=False.
-            firm.plan_start_trajectory(
-                self.planner, traj, reverse, relative, False,
-                startfrom, self.cmdHl_yaw)
+            # Two cffirmware generations are in the wild and they disagree on
+            # this call. The older binding (planner.h:
+            # `plan_start_trajectory(p, traj, reversed, relative, start_from)`)
+            # takes one `relative` flag; the newer one splits it into
+            # relative_position / relative_yaw and also wants the current yaw.
+            # Calling the old one with the new argument list raises
+            # `TypeError: takes 5 positional arguments but 7 were given` from
+            # inside a service callback, which kills the whole sim server
+            # mid-show. The SWIG wrapper is a plain Python function, so its
+            # arity is introspectable -- pick the right call once at import.
+            # relative_yaw=False mirrors the firmware's legacy handler.
+            if _PLAN_START_TRAJECTORY_ARITY >= 7:
+                firm.plan_start_trajectory(
+                    self.planner, traj, reverse, relative, False,
+                    startfrom, self.cmdHl_yaw)
+            else:
+                firm.plan_start_trajectory(
+                    self.planner, traj, reverse, relative, startfrom)
 
     # def notifySetpointsStop(self, remainValidMillisecs=100):
     #     # No-op - the real Crazyflie prioritizes streaming setpoints over
