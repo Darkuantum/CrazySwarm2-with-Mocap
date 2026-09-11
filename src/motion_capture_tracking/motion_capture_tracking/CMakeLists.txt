@@ -24,12 +24,23 @@ add_subdirectory(deps/librigidbodytracker EXCLUDE_FROM_ALL)
 set(LIBMOTIONCAPTURE_BUILD_PYTHON_BINDINGS OFF CACHE INTERNAL "")
 set(LIBMOTIONCAPTURE_BUILD_EXAMPLE OFF CACHE INTERNAL "")
 
-set(LIBMOTIONCAPTURE_ENABLE_QUALISYS ON CACHE INTERNAL "")
+# Vendored change (CrazySwarm2-with-Mocap): this rig is OptiTrack-only
+# (motion_capture.yaml `type: "optitrack"`), so only that backend is built.
+# Upstream builds Qualisys/Vicon/VRPN/FZMotion too; each drags in a third-party
+# SDK that parses untrusted data straight off the network, and together they
+# accounted for ~70 of the ~77 compiler warnings on this workspace (including
+# an overlapping-buffer sprintf in the Qualisys SDK, type-punning that breaks
+# strict aliasing, and a truncating strncpy in VRPN). None of that code is
+# reachable with type: "optitrack" — the backends are #ifdef-guarded in
+# libmotioncapture/src/motioncapture.cpp — so not compiling it removes the
+# risk outright instead of hiding the warnings.
+# Re-enable a line below (and rebuild) if this rig ever moves to that vendor.
+set(LIBMOTIONCAPTURE_ENABLE_QUALISYS OFF CACHE INTERNAL "")
 set(LIBMOTIONCAPTURE_ENABLE_OPTITRACK ON CACHE INTERNAL "")
 set(LIBMOTIONCAPTURE_ENABLE_OPTITRACK_CLOSED_SOURCE OFF CACHE INTERNAL "")
-set(LIBMOTIONCAPTURE_ENABLE_VICON ON CACHE INTERNAL "")
-set(LIBMOTIONCAPTURE_ENABLE_VRPN ON CACHE INTERNAL "")
-set(LIBMOTIONCAPTURE_ENABLE_FZMOTION ON CACHE INTERNAL "")
+set(LIBMOTIONCAPTURE_ENABLE_VICON OFF CACHE INTERNAL "")
+set(LIBMOTIONCAPTURE_ENABLE_VRPN OFF CACHE INTERNAL "")
+set(LIBMOTIONCAPTURE_ENABLE_FZMOTION OFF CACHE INTERNAL "")
 
 # To use NOKOV, place their SDK in
 # motion_capture_tracking/deps/libmotioncapture/deps/nokov_sdk

@@ -68,7 +68,14 @@ void NatNetNode::get_node_params()
     remove_latency = get_parameter("remove_latency").as_bool();
     if (pub_individual_marker)
     {
-        declare_parameter<std::vector<std::string>>("object_names", {});
+        // NB: the default MUST be spelled out. A bare `{}` is ambiguous between
+        // declare_parameter(name, const ParameterT& default_value, ...) and
+        // declare_parameter(name, const ParameterDescriptor&, ...); gcc picks the
+        // descriptor overload, which declares the parameter with NO default and
+        // throws NoParameterOverrideProvided at runtime when `object_names` is not
+        // passed -- killing the node before the graceful "Unable to get the list of
+        // objects" shutdown below can ever run.
+        declare_parameter<std::vector<std::string>>("object_names", std::vector<std::string>{});
         object_names = get_parameter("object_names").as_string_array();
         if(object_names.size()>0)
         {

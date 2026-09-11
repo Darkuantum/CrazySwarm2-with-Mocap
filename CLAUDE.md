@@ -17,18 +17,22 @@ byte-for-byte copy of the rig. `setup.sh` only installs deps and builds — it d
 
 ```
 Motive/OptiTrack ──NatNet Multicast@50Hz──► motion_capture_tracking ──/poses──►
-  crazyflie_server ──Crazyradio #0 (radio://0/80/2M)──► cf1 cf2 cf3 cf10 cf14
+  crazyflie_server ──Crazyradio #0 (radio://0/80/2M)──► cf1 cf2 cf4 cf5 cf8
                     ▲ user scripts via crazyflie_py
-                      (cf6 = commented out, DEAD on radio 2026-08-04; cf5/cf11 = spares, commented out)
+                      (cf6 = DEAD on radio 2026-08-04, no longer in the yaml at all)
 Alt mocap path: Motive → natnet_ros2 → /<body>/pose → pose_bridge.py → /poses
 ```
 
-Fleet = **cf1 + cf2 + cf3 + cf10 + cf14 enabled** (five drones), all on **ONE
-Crazyradio dongle** (`radio://0/80/2M`, addresses `0xE7E7E7E701/02/03/10/14`).
-`cf6` is commented out — dead on radio 2026-08-04
-(silent on full channel/datarate sweeps at its own AND the factory address;
-needs a physical check; do NOT re-enable until `scan --address 0xE7E7E7E706`
-answers). `cf5`/`cf11` are disabled spares. The two-dongle cf1+cf11 setup is
+Fleet = **cf1 + cf2 + cf4 + cf5 + cf8 enabled** (five drones), all on **ONE
+Crazyradio dongle** (`radio://0/80/2M`, addresses `0xE7E7E7E701/02/04/05/08`).
+**`crazyflies.yaml` is the ground truth for the fleet — re-read it rather than
+trusting this paragraph**; the roster was last re-flown in `9e23d8a` (2026-09-10),
+which dropped cf3/cf10/cf12 and brought up cf4/cf8. (Note cf1's URI uses the
+`radio://*/…` wildcard dongle while the rest pin `radio://0/…`.) `cf6` is dead on
+radio 2026-08-04 (silent on full channel/datarate sweeps at its own AND the
+factory address; needs a physical check; do NOT re-add until
+`scan --address 0xE7E7E7E706` answers) and is no longer in the yaml.
+The two-dongle cf1+cf11 setup is
 historical; its channel/datarate rules (Gotchas below, `crazyflies.yaml`
 comments) still apply **when running two dongles** — read them before editing URIs.
 
@@ -45,6 +49,8 @@ src/                # VENDORED source (committed)
   natnet_ros2/        # OptiTrack driver (+ vendored NatNetSDK)
   motion_capture_tracking/  # VENDORED mocap driver: IMRCLab ros2@64d3af2 + NatNet-4.2 modeldef patch.
                             # NEVER apt-install it: apt 1.0.9 hard-codes IP 141.23.110.162 → no /poses (VENDORED.md)
+                            # OptiTrack is the ONLY backend built — Qualisys/Vicon/VRPN/FZMotion are
+                            # OFF in its CMakeLists.txt (see the compiler-warning gotcha below)
 scripts/
   setup.sh            # install_deps + build (source already present)
   install_deps.sh     # distro-aware apt + rosdep + pip
@@ -52,6 +58,7 @@ scripts/
   setup_sim_firmware.sh  # build cffirmware bindings (SIM only)
   led.sh              # set the Color LED deck via `ros2 param set` (server must be running)
   color_led_cflib.py  # LED test straight over cflib (STOP the server first — one radio owner)
+  sync_initial_positions.py  # rewrite crazyflies.yaml initial_position from live /poses
 pose_bridge.py      # natnet → /poses (NamedPoseArray @ 50 Hz)
 docs/               # RUNNING, MOCAP, TROUBLESHOOTING
 README.md           # single setup doc (no separate SETUP.md)
@@ -154,6 +161,26 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   default, so the preflight node dies at start with
   `Could not load the Qt platform plugin xcb`. `install_deps.sh` installs it
   (plus `python3-tk`).
+- **Compiler warnings: first-party code must stay clean; ~25 remain, all
+  third-party and reviewed.** A clean build used to emit ~77 warnings. Most came
+  from mocap backends this rig never uses, so they are no longer compiled at all
+  (see `motion_capture_tracking/CMakeLists.txt`) — that removed an overlapping-buffer
+  `sprintf` in the Qualisys SDK, strict-aliasing type-punning, and a truncating
+  `strncpy` in VRPN, none of it reachable with `type: "optitrack"`. The ~25 left are
+  ALL in `deps/librigidbodytracker` (+1 in `deps/libmotioncapture/src/optitrack.cpp`)
+  and were each checked: `-Wsign-compare` on loops bounded by drone counts,
+  `-Wreorder` whose initializers are all constants (so declaration-order init is
+  identical), and unused locals. **Benign — do not mass-patch upstream to silence
+  them, and do NOT add `-w`/`-Wno-*` to those targets**: this workspace patches
+  vendored deps (e.g. the NatNet timeout in `optitrack.cpp`), so blanket suppression
+  would hide OUR future mistakes in exactly the files we edit. Any NEW warning in
+  `src/natnet_ros2` or `src/crazyswarm2` is a real regression — fix it.
+- **`declare_parameter(name, {})` is a trap.** A bare `{}` is ambiguous between the
+  `(name, default_value, …)` and `(name, ParameterDescriptor, …)` overloads; gcc
+  picks the descriptor one, declaring the parameter with NO default so rclcpp throws
+  `NoParameterOverrideProvided` at runtime instead of using the empty default. It
+  warns at compile time but only as "would use explicit constructor". Always spell
+  the default out (`std::vector<std::string>{}`). Fixed in `natnet_ros2.cpp`.
 - **RViz and the preflight GUI are ON by default** in `launch.py`
   (`rviz:=false` / `preflight:=False` to disable). `foxglove:=True` by default
   but needs `ros-$ROS_DISTRO-foxglove-bridge` (installed by `install_deps.sh`);
@@ -202,7 +229,8 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   **silently** on the first enabled drone that doesn't answer radio — one
   unreachable drone kills the whole launch (no error, no `/all/*` services,
   needs SIGKILL). Go/no-go rule: **scan every enabled address before every
-  launch** (currently `0xE7E7E7E701/02/03/10/14`). cf6 died this way 2026-08-04 (silent on full channel/datarate
+  launch** (currently `0xE7E7E7E701/02/04/05/08` — confirm against the yaml).
+  cf6 died this way 2026-08-04 (silent on full channel/datarate
   sweeps at its own AND factory address — physical check needed).
 - **Two Crazyradios (when running two dongles — current rig is single-dongle):
   channels must be ≥2 apart at 2M.** A 2M channel is ~2 MHz wide, so adjacent
@@ -216,10 +244,16 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   created. Verify with a scan on the drone's address
   (`scan --address 0xE7E7E7E711` → `radio://*/90/1M/...`).
 - **`initial_position` comes from `/poses`, never `/cfX/pose`.** The onboard
-  estimate is seeded by the yaml — copying it back is circular. Procedure:
-  place drones → read x/y from `/poses`
-  (`ros2 topic echo /poses | grep -A5 -- '- name: cf1$'`) → edit
-  `crazyflies.yaml` → restart the server (yaml read only at launch). Enabled
+  estimate is seeded by the yaml — copying it back is circular. **Use
+  `scripts/sync_initial_positions.py`** (mocap up, server not yet started): it
+  samples `/poses`, matches each ENABLED drone to the rigid body of the same
+  name, and rewrites only the `initial_position` triples in place (comments
+  preserved). It REFUSES to write when a drone is not streamed, is moving
+  (>10 mm spread over the window), sits above 0.5 m, or when two drones are
+  <1 m apart — `--dry-run` to preview, `--force` to override, `--with-z` to
+  write the measured z instead of keeping the yaml's. Manual equivalent: read
+  x/y from `ros2 topic echo /poses | grep -A5 -- '- name: cf1$'` and edit by
+  hand. Either way, restart the server (yaml read only at launch). Enabled
   drones **≥1 m apart** (same-trajectory flight preserves start separation),
   and each drone at ITS OWN yaml position — wrong-corner placement = crossing
   goTo paths = the real collision of 2026-08-04.
@@ -252,8 +286,23 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   enabled fleet is `cf1, cf2, cf3, cf10, cf14` — fix `DRONES` before using the
   alt mocap path.
 - Keep scripts distro-parameterized (`ros-${ROS_DISTRO}-…`); never hardcode `jazzy`.
+- **NEVER push, merge or force anything to `upstream` (AI-DA-STC). FETCH ONLY.**
+  This is the shared team repo; changes reach it by **Pull Request from the
+  `Darkuantum` fork**, reviewed by a human — never by a direct push. The danger is
+  real, not theoretical: **another git user on this laptop holds credentials that
+  CAN push to AI-DA-STC**, so a stray `git push upstream` may silently succeed
+  instead of being rejected, landing unreviewed code straight on the team's `main`.
+  Guard in place: `upstream`'s push URL is set to the bogus
+  `DISABLED-open-a-PR-instead`, so `git push upstream …` dies locally before it
+  touches the network or any credential. **Do not "fix" that push URL** — it is
+  deliberate. It does NOT cover every route, so also never run:
+  `git push <any AI-DA-STC URL>`, `git push --all/--mirror` (iterates remotes),
+  or any push while a different `user`/credential helper is active. Fetching is
+  fine and expected: `git fetch upstream`, `git merge upstream/main`,
+  `git log upstream/main`.
 - `gh` is not installed here and pushes need the user's GitHub auth — don't attempt
   to push; report and let the user push. Remotes: `origin` =
-  `git@github.com:Darkuantum/CrazySwarm2-with-Mocap.git` (push here — SSH, keyed by
-  `core.sshCommand`), `upstream` = `https://github.com/AI-DA-STC/CrazySwarm2-with-Mocap.git`
-  (read-only; this repo is a real GitHub fork of it — never push there).
+  `git@github.com:Darkuantum/CrazySwarm2-with-Mocap.git` (the ONLY push target —
+  SSH, keyed by `core.sshCommand`), `upstream` =
+  `https://github.com/AI-DA-STC/CrazySwarm2-with-Mocap.git` (fetch-only; this repo
+  is a real GitHub fork of it).
