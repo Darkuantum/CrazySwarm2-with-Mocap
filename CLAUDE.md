@@ -141,7 +141,19 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
     `crazyflie-firmware/build` on `PYTHONPATH` instead (script appends to `~/.bashrc`).
 - **conda shadows system Python.** ROS 2 runs nodes with `/usr/bin/python3`. A conda
   base env (different Python) causes `No module named '_cffirmware'` and rclpy errors.
-  Deactivate conda for ROS work. (Intentionally NOT special-cased in the scripts.)
+  Deactivate conda for ROS work. `build.sh` now defends the BUILD only: if
+  `CONDA_PREFIX`/`VIRTUAL_ENV` is set or `python3` isn't `/usr/bin/python3` it strips
+  conda/venv from `PATH`+`PYTHONPATH` and passes `-DPython3_EXECUTABLE=/usr/bin/python3`.
+  Without that, rosidl generated the Python message bindings for the wrong interpreter
+  (`cpython-312` .so on a 22.04 box whose `ros2` runs 3.10) — C++ nodes fine, but every
+  `ros2 topic echo` of a workspace message died with
+  `The message type '.../NamedPoseArray' is invalid`. RUNTIME is still undefended:
+  deactivate conda before `ros2 launch`.
+- **Preflight GUI needs `libxcb-cursor0` on 22.04/jammy.** pip `cfclient` pulls
+  PyQt6 >= 6.5, whose xcb platform plugin needs it; jammy doesn't install it by
+  default, so the preflight node dies at start with
+  `Could not load the Qt platform plugin xcb`. `install_deps.sh` installs it
+  (plus `python3-tk`).
 - **RViz and the preflight GUI are ON by default** in `launch.py`
   (`rviz:=false` / `preflight:=False` to disable). `foxglove:=True` by default
   but needs `ros-$ROS_DISTRO-foxglove-bridge` (installed by `install_deps.sh`);
@@ -241,4 +253,7 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   alt mocap path.
 - Keep scripts distro-parameterized (`ros-${ROS_DISTRO}-…`); never hardcode `jazzy`.
 - `gh` is not installed here and pushes need the user's GitHub auth — don't attempt
-  to push; report and let the user push. Remote: `origin`=jeremyCHH (the only one).
+  to push; report and let the user push. Remotes: `origin` =
+  `git@github.com:Darkuantum/CrazySwarm2-with-Mocap.git` (push here — SSH, keyed by
+  `core.sshCommand`), `upstream` = `https://github.com/AI-DA-STC/CrazySwarm2-with-Mocap.git`
+  (read-only; this repo is a real GitHub fork of it — never push there).
