@@ -1,0 +1,161 @@
+mocap_diag.sh
+date        : 2026-09-07T16:04:17+08:00
+host        : as-mx16-jeremy  (as-mx16-jeremy)
+kernel      : 6.8.0-138-generic
+motive host : 192.168.9.124
+natnet      : cmd udp/1510   data mcast 239.255.42.99:1511
+output      : /home/jeremy/near-intern/swarm-shows/crazyflie_shows/scripts/mocap_diag_as-mx16-jeremy_20260907-160417.txt
+
+==================== 1. INTERFACES AND ADDRESSES  (interface_ip must be one of these) ====================
+$ ip -o -f inet addr show
+    1: lo    inet 127.0.0.1/8 scope host lo\       valid_lft forever preferred_lft forever
+    3: wlp131s0f0    inet 192.168.9.108/24 brd 192.168.9.255 scope global dynamic noprefixroute wlp131s0f0\       valid_lft 43197sec preferred_lft 43197sec
+    4: br-34ce2bc14a6b    inet 172.31.0.1/24 brd 172.31.0.255 scope global br-34ce2bc14a6b\       valid_lft forever preferred_lft forever
+    5: docker0    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0\       valid_lft forever preferred_lft forever
+
+    -- MAC addresses (a DHCP static reservation is bound to the MAC) --
+    br-34ce2bc14a6b mac=02:83:66:9c:39:2a  state=down   ipv4=172.31.0.1/24
+    docker0        mac=66:75:c7:76:4e:6b  state=down   ipv4=172.17.0.1/16
+    enp130s0       mac=d4:93:90:5d:42:2a  state=down   ipv4=none
+    wlp131s0f0     mac=24:eb:16:37:e8:da  state=up     ipv4=192.168.9.108/24
+
+    -- current Wi-Fi association --
+$ iw dev 2>/dev/null | grep -E 'Interface|ssid' || nmcli -t -f DEVICE,STATE,CONNECTION dev 2>/dev/null
+    wlp131s0f0:connected:motive
+    br-34ce2bc14a6b:connected (externally):br-34ce2bc14a6b
+    docker0:connected (externally):docker0
+    p2p-dev-wlp131s0f0:disconnected:
+    enp130s0:unavailable:
+    lo:unmanaged:
+
+
+==================== 2. ROUTING  (decides the join interface when interface_ip is 0.0.0.0) ====================
+$ ip route show
+    default via 192.168.9.1 dev wlp131s0f0 proto dhcp metric 20600 
+    169.254.0.0/16 dev wlp131s0f0 scope link metric 1000 
+    172.17.0.0/16 dev docker0 proto kernel scope link src 172.17.0.1 linkdown 
+    172.31.0.0/24 dev br-34ce2bc14a6b proto kernel scope link src 172.31.0.1 linkdown 
+    192.168.9.0/24 dev wlp131s0f0 proto kernel scope link src 192.168.9.108 metric 600 
+
+    -- which source address/interface the kernel picks --
+$ ip route get 192.168.9.124
+    192.168.9.124 dev wlp131s0f0 src 192.168.9.108 uid 1000 
+        cache 
+
+$ ip route get 239.255.42.99
+    multicast 239.255.42.99 dev wlp131s0f0 src 192.168.9.108 rt_offload_failed uid 1000 
+        cache <mc> 
+
+    NOTE: the interface in 'ip route get 239.255.42.99' is the one a 0.0.0.0
+          join would land on. If that is not the motive interface, the data
+          socket subscribes on the wrong NIC and /poses stays silent.
+
+==================== 3. REACHABILITY OF THE MOTIVE PC  (necessary, NOT sufficient) ====================
+$ ping -c 3 -W 2 192.168.9.124
+    PING 192.168.9.124 (192.168.9.124) 56(84) bytes of data.
+    64 bytes from 192.168.9.124: icmp_seq=1 ttl=128 time=5.00 ms
+    64 bytes from 192.168.9.124: icmp_seq=2 ttl=128 time=2.53 ms
+    64 bytes from 192.168.9.124: icmp_seq=3 ttl=128 time=15.9 ms
+    
+    --- 192.168.9.124 ping statistics ---
+    3 packets transmitted, 3 received, 0% packet loss, time 2003ms
+    rtt min/avg/max/mdev = 2.532/7.810/15.903/5.810 ms
+
+$ arp -n 2>/dev/null | head -20 || ip neigh show
+    192.168.9.218 dev wlp131s0f0 lladdr d4:93:90:5d:42:2c REACHABLE
+    192.168.9.113 dev wlp131s0f0 lladdr d4:93:90:5d:42:2c REACHABLE
+    192.168.9.124 dev wlp131s0f0 lladdr 58:04:4f:b2:65:bc REACHABLE
+    192.168.9.1 dev wlp131s0f0 lladdr 94:83:c4:ab:5d:a3 REACHABLE
+
+    NOTE: ping only exercises the unicast path. It succeeds even when the
+          multicast data socket is joined on the wrong interface.
+
+==================== 4. STALE LISTENERS ON THE DATA PORT ====================
+$ ss -uanp 2>/dev/null | grep -E ":1511|:1510" || echo '(none)'
+    (none)
+
+    NOTE: two sockets on :1511 means a leftover process is competing
+          for the stream. Kill it before trusting anything below.
+
+==================== 5. CURRENT IGMP MEMBERSHIPS ====================
+$ cat /proc/net/igmp
+    Idx	Device    : Count Querier	Group    Users Timer	Reporter
+    1	lo        :     3      V3
+    				0100FFEF     1 0:00000000		0
+    				FB0000E0     1 0:00000000		0
+    				010000E0     1 0:00000000		0
+    2	enp130s0  :     1      V3
+    				010000E0     1 0:00000000		0
+    3	wlp131s0f0:     4      V3
+    				FB0000E0     1 0:00000000		0
+    				0100FFEF     1 0:00000000		1
+    				1266FFEF     1 0:00000000		1
+    				010000E0     1 0:00000000		0
+    4	br-34ce2bc14a6b:     3      V3
+    				FB0000E0     1 0:00000000		0
+    				010000E0     1 0:00000000		0
+    				6A0000E0     1 0:00000000		0
+    5	docker0   :     3      V3
+    				FB0000E0     1 0:00000000		0
+    				010000E0     1 0:00000000		0
+    				6A0000E0     1 0:00000000		0
+
+    (239.255.42.99 reversed-hex is 632AFFEF; look for it above)
+
+==================== 6. NATNET COMMAND SOCKET  (unicast udp/1510 -> 192.168.9.124) ====================
+    sent NAT_CONNECT (268 bytes) to 192.168.9.124:1510
+    REPLY from ('192.168.9.124', 1510): 283 bytes, message_id=1 len=279
+    VERDICT: command socket OK -- Motive is up and answering unicast.
+    sent NAT_DISCONNECT (left no stale client registration).
+
+==================== 7. MULTICAST DATA STREAM, PER CANDIDATE INTERFACE  (the decisive test) ====================
+    Joins 239.255.42.99:1511 with IP_ADD_MEMBERSHIP pinned to each local
+    address in turn and counts frames for 6s. The address that
+    receives data is exactly what interface_ip must be set to.
+
+    wlp131s0f0             192.168.9.108    *** 253 frames (916619 B) in 6s ~42 Hz, from 192.168.9.124  <== USE THIS
+    <kernel default route> 0.0.0.0          *** 191 frames (691993 B) in 6s ~32 Hz, from 192.168.9.124  <== USE THIS
+    
+    READING THIS:
+     * exactly one address receiving  -> set interface_ip to it.
+     * '<kernel default route>' 0.0.0.0 receives too -> the default route already
+       points at the motive NIC; interface_ip is belt-and-braces, not the fix.
+     * 0.0.0.0 gets 0 while a named address gets data -> THIS is the silent
+       starve: the default route is stealing the join. interface_ip fixes it.
+     * nothing anywhere, but section 6 said the command socket is OK -> Motive
+       is streaming UNICAST, not multicast. Fix it in Motive's streaming pane.
+     * JOIN FAILED ENODEV -> that address is not on this machine right now.
+
+==================== 8. THE REAL NODE, UNBUFFERED  (its stdout is normally lost to block buffering) ====================
+    config: /home/jeremy/near-intern/swarm-shows/crazyflie_shows/config/motion_capture.yaml
+    -- effective settings --
+      4:    type:  "optitrack" #"optitrack_closed_source"
+      6:    hostname: "192.168.9.124" #"192.168.8.63"
+      14:    interface_ip: "192.168.9.109"
+
+    REMINDER: type MUST be "optitrack". The apt build of
+    ros-humble-motion-capture-tracking has NO optitrack_closed_source
+    backend compiled in -- that value aborts instantly with
+    'Unknown motion capture type!'.
+
+    running /opt/ros/humble/lib/motion_capture_tracking/motion_capture_tracking_node for 10s (stdbuf -oL, so it actually prints):
+      logClouds=0
+      terminate called after throwing an instance of 'boost::wrapexcept<boost::system::system_error>'
+        what():  set_option: No such device
+      timeout: the monitored command dumped core
+      ./mocap_diag.sh: line 249: 18825 Aborted                 stdbuf -oL -eL timeout 10 "$NODE" --ros-args -r __node:=motion_capture_tracking --params-file "$TMP"
+    exit status: 134
+    -> SIGABRT. Read the 'what():' line above: 'Unknown motion capture
+       type!' = bad type string; 'Invalid argument' = hostname is not a
+       literal dotted-quad IP (this backend does NOT resolve names).
+
+==================== 9. /poses UNDER THE FULL STACK  (optional, needs the stack already running) ====================
+    ros2 pkg prefix crazyflie -> /home/jeremy/CrazySwarm2-with-Mocap/install/crazyflie
+    -- topic hz /poses (8s) --
+      WARNING: topic [/poses] does not appear to be published yet
+    -- publisher info --
+      Unknown topic '/poses'
+
+==================== DONE ====================
+Wrote: /home/jeremy/near-intern/swarm-shows/crazyflie_shows/scripts/mocap_diag_as-mx16-jeremy_20260907-160417.txt
+Reconnect to the internet and hand this file over.
