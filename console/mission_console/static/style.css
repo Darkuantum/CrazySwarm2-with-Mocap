@@ -1,0 +1,229 @@
+/* Mission console -- dark, high-contrast, built to be read across a lab bench. */
+:root{
+  --bg:#0e1116; --panel:#161b22; --panel2:#1b2230; --line:#2a3140;
+  --fg:#e6edf3; --muted:#9aa7b4; --accent:#4a9eff;
+  --ok:#2ea043; --warn:#d29922; --fail:#f05650; --blocked:#5a6472; --unknown:#7d8794;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+
+/* UI scale. This rig's laptop is a 2560x1600 14" panel (~188 DPI) with GNOME
+   fractional scaling on, so the desktop already multiplies everything and the
+   console reads as "zoomed in". Browser zoom fixes it, but it is per-site and
+   easy to lose; this control is remembered by the console itself.
+   `zoom` on :root scales layout the way browser zoom does -- unlike a font-size
+   change it also takes padding and the SVG health graph with it. Default 1, so
+   nothing moves until you ask it to. */
+:root{zoom:var(--ui-zoom,1)}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  display:flex;flex-direction:column}
+
+/* ---------------------------------------------------------------- topbar */
+.topbar{display:flex;align-items:center;gap:16px;padding:10px 16px;
+  background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:12px;min-width:280px}
+.title{font-weight:650;letter-spacing:.2px}
+.headline{font-size:12.5px;color:var(--muted)}
+.dot{width:14px;height:14px;border-radius:50%;background:var(--unknown);flex:none;
+  box-shadow:0 0 0 4px rgba(255,255,255,.04)}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)}
+.dot.fail{background:var(--fail);animation:pulse 1.6s infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 8px rgba(240,86,80,.18)}}
+.pills{display:flex;gap:8px;flex:1;flex-wrap:wrap}
+.pill{background:var(--panel2);border:1px solid var(--line);border-radius:999px;
+  padding:3px 11px;font-size:12px;color:var(--muted);white-space:nowrap}
+.pill b{color:var(--fg);font-weight:600}
+.pill.ok b{color:var(--ok)} .pill.warn b{color:var(--warn)} .pill.fail b{color:var(--fail)}
+.topactions{display:flex;gap:8px}
+
+/* ----------------------------------------------------------------- bits */
+.btn{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
+  border-radius:7px;padding:7px 13px;font-size:13px;cursor:pointer;font-family:inherit}
+.btn:hover{border-color:var(--accent)}
+.btn.ghost{background:transparent}
+.btn.primary{background:#1f6feb;border-color:#1f6feb}
+.btn.danger{background:#8d2b26;border-color:#a5352f}
+.btn.estop{background:#b3261e;border-color:#e0443b;font-weight:700;letter-spacing:.5px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.sm{padding:3px 9px;font-size:12px}
+a.btn{text-decoration:none;display:inline-block}
+.hint{color:var(--muted);font-size:12px}
+.badge{background:var(--accent);color:#04121f;border-radius:999px;padding:0 6px;
+  font-size:11px;font-weight:700;margin-left:4px}
+.badge:empty{display:none}
+
+/* ----------------------------------------------------------------- tabs */
+.tabs{display:flex;gap:2px;padding:0 12px;background:var(--panel);
+  border-bottom:1px solid var(--line)}
+.tabs button{background:none;border:0;border-bottom:2px solid transparent;color:var(--muted);
+  padding:9px 14px;font-size:13.5px;cursor:pointer;font-family:inherit}
+.tabs button.active{color:var(--fg);border-bottom-color:var(--accent)}
+main{flex:1;min-height:0;overflow:hidden}
+.tab{display:none;height:100%;overflow:auto}
+.tab.active{display:block}
+.split{display:flex;height:100%;min-height:0}
+
+/* --------------------------------------------------------------- health */
+.graphwrap{flex:1;min-width:0;overflow:auto;padding:12px 16px}
+.toolbar{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+#graph svg{display:block}
+.gnode rect{stroke-width:1.5px;rx:8}
+.gnode .lbl{font-size:12px;font-weight:600;fill:var(--fg)}
+.gnode .sub{font-size:11px;fill:var(--muted)}
+.gnode{cursor:pointer}
+.gnode:hover rect{stroke:var(--accent)}
+.gnode.sel rect{stroke:var(--accent);stroke-width:2.5px}
+.gedge{fill:none;stroke:#39414f;stroke-width:1.6px}
+.gedge.dead{stroke-dasharray:4 4;stroke:#333a46}
+.glabel{font-size:11px;fill:var(--muted);text-transform:uppercase;letter-spacing:.8px}
+.legend{display:flex;gap:14px;align-items:center;margin-top:12px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.sw{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:-1px}
+.sw.ok{background:var(--ok)} .sw.warn{background:var(--warn)} .sw.fail{background:var(--fail)}
+.sw.blocked{background:var(--blocked)} .sw.unknown{background:var(--unknown)}
+.detail{width:420px;flex:none;border-left:1px solid var(--line);background:var(--panel);
+  padding:16px;overflow:auto}
+.detail h2{margin:0 0 2px;font-size:16px}
+.detail .why{color:var(--muted);font-size:12.5px;margin-bottom:12px}
+.detail .empty{color:var(--muted);font-size:13px}
+.statusline{display:inline-block;padding:4px 10px;border-radius:6px;font-size:12.5px;
+  font-weight:600;margin-bottom:12px}
+.statusline.ok{background:rgba(46,160,67,.15);color:#7ee787}
+.statusline.warn{background:rgba(210,153,34,.15);color:#e3b341}
+.statusline.fail{background:rgba(240,86,80,.15);color:#ff9c93}
+.statusline.blocked,.statusline.unknown,.statusline.skip{background:rgba(125,135,148,.15);color:#adb6c2}
+.block{margin:12px 0}
+.block h3{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);
+  margin:0 0 5px}
+pre.out,pre.term,pre.diff{background:#0b0e13;border:1px solid var(--line);border-radius:7px;
+  padding:9px 11px;font-family:var(--mono);font-size:11.5px;line-height:1.55;
+  overflow:auto;white-space:pre-wrap;word-break:break-word;margin:0}
+pre.out{max-height:220px}
+.cmdline{font-family:var(--mono);font-size:11.5px;background:#0b0e13;border:1px solid var(--line);
+  border-radius:7px;padding:8px 10px;color:#a5d6ff;white-space:pre-wrap;word-break:break-all}
+.fix{border-left:3px solid var(--accent);background:rgba(74,158,255,.07);padding:8px 11px;
+  border-radius:0 6px 6px 0;font-size:13px;white-space:pre-wrap}
+.finding{border-left:3px solid var(--fail);background:rgba(240,86,80,.07);padding:8px 11px;
+  border-radius:0 6px 6px 0;margin-bottom:8px}
+.finding.warn{border-color:var(--warn);background:rgba(210,153,34,.07)}
+.finding.info{border-color:var(--blocked);background:rgba(125,135,148,.07)}
+.finding b{display:block;margin-bottom:3px}
+.finding small{color:var(--muted);white-space:pre-wrap;display:block}
+
+/* -------------------------------------------------------------- control */
+.grouplist,.proclist{width:210px;flex:none;border-right:1px solid var(--line);
+  background:var(--panel);padding:10px 0;overflow:auto}
+.grouplist button,.proclist button{display:block;width:100%;text-align:left;background:none;
+  border:0;color:var(--muted);padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit;
+  border-left:3px solid transparent}
+.grouplist button.active,.proclist button.active{color:var(--fg);background:var(--panel2);
+  border-left-color:var(--accent)}
+.actions{flex:1;min-width:0;overflow:auto;padding:16px;display:grid;gap:14px;
+  grid-template-columns:repeat(auto-fill,minmax(430px,1fr));align-content:start}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.card h3{margin:0 0 6px;font-size:14.5px;display:flex;align-items:center;gap:8px}
+.card .why{color:var(--muted);font-size:12.5px;margin-bottom:10px}
+.tag{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;padding:2px 7px;
+  border-radius:999px;background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
+.tag.flight{background:rgba(210,153,34,.15);color:#e3b341;border-color:#6b5313}
+.tag.estop{background:rgba(240,86,80,.15);color:#ff9c93;border-color:#7d2b27}
+.tag.live{background:rgba(46,160,67,.18);color:#7ee787;border-color:#1c5c2a}
+.params{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:10px}
+.params label{font-size:11px;color:var(--muted);display:block;margin-bottom:2px}
+.params input,.params select{width:100%;background:#0b0e13;border:1px solid var(--line);
+  color:var(--fg);border-radius:6px;padding:5px 7px;font-size:12.5px;font-family:inherit}
+.cardfoot{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.teaches{margin-top:9px;font-size:12.5px;color:var(--muted);border-top:1px dashed var(--line);
+  padding-top:8px;white-space:pre-wrap}
+.teaches summary{cursor:pointer;color:var(--accent);font-size:12px;list-style:none}
+.warnline{font-size:12px;color:#e3b341;margin-top:8px}
+
+/* --------------------------------------------------------------- config */
+.configpane{flex:1;min-width:0;overflow:auto;padding:16px}
+.configpane h2{margin:0 0 4px;font-size:17px}
+.configpane .blurb{color:var(--muted);font-size:12.5px;margin-bottom:14px}
+table.fleet{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:13px}
+table.fleet th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.6px;
+  color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+table.fleet td{padding:5px 8px;border-bottom:1px solid #1e2431}
+table.fleet input[type=text],table.fleet input[type=number],table.fleet select{
+  background:#0b0e13;border:1px solid var(--line);color:var(--fg);border-radius:5px;
+  padding:4px 6px;font-size:12.5px;font-family:var(--mono);width:100%}
+table.fleet td.num input{width:78px}
+table.fleet tr.off{opacity:.45}
+textarea.raw{width:100%;height:min(58vh,640px);background:#0b0e13;color:var(--fg);
+  border:1px solid var(--line);border-radius:8px;padding:11px;font-family:var(--mono);
+  font-size:12.5px;line-height:1.55;resize:vertical}
+pre.diff{max-height:300px;margin-top:10px}
+pre.diff .add{color:#7ee787} pre.diff .del{color:#ff9c93} pre.diff .hd{color:var(--accent)}
+
+/* ------------------------------------------------------------ processes */
+.output{flex:1;min-width:0;display:flex;flex-direction:column}
+.outhead{padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel);
+  display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+pre.term{flex:1;margin:0;border:0;border-radius:0;max-height:none;font-size:11.5px}
+.outfoot{display:flex;gap:8px;padding:8px 12px;border-top:1px solid var(--line);
+  background:var(--panel);align-items:center}
+.outfoot input{flex:1;background:#0b0e13;border:1px solid var(--line);color:var(--fg);
+  border-radius:6px;padding:6px 9px;font-family:var(--mono);font-size:12px}
+.chk{font-size:12px;color:var(--muted);display:flex;gap:5px;align-items:center}
+.proclist .st{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px}
+.st.running{color:var(--ok)} .st.failed{color:var(--fail)} .st.done{color:var(--muted)}
+.st.stopped{color:var(--warn)} .st.stopping{color:var(--warn)}
+.term .l-err{color:#ff9c93} .term .l-warn{color:#e3b341} .term .l-cmd{color:#a5d6ff}
+.term .l-meta{color:var(--muted)}
+
+/* ------------------------------------------------------------------ log */
+.logpane{padding:16px;overflow:auto;height:100%}
+.logrow{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #1e2431}
+.logrow time{color:var(--muted);font-family:var(--mono);font-size:11.5px;flex:none;padding-top:2px}
+.logrow .c{flex:1;min-width:0}
+.logrow .lab{font-size:12px;color:var(--muted);margin-bottom:3px}
+
+/* ---------------------------------------------------------------- modal */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;
+  justify-content:center;z-index:50}
+.modal[hidden]{display:none}   /* `hidden` loses to display:flex without this */
+.modalbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  width:min(620px,92vw);max-height:86vh;display:flex;flex-direction:column}
+.modalhead{padding:14px 18px;font-weight:650;border-bottom:1px solid var(--line)}
+.modalbody{padding:16px 18px;overflow:auto}
+.modalfoot{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:8px;
+  justify-content:flex-end}
+#toasts{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:60}
+.toast{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:8px;padding:10px 14px;font-size:13px;max-width:420px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast.err{border-left-color:var(--fail)}
+.toast.ok{border-left-color:var(--ok)}
+
+@media (max-width:900px){
+  .split{flex-direction:column}
+  .detail{width:auto;border-left:0;border-top:1px solid var(--line)}
+  .grouplist,.proclist{width:auto;display:flex;overflow-x:auto;border-right:0;
+    border-bottom:1px solid var(--line);padding:0}
+  .grouplist button,.proclist button{white-space:nowrap;border-left:0;border-bottom:3px solid transparent}
+  .grouplist button.active,.proclist button.active{border-left:0;border-bottom-color:var(--accent)}
+  .actions{grid-template-columns:1fr}
+}
+
+
+/* ------------------------------------------------------------- dashboard */
+.zoomctl{display:inline-flex;gap:4px;align-items:center;margin-right:6px}
+.dashwrap{flex:1;min-width:0;overflow:auto;padding:14px 16px}
+.dashstrip{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px}
+.dcell{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:7px 13px;min-width:104px}
+.dcell .dk{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted)}
+.dcell .dv{font-size:14px;font-weight:600;margin-top:2px}
+.dcell.ok .dv{color:var(--ok)}
+.dcell.bad .dv{color:var(--fail)}
+.dcell.warn .dv{color:var(--warn)}
+.dcell.idle .dv{color:var(--muted)}
+.dashhint{color:var(--muted);font-size:12.5px;margin-bottom:14px;max-width:80ch}
+.dashgrid{display:flex;flex-direction:column;gap:18px}
+.dashrow h2{margin:0 0 8px;font-size:12px;text-transform:uppercase;
+  letter-spacing:.9px;color:var(--muted);border-bottom:1px solid var(--line);
+  padding-bottom:6px}
+.dashcards{display:grid;gap:12px;padding:0;overflow:visible;
+  grid-template-columns:repeat(auto-fill,minmax(310px,1fr))}

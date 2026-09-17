@@ -1,0 +1,3 @@
+# Timestamped copies of config files the console has written. Local safety net,
+# not repo content -- the real config lives in src/.../config/.
+backups/

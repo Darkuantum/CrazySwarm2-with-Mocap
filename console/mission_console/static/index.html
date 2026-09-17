@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CrazySwarm2 mission console</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="dot" id="worst-dot"></span>
+    <div>
+      <div class="title">CrazySwarm2 mission console</div>
+      <div class="headline" id="headline">checking the system...</div>
+    </div>
+  </div>
+  <div class="pills" id="pills"></div>
+  <div class="topactions">
+    <span class="zoomctl" title="UI scale - this display is HiDPI, so the desktop may already be scaling everything up">
+      <button class="btn ghost sm" id="btn-zoom-out">A&minus;</button>
+      <button class="btn ghost sm" id="btn-zoom-reset">100%</button>
+      <button class="btn ghost sm" id="btn-zoom-in">A+</button>
+    </span>
+    <button class="btn ghost" id="btn-refresh" title="Re-run every health probe">Re-check</button>
+    <button class="btn estop" id="btn-estop" title="ros2 service call /all/emergency std_srvs/srv/Empty {}">E-STOP</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="dash" class="active">Dashboard</button>
+  <button data-tab="health">System health</button>
+  <button data-tab="control">Control</button>
+  <button data-tab="config">Config</button>
+  <button data-tab="procs">Processes <span class="badge" id="proc-badge"></span></button>
+  <button data-tab="log">Command log</button>
+</nav>
+
+<main>
+  <!-- ---------------------------------------------------- dashboard -->
+  <section id="tab-dash" class="tab active">
+    <div class="dashwrap">
+      <div class="dashstrip" id="dashstrip"></div>
+      <div class="dashhint">
+        Everything below in the order you actually do it. Each card is the same
+        action as the Control tab, with the same argv &mdash; this pane just saves
+        the tab hop. Cards grey out when their precondition is not met: the radio
+        checks need the server <b>stopped</b>, the flight cards need it
+        <b>running</b>.
+      </div>
+      <div class="dashgrid" id="dashgrid"></div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------- health -->
+  <section id="tab-health" class="tab">
+    <div class="split">
+      <div class="graphwrap">
+        <div class="toolbar">
+          <button class="btn" id="btn-scan">Scan the fleet</button>
+          <span class="hint">The go/no-go check before every launch. Needs the radio free (no server running).</span>
+        </div>
+        <div id="graph"></div>
+        <div class="legend">
+          <span><i class="sw ok"></i>pass</span>
+          <span><i class="sw warn"></i>warning</span>
+          <span><i class="sw fail"></i>failing</span>
+          <span><i class="sw blocked"></i>blocked upstream</span>
+          <span><i class="sw unknown"></i>not checked</span>
+          <span class="hint">Click any box for the evidence, the command behind it, and the fix.</span>
+        </div>
+      </div>
+      <aside class="detail" id="node-detail">
+        <div class="empty">Pick a box in the diagram.<br><br>
+          The diagram follows the real data path: workspace &rarr; config &rarr;
+          radio and mocap &rarr; <code>/poses</code> &rarr; <code>crazyflie_server</code>
+          &rarr; the drones. A box turns red where the chain actually breaks, so you do
+          not have to read the launch log to find it.</div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------ control -->
+  <section id="tab-control" class="tab">
+    <div class="split">
+      <nav class="grouplist" id="grouplist"></nav>
+      <div class="actions" id="actions"></div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------- config -->
+  <section id="tab-config" class="tab">
+    <div class="split">
+      <nav class="grouplist" id="filelist"></nav>
+      <div class="configpane" id="configpane"></div>
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------- processes -->
+  <section id="tab-procs" class="tab">
+    <div class="split">
+      <nav class="proclist" id="proclist"></nav>
+      <div class="output">
+        <div class="outhead" id="outhead"></div>
+        <pre id="outbody" class="term"></pre>
+        <div class="outfoot">
+          <input id="stdin" placeholder="send a line to this process (e.g. a colour key for led.sh, or a sudo password)">
+          <button class="btn ghost" id="btn-send">Send</button>
+          <label class="chk"><input type="checkbox" id="autoscroll" checked> follow</label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ----------------------------------------------------------- log -->
+  <section id="tab-log" class="tab">
+    <div class="logpane">
+      <div class="toolbar">
+        <a class="btn ghost" href="/api/history.sh" download="mission-console-session.sh">Download as a shell script</a>
+        <span class="hint">Every command this console ran, in order. Copy any line into a
+          sourced terminal and it does exactly the same thing.</span>
+      </div>
+      <div id="history"></div>
+    </div>
+  </section>
+</main>
+
+<div class="modal" id="modal" hidden>
+  <div class="modalbox">
+    <div class="modalhead" id="modal-title"></div>
+    <div class="modalbody" id="modal-body"></div>
+    <div class="modalfoot">
+      <button class="btn ghost" id="modal-cancel">Cancel</button>
+      <button class="btn danger" id="modal-ok">Run it</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

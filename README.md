@@ -23,8 +23,9 @@ dependencies and builds it on **Ubuntu 22.04 + ROS 2 Humble** or
 5. [Preflight checks](#5-preflight-checks)
 6. [Flying](#6-flying)
 7. [Color LED control](#7-color-led-control)
-8. [Repo layout](#8-repo-layout)
-9. [Documentation and troubleshooting](#9-documentation-and-troubleshooting)
+8. [Mission console — optional GUI](#8-mission-console--optional-gui)
+9. [Repo layout](#9-repo-layout)
+10. [Documentation and troubleshooting](#10-documentation-and-troubleshooting)
 
 ## 1. Overview and architecture
 
@@ -287,6 +288,10 @@ ros2 launch crazyflie launch.py
 # run the preflight checklist in the GUI (banner clear, mocap ~50 Hz,
 # err.yaw ≈ 0°, battery green) — see docs/RUNNING.md → Preflight GUI
 ```
+
+> **Rather not use the terminal?** `./console/run.sh` does this launch, the
+> pre-launch radio scan and the checks below from a browser, showing each `ros2`
+> command as it runs — see [section 8](#8-mission-console--optional-gui).
 
 ### What to expect after launch
 
@@ -568,7 +573,43 @@ a dedicated white channel). **Hardware only** — no effect with `backend:=sim`.
 Full detail (raw `ros2 param set` form, decimal color values, prerequisites):
 [docs/RUNNING.md Section G](docs/RUNNING.md#g-color-led-control-color-led-deck).
 
-## 8. Repo layout
+## 8. Mission console — optional GUI
+
+Everything in sections 4–7 can also be driven from a browser:
+
+```bash
+./console/run.sh          # → http://localhost:8077
+```
+
+It sources ROS and this workspace for you, then runs the **same `ros2` commands**
+as child processes — and shows each one before it runs, so you can copy it into a
+terminal instead of memorising it. Five tabs:
+
+- **System health** — a diagram of the real data path (workspace → config →
+  radio + Motive → `/poses` → `crazyflie_server` → each drone). Each box is its
+  own probe; click one for what was measured, the command behind it and the fix.
+  It names the silent failures this rig actually hits — a leftover socket on UDP
+  1511, the apt mocap driver shadowing the vendored one, the server blocked
+  forever mid-connect with no `/all/*` services, a URI datarate mismatch, a conda
+  python — instead of leaving them for you to find in the launch log.
+- **Control** — the launch (every argument), the preflight scans and checks, the
+  flight examples, `/all/*` service calls, firmware params, LED, and recovery
+  actions. Anything that moves a drone confirms first; E-STOP is always in the
+  header.
+- **Config** — edit `crazyflies.yaml` as a table (enable/disable, URI,
+  `initial_position`, type, add/remove a drone) or any config file as raw text.
+  Writes are parse-checked, diffed, backed up, and **keep the comments**.
+- **Processes** — live output of everything it started, with stop/kill.
+- **Command log** — every command of the session, downloadable as a runnable
+  shell script.
+
+It is a **module, not a fork**: it lives entirely in [`console/`](console/),
+nothing in `src/` references it, and it needs no build — `rm -rf console/` removes
+it and the workspace still works exactly as this README describes. Details,
+including the "no authentication" caveat before you bind it to the lab network:
+[console/README.md](console/README.md).
+
+## 9. Repo layout
 
 ```
 CrazySwarm2/
@@ -576,6 +617,8 @@ CrazySwarm2/
 ├── scripts/              # setup.sh, install_deps.sh, build.sh, setup_sim_firmware.sh,
 │                         #   led.sh (LED via ros2 param set), color_led_cflib.py (direct cflib)
 ├── pose_bridge.py        # natnet → /poses bridge (50 Hz)
+├── console/              # OPTIONAL mission-console GUI (section 8) — delete it and
+│                         #   everything above still works; nothing depends on it
 ├── docs/                 # RUNNING, MOCAP, TROUBLESHOOTING
 ├── CLAUDE.md
 └── build/  install/  log/   # generated, git-ignored
@@ -590,7 +633,7 @@ CrazySwarm2/
 
 To pull upstream changes, diff against those and merge manually, or re-vendor.
 
-## 9. Documentation and troubleshooting
+## 10. Documentation and troubleshooting
 
 - [docs/RUNNING.md](docs/RUNNING.md) — sim, hardware, mocap launch flows; the preflight GUI; custom logging; Color LED control
 - [docs/MOCAP.md](docs/MOCAP.md) — OptiTrack calibration, rigid bodies, 240→50 Hz tuning; see also [Networking: mocap over a router (lab setup)](docs/MOCAP.md#5-networking-mocap-over-a-router-lab-setup)
