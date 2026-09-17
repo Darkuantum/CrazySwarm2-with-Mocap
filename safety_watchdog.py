@@ -29,7 +29,7 @@ Escalation while airborne:
 
 Run alongside the stack (rebuild crazyflie first so the new log topics exist):
 
-    python3 safety_watchdog.py                       # defaults, drone cf4
+    python3 safety_watchdog.py                       # defaults, drone cf3
     python3 safety_watchdog.py --drone cf1 --tilt-max 40
     python3 safety_watchdog.py --dry-run --assume-flying   # bench (props off)
 
@@ -296,7 +296,7 @@ class SafetyWatchdog(Node):
 def main():
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--drone', default='cf4', help='drone namespace (default cf4)')
+    p.add_argument('--drone', default='cf3', help='drone namespace (default cf3)')
     p.add_argument('--tilt-max', type=float, default=45.0,
                    help='soft roll/pitch limit -> land, degrees (default 45)')
     p.add_argument('--tilt-kill', type=float, default=65.0,

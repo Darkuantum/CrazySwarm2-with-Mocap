@@ -17,17 +17,19 @@ byte-for-byte copy of the rig. `setup.sh` only installs deps and builds — it d
 
 ```
 Motive/OptiTrack ──NatNet Multicast@50Hz──► motion_capture_tracking ──/poses──►
-  crazyflie_server ──Crazyradio #0 (radio://0/80/2M)──► cf1 cf2 cf4 cf5 cf8
+  crazyflie_server ──Crazyradio #0 (radio://0/80/2M)──► cf1 cf2 cf3 cf5 cf8
                     ▲ user scripts via crazyflie_py
                       (cf6 = DEAD on radio 2026-08-04, no longer in the yaml at all)
 Alt mocap path: Motive → natnet_ros2 → /<body>/pose → pose_bridge.py → /poses
 ```
 
-Fleet = **cf1 + cf2 + cf4 + cf5 + cf8 enabled** (five drones), all on **ONE
-Crazyradio dongle** (`radio://0/80/2M`, addresses `0xE7E7E7E701/02/04/05/08`).
+Fleet = **cf1 + cf2 + cf3 + cf5 + cf8 enabled** (five drones), all on **ONE
+Crazyradio dongle** (`radio://0/80/2M`, addresses `0xE7E7E7E701/02/03/05/08`).
 **`crazyflies.yaml` is the ground truth for the fleet — re-read it rather than
 trusting this paragraph**; the roster was last re-flown in `9e23d8a` (2026-09-10),
-which dropped cf3/cf10/cf12 and brought up cf4/cf8. (Note cf1's URI uses the
+which dropped cf10/cf12 and brought up cf4/cf8; cf4 was then swapped back to
+cf3 (2026-09-16) — same airframe slot/initial_position, address
+`0xE7E7E7E703`, so the Motive rigid body must be renamed to `cf3` too. (Note cf1's URI uses the
 `radio://*/…` wildcard dongle while the rest pin `radio://0/…`.) `cf6` is dead on
 radio 2026-08-04 (silent on full channel/datarate sweeps at its own AND the
 factory address; needs a physical check; do NOT re-add until
@@ -60,6 +62,9 @@ scripts/
   color_led_cflib.py  # LED test straight over cflib (STOP the server first — one radio owner)
   sync_initial_positions.py  # rewrite crazyflies.yaml initial_position from live /poses
 pose_bridge.py      # natnet → /poses (NamedPoseArray @ 50 Hz)
+console/            # OPTIONAL mission-console GUI (its own README). Self-contained:
+                    #   not a colcon package, nothing in src/ imports it, no build.
+                    #   `rm -rf console/` removes the feature and changes nothing else.
 docs/               # RUNNING, MOCAP, TROUBLESHOOTING
 README.md           # single setup doc (no separate SETUP.md)
 ```
@@ -117,8 +122,9 @@ Key customized files inside `src/`:
   6; traj1's 16 dropped) ≈1.6 KB of the firmware's
   ~4 KB. docs/RUNNING.md Section B.
 - `src/crazyswarm2/crazyflie_sim/crazyflie_sim/crazyflie_sil.py` —
-  `plan_start_trajectory` call updated for cffirmware 2025.02 bindings (see
-  Gotchas).
+  `plan_start_trajectory` is called through an **arity probe**
+  (`_PLAN_START_TRAJECTORY_NARGS`, `inspect.signature` at import) so both the
+  5-arg and 7-arg cffirmware bindings work (see Gotchas).
 
 ## Build & run
 
@@ -257,12 +263,18 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   drones **≥1 m apart** (same-trajectory flight preserves start separation),
   and each drone at ITS OWN yaml position — wrong-corner placement = crossing
   goTo paths = the real collision of 2026-08-04.
-- **Sim `plan_start_trajectory` signature (cffirmware 2025.02).** The bindings
-  split `relative` into `relative_position`/`relative_yaw` and added
-  `start_from`/`start_yaw`; the old 5-arg call crashed the sim server with a
-  TypeError at `start_trajectory`. Fixed in `crazyflie_sim/crazyflie_sil.py`
-  (`relative_yaw=False`, mirroring the firmware's legacy handler). Sim-only;
-  hardware unaffected. Re-vendoring upstream reintroduces the crash.
+- **Sim `plan_start_trajectory` arity — DO NOT ASSUME, PROBE.** This entry used
+  to claim the binding is 7-arg (`relative_position`/`relative_yaw` +
+  `start_from`/`start_yaw`). That is **backwards** for the build on this box:
+  verified 2026-09-17, `~/crazyflie-firmware/build/cffirmware.py` exposes
+  `plan_start_trajectory(p, trajectory, reversed, relative, start_from)` —
+  **5 args**. Calling it with 7 raises `TypeError: takes 5 positional arguments
+  but 7 were given`, which **kills the sim server outright at the first
+  `startTrajectory`** — the demo runs fine through takeoff, waypoints and the
+  gather, then the server dies mid-flight and the script hangs forever in the
+  next `sleep`. `crazyflie_sim/crazyflie_sil.py` now picks the call by
+  `inspect.signature(...)` arity at import, so either binding works. Sim-only;
+  hardware unaffected.
 - **Sim runs need `--ros-args -p use_sim_time:=true`** for the trajectory
   demos (`multi_trajectory`, `multi_trajectory_formation`) — the sim clock is
   ~4x slower than wall time, so without the flag the script races ahead of the
@@ -274,6 +286,33 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   (`crazyswarm_py.py`, atexit — survives exceptions and Ctrl-C; if rclpy is
   already shut down the deck keeps its last color). Change colors manually
   with `scripts/led.sh` or `ros2 run crazyflie_examples color_led`.
+
+## The `console/` module (optional GUI)
+
+A browser front-end for the rig — `./console/run.sh` → http://localhost:8077 —
+covering the launch, the preflight scans/checks, the flight and service commands,
+live YAML editing, and a system-health diagram that locates the failing link
+instead of leaving it in the launch log. Read `console/README.md` before touching
+it. Four rules hold it together; keep them when editing:
+
+- **Stay decoupled.** It is deliberately removable: don't make `launch.py`,
+  `CMakeLists.txt`, `setup.sh` or anything in `src/` depend on it, and don't turn
+  it into a colcon package. The only links pointing at it are prose (README
+  section 8, this file).
+- **`ros2` CLI, never in-process rclpy.** Every probe and action is a subprocess
+  running the same command a human would type. Two reasons: a fresh rclpy process
+  on this rig can stall forever in DDS discovery (same reason `scripts/led.sh`
+  uses the CLI), and the user's stated goal is to *learn* the commands from the
+  GUI — so every button and every health check displays its exact argv, fetched
+  from the backend that will execute it.
+- **YAML writes are text-surgical** (`configio.YamlText`), never `yaml.dump()`:
+  these config files carry the hard-won comments, and a round-trip deletes them.
+  Writes are parse-checked, diffed and backed up to `console/backups/`.
+- **`health.py` is where the Gotchas above become executable.** Each known silent
+  failure is a graph node (UDP 1511 starvation, apt mocap driver shadowing, server
+  blocked mid-connect with no `/all/*`, datarate mismatch, conda python). Adding a
+  gotcha to this file is only half the job — add the probe there too, as a node +
+  edge, or as a `SIGNATURES` regex that attaches the log line to an existing node.
 
 ## Conventions for Claude
 

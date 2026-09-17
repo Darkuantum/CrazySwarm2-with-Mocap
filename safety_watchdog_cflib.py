@@ -37,7 +37,7 @@ IMPORTANT: one process per Crazyradio. Do NOT run this while the crazyswarm2
 server or cfclient is connected to the same drone. Use the system python3.12
 (cflib lives in ~/.local/lib/python3.12, not conda):
 
-    /usr/bin/python3 safety_watchdog_cflib.py                    # defaults, cf4
+    /usr/bin/python3 safety_watchdog_cflib.py                    # defaults, cf3
     /usr/bin/python3 safety_watchdog_cflib.py --uri radio://0/80/2M/E7E7E7E701
     /usr/bin/python3 safety_watchdog_cflib.py --dry-run --assume-flying   # bench
 """
@@ -288,8 +288,8 @@ class SafetyWatchdog:
 def main():
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--uri', default='radio://0/80/2M/E7E7E7E704',
-                   help='crazyflie URI (default cf4)')
+    p.add_argument('--uri', default='radio://0/80/2M/E7E7E7E703',
+                   help='crazyflie URI (default cf3)')
     p.add_argument('--tilt-max', type=float, default=45.0,
                    help='soft roll/pitch limit -> land, degrees (default 45)')
     p.add_argument('--tilt-kill', type=float, default=65.0,

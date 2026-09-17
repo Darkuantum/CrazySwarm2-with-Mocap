@@ -18,6 +18,13 @@ __pycache__/
 # The README embeds the compressed video/*.mp4; the large raw .mov exports stay local.
 video/*.mov
 
+# ---- crazyflie firmware TOC caches ----
+# crazyflie_server writes these into the working directory on connect (the
+# param/log table-of-contents of whatever firmware it just talked to). They are
+# regenerated every run and are per-firmware, so they are cache, not source.
+/log*.csv
+/params*.csv
+
 # ---- editors / OS ----
 .vscode/
 .idea/

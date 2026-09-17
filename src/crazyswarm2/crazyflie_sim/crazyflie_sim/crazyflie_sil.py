@@ -7,11 +7,24 @@ Crazyflie Software-In-The-Loop Wrapper that uses the firmware Python bindings.
 """
 from __future__ import annotations
 
+import inspect
+
 import cffirmware as firm
 import numpy as np
 import rowan
 
 from . import sim_data_types
+
+
+def _plan_start_trajectory_nargs():
+    """Positional arity of cffirmware's plan_start_trajectory binding."""
+    try:
+        return len(inspect.signature(firm.plan_start_trajectory).parameters)
+    except (TypeError, ValueError):   # C function with no introspectable sig
+        return 5
+
+
+_PLAN_START_TRAJECTORY_NARGS = _plan_start_trajectory_nargs()
 
 
 class TrajectoryPolynomialPiece:
@@ -181,12 +194,22 @@ class CrazyflieSIL:
             traj.t_begin = self.time_func()
             traj.timescale = timescale
             startfrom = self.cmdHl_pos
-            # Newer cffirmware bindings split `relative` into relative_position
-            # and relative_yaw and require the current position/yaw. Mirror the
-            # firmware's legacy start_trajectory handler: relative_yaw=False.
-            firm.plan_start_trajectory(
-                self.planner, traj, reverse, relative, False,
-                startfrom, self.cmdHl_yaw)
+            # cffirmware's binding for this call comes in two shapes and the
+            # wrong one is a TypeError that kills the whole sim server at the
+            # first startTrajectory (no error until then). Pick by the actual
+            # arity of the build on PYTHONPATH, do not assume:
+            #   5 args (planner, traj, reversed, relative, start_from)
+            #           -- what crazyflie-firmware 2025.02 builds here
+            #   7 args  -- builds that split `relative` into relative_position
+            #           and relative_yaw; mirror the firmware's legacy
+            #           start_trajectory handler with relative_yaw=False.
+            if _PLAN_START_TRAJECTORY_NARGS >= 7:
+                firm.plan_start_trajectory(
+                    self.planner, traj, reverse, relative, False,
+                    startfrom, self.cmdHl_yaw)
+            else:
+                firm.plan_start_trajectory(
+                    self.planner, traj, reverse, relative, startfrom)
 
     # def notifySetpointsStop(self, remainValidMillisecs=100):
     #     # No-op - the real Crazyflie prioritizes streaming setpoints over
