@@ -8,6 +8,7 @@ a plain shell script.
 
 from __future__ import annotations
 
+import glob
 import json
 import mimetypes
 import os
@@ -42,15 +43,18 @@ class App:
 
     # ------------------------------------------------------------- catalog
     def catalog(self):
-        """Rebuilt when crazyflies.yaml changes, so per-drone actions stay true."""
+        """Rebuilt when crazyflies.yaml changes (per-drone actions stay true) or
+        when the set of installed scripts changes (a newly built show package
+        appears without restarting the console)."""
         try:
             mtime = os.path.getmtime(configio.FILES['crazyflies']['path'])
         except OSError:
             mtime = 0.0
-        if mtime != self._catalog_cache[0] or not self._catalog_cache[1]:
+        key = (mtime, catalog.scripts_signature())
+        if key != self._catalog_cache[0] or not self._catalog_cache[1]:
             cf = configio.load('crazyflies')
             fleet = configio.fleet_summary(cf['doc']) if cf['doc'] else []
-            self._catalog_cache = (mtime, catalog.build_catalog(fleet))
+            self._catalog_cache = (key, catalog.build_catalog(fleet))
         return self._catalog_cache[1]
 
     def action(self, action_id):
@@ -93,6 +97,61 @@ class App:
         self.bus.publish({'type': 'history', 'entry': entry})
         threading.Timer(2.0, self.refresh_health).start()
         return proc.summary()
+
+    # ------------------------------------------------------------- e-stop
+    # An e-stop must be one action with an answer. The generic run path gives
+    # neither: it sits behind a confirm modal, and `ros2 service call` has no
+    # timeout -- if /all/emergency is unreachable (server dead or hung, the
+    # console on a different ROS_DOMAIN_ID than the server, discovery stalled)
+    # it waits forever and prints NOTHING, so the operator cannot tell whether
+    # the motors were cut. Measured: domain mismatch -> silent, never returns.
+    ESTOP_CONFIRM_S = 3.0    # past this the UI says NOT CONFIRMED, loudly
+    ESTOP_ABANDON_S = 15.0   # then stop waiting: a call left pending would
+                             # e-stop a server launched LATER, by surprise
+
+    def estop(self):
+        act = self.action('srv.estop')
+        argv, cmdline = catalog.render(act, {})
+        t0 = time.time()
+        proc = self.procs.start('srv.estop', act['label'], argv, kind='task',
+                                note=act.get('why', ''))
+        entry = {'ts': t0, 'action_id': 'srv.estop', 'label': act['label'],
+                 'cmdline': cmdline, 'proc': proc.id}
+        self.history.append(entry)
+        self.bus.publish({'type': 'history', 'entry': entry})
+
+        while proc.running and time.time() - t0 < self.ESTOP_CONFIRM_S:
+            time.sleep(0.02)
+        elapsed = time.time() - t0
+        domain = os.environ.get('ROS_DOMAIN_ID', '0')
+        out = {'proc': proc.id, 'cmdline': cmdline, 'elapsed': elapsed,
+               'domain': domain, 'rc': proc.returncode}
+
+        if proc.returncode == 0:
+            out.update(confirmed=True, pending=False,
+                       reason='The crazyflie_server accepted /all/emergency.')
+        elif proc.running:
+            # Keep the attempt alive a little longer in case discovery is only
+            # slow -- a late success is still a success -- but not forever.
+            def _abandon(p=proc):
+                if p.running:
+                    self.procs.stop(p.id, hard=True)
+            threading.Timer(max(0.0, self.ESTOP_ABANDON_S - elapsed), _abandon).start()
+            out.update(confirmed=False, pending=True, reason=(
+                f'No answer from /all/emergency within {self.ESTOP_CONFIRM_S:.0f} s on '
+                f'ROS_DOMAIN_ID={domain}. The server is down, hung, or on a different '
+                f'domain than this console. Still retrying for '
+                f'{self.ESTOP_ABANDON_S:.0f} s -- do not wait for it: use the preflight '
+                f'GUI (e) or cut power.'))
+        else:
+            tail = [r[2] for r in proc.tail(limit=6)]
+            out.update(confirmed=False, pending=False, reason=(
+                f'`{cmdline}` exited {proc.returncode}: ' + ' | '.join(tail[-3:])))
+        self.refresh_health_soon()
+        return out
+
+    def refresh_health_soon(self):
+        threading.Timer(0.5, self.refresh_health).start()
 
     def history_script(self):
         lines = [
@@ -156,6 +215,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._static(path[len('/static/'):])
             if path == '/api/bootstrap':
                 return self._json({
+                    'code_changed': _code_changed(),
                     'catalog': catalog.public(APP.catalog()),
                     'groups': _groups(APP.catalog()),
                     'files': [{'key': k, 'label': v['label'], 'blurb': v['blurb'],
@@ -216,6 +276,8 @@ class Handler(BaseHTTPRequestHandler):
                 act = APP.action(body['action_id'])
                 argv, cmdline = catalog.render(act, body.get('values') or {})
                 return self._json({'argv': argv, 'cmdline': cmdline})
+            if path == '/api/estop':
+                return self._json(APP.estop())
             if path == '/api/run':
                 return self._json(APP.run_action(body['action_id'], body.get('values') or {}))
             if path == '/api/stop':
@@ -339,6 +401,25 @@ def _edit_kv(body):
     bak, applied = configio.write(configio.FILES[key]['path'], text)
     APP.bus.publish({'type': 'config', 'file': key})
     return {'ok': True, 'written': bool(bak), 'backup': bak, 'diff': applied}
+
+
+def _code_changed():
+    """True when console code on disk is newer than this running process.
+
+    The HTML/JS/CSS are read from disk on every request, but this Python is
+    loaded once at startup. Update the console without restarting it and the
+    page calls endpoints this process has never heard of -- which answer
+    {"error": "not found"}. That is how an e-stop press could come back as
+    "not found" and fire nothing. The page shows a restart banner when this is
+    set, before anyone needs a button.
+    """
+    newest = 0.0
+    for f in glob.glob(os.path.join(os.path.dirname(__file__), '*.py')):
+        try:
+            newest = max(newest, os.path.getmtime(f))
+        except OSError:
+            pass
+    return newest > APP.started
 
 
 def serve(host='127.0.0.1', port=8077):

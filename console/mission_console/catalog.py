@@ -12,7 +12,10 @@ the GUI.
 
 from __future__ import annotations
 
+import ast
+import glob
 import os
+import re
 import shlex
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -47,15 +50,166 @@ def action(id, group, label, build, why, teaches='', kind='task', danger='none',
     }
 
 
-def p(name, label, type='text', default='', options=None, help=''):
+def p(name, label, type='text', default='', options=None, help='', descriptions=None,
+      grouped=False):
+    # grouped: options are "<group> <item>" and render as <optgroup>s, so a
+    # script list reads as package headings instead of a long prefixed string.
     return {'name': name, 'label': label, 'type': type, 'default': default,
-            'options': options or [], 'help': help}
+            'options': options or [], 'help': help,
+            'descriptions': descriptions or {}, 'grouped': grouped}
 
 
 def _bashc(script):
     """A shell one-liner, shown verbatim. Used only where a pipe or loop is the
     honest answer (`ros2 service list | grep ...`), never to hide anything."""
     return ['bash', '-c', script]
+
+
+# ------------------------------------------------------------ discovery
+# Flight scripts are FOUND, not listed. Any package in this workspace that
+# depends on crazyflie_py is a package of flight scripts (crazyflie_examples,
+# crazyflie_shows, whatever you drop in next); its executables are what
+# `ros2 pkg executables <pkg>` would print. Build a new show package and it
+# shows up here with no console change.
+#
+# Descriptions come from each script's own module docstring, read with `ast`
+# -- never imported, because importing a flight script can have side effects.
+
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+INSTALL = os.path.join(REPO, 'install')
+
+# Hand-written notes win over docstrings where the safety detail matters.
+SCRIPT_NOTES = {
+    'hello_world': 'Arms the FIRST enabled drone, takes off to 0.5 m, hovers 5 s, '
+                   'lands, disarms. The standard first flight.',
+    'arming': 'GROUND TEST: arms every drone and spins the props at ~15% for 10 s. '
+              'Props spin -- keep fingers clear.',
+    'multi_trajectory': 'Every drone flies the same relative traj1.csv (~50 s) and '
+                        'returns over its own initial_position.',
+    'multi_trajectory_formation': 'Waypoint tour, pentagon gather, 360 spin, triangle '
+                                  'morph, rigid orbit at R=1.2 m (~58 s). Keep a '
+                                  '~2.24 m radius around the room centre clear.',
+    'figure8': 'Classic single-drone figure-eight.',
+    'nice_hover': 'Smooth hover demo.',
+    'swap': 'Drones exchange positions -- watch the clearances.',
+    'teleop_xbox': 'Gamepad flight for the first drone, from /dev/input/js0. Launch '
+                   'the stack with teleop:=False first: one owner per controller.',
+    'swarm_show': 'The full show. Refuses to arm if any live pose is >0.25 m from '
+                  'initial_position. Run plan_show first.',
+}
+# Executables that never command a drone: offered as ground checks, no
+# "drones will move" confirmation.
+GROUND = {'color_led', 'set_param'}
+
+
+def _is_ground(name):
+    return name in GROUND or name.startswith('plan_') or name.endswith('.sh')
+
+
+def _first_para(text):
+    text = (text or '').strip()
+    return ' '.join(text.split('\n\n')[0].split()) if text else ''
+
+
+def _script_doc(path):
+    """Module docstring (python) or leading comment block (shell)."""
+    try:
+        with open(path, encoding='utf-8', errors='replace') as fh:
+            src = fh.read()
+    except OSError:
+        return ''
+    if path.endswith('.py'):
+        try:
+            return _first_para(ast.get_docstring(ast.parse(src)))
+        except SyntaxError:
+            return ''
+    lines = []
+    for ln in src.splitlines()[1:]:
+        if not ln.startswith('#'):
+            if lines:
+                break
+            continue
+        lines.append(ln.lstrip('# ').rstrip())
+    return _first_para('\n'.join(lines))
+
+
+def _entry_points(pkg_prefix):
+    """{script: module_file} from the package's egg-info, if it has one."""
+    out = {}
+    for ep in glob.glob(os.path.join(pkg_prefix, '**', '*.egg-info', 'entry_points.txt'),
+                        recursive=True):
+        dist = os.path.dirname(os.path.dirname(ep))
+        section = None
+        with open(ep, encoding='utf-8') as fh:
+            for raw in fh:
+                line = raw.strip()
+                if line.startswith('['):
+                    section = line
+                elif section == '[console_scripts]' and '=' in line:
+                    name, target = (x.strip() for x in line.split('=', 1))
+                    module = target.split(':')[0]
+                    out[name] = os.path.join(dist, *module.split('.')) + '.py'
+    return out
+
+
+def discover_scripts():
+    """Every runnable script in every crazyflie_py-dependent package.
+
+    -> list of {pkg, name, ground, doc, live}. `live` is False when the package
+    was built after this console started: its install prefix is not on the
+    console's AMENT_PREFIX_PATH yet, so `ros2 run` would say "Package not
+    found" until the console is restarted from a freshly sourced shell.
+    """
+    ament = set(os.environ.get('AMENT_PREFIX_PATH', '').split(':'))
+    found = []
+    for xml in sorted(glob.glob(os.path.join(INSTALL, '*', 'share', '*', 'package.xml'))):
+        pkg = os.path.basename(os.path.dirname(xml))
+        try:
+            body = open(xml, encoding='utf-8').read()
+        except OSError:
+            continue
+        if not re.search(r'<(?:exec_|build_)?depend>\s*crazyflie_py\s*<', body):
+            continue
+        prefix = os.path.join(INSTALL, pkg)
+        libdir = os.path.join(prefix, 'lib', pkg)
+        if not os.path.isdir(libdir):
+            continue
+        eps = _entry_points(prefix)
+        for name in sorted(os.listdir(libdir)):
+            path = os.path.join(libdir, name)
+            if not (os.path.isfile(path) and os.access(path, os.X_OK)):
+                continue
+            doc = SCRIPT_NOTES.get(name) or _script_doc(eps.get(name, path)) \
+                or '(no description -- give the script a module docstring)'
+            found.append({'pkg': pkg, 'name': name, 'ground': _is_ground(name),
+                          'doc': doc, 'live': prefix in ament})
+    # your own show packages first, the stock examples after
+    found.sort(key=lambda d: (d['pkg'] == 'crazyflie_examples', d['pkg'], d['name']))
+    return found
+
+
+def scripts_signature():
+    """Cheap change detector: the executables on disk, for the catalog cache."""
+    sig = []
+    for d in sorted(glob.glob(os.path.join(INSTALL, '*', 'lib', '*'))):
+        try:
+            sig.append((d, os.path.getmtime(d), tuple(sorted(os.listdir(d)))))
+        except OSError:
+            pass
+    return tuple(sig)
+
+
+def _script_param(scripts, label, default_name):
+    opts = [f"{d['pkg']} {d['name']}" for d in scripts]
+    desc = {}
+    for d in scripts:
+        text = d['doc']
+        if not d['live']:
+            text = ('BUILT AFTER THIS CONSOLE STARTED -- restart the console from a '
+                    'sourced shell before running it. ' + text)
+        desc[f"{d['pkg']} {d['name']}"] = text
+    default = next((o for o in opts if o.endswith(' ' + default_name)), opts[0] if opts else '')
+    return p('script', label, 'select', default, opts, descriptions=desc, grouped=True)
 
 
 def build_catalog(fleet):
@@ -304,50 +458,56 @@ def build_catalog(fleet):
         docs='docs/MOCAP.md#2b-setting-initial_position-from-poses'))
 
     # ---------------------------------------------------------------- flight
-    examples = [
-        ('hello_world', 'Hello world (one drone: takeoff, hover, land)',
-         'Arms the FIRST enabled drone, takes off to 0.5 m, hovers 5 s, lands, disarms. '
-         'The standard first flight.'),
-        ('arming', 'Prop-spin ground test',
-         'Arms every enabled drone and spins all props at ~15% PWM for 10 s, then stops '
-         'and disarms. GROUND TEST ONLY -- props spin, keep fingers clear. Hover needs '
-         'far more thrust, so the drone stays put.'),
-        ('multi_trajectory', 'Multi-drone trajectory (traj1, ~50 s)',
-         'Every enabled drone takes off to 1 m, flies the same relative traj1.csv in '
-         'formation, returns home over its own initial_position and lands slowly.'),
-        ('multi_trajectory_formation', 'Formation tour + orbit (~58 s)',
-         'Waypoint tour, pentagon gather, one smooth 360 rotation, triangle morph, then a '
-         'rigid swarm orbit around the room centre at R=1.2 m. The orbit sweeps a ~2.24 m '
-         'radius -- keep that clear.'),
-        ('figure8', 'Figure 8 (one drone)', 'Classic single-drone figure-eight trajectory.'),
-        ('nice_hover', 'Nice hover', 'Smooth hover demo.'),
-        ('swap', 'Position swap', 'Drones exchange positions -- watch the clearances.'),
-    ]
-    for name, label, why in examples:
+    # One card per KIND of run, not per script: the script is a dropdown filled
+    # by discover_scripts(), so a newly built show package appears here without
+    # touching this file. Flight scripts and ground checks are split because
+    # only one of them should ask "area clear?".
+    scripts = discover_scripts()
+    flights = [d for d in scripts if not d['ground']]
+    grounds = [d for d in scripts if d['ground']]
+
+    def _split(v, fallback):
+        pkg, _, name = (v.get('script') or fallback).partition(' ')
+        return pkg, name
+
+    def run_flight(v):
+        pkg, name = _split(v, '')
+        argv = ['ros2', 'run', pkg, name]
+        if v.get('sim') == 'yes':
+            argv += ['--ros-args', '-p', 'use_sim_time:=true']
+        return argv
+
+    if flights:
         acts.append(action(
-            f'fly.{name}', 'Flight', label,
-            (lambda n: lambda v: ['ros2', 'run', 'crazyflie_examples', n] +
-             (['--ros-args', '-p', 'use_sim_time:=true'] if v.get('sim') == 'yes' else []))(name),
-            why=why + ' Server must already be running, and the preflight checklist '
-                      'cleared for every drone that will fly.',
-            teaches='These are entry points declared in crazyflie_examples/setup.cfg, so '
-                    '`ros2 run crazyflie_examples <name>` just runs that Python main(). '
-                    'In SIMULATION add --ros-args -p use_sim_time:=true or the script '
-                    'races ahead of the ~4x slower sim clock; on hardware, never add it.',
+            'fly.script', 'Flight', 'Run a flight script', run_flight,
+            why='Every flight script in this workspace, found by scanning each package '
+                'that depends on crazyflie_py -- crazyflie_examples, your crazyflie_shows, '
+                'and whatever you build next. The server must already be running and the '
+                'preflight checklist cleared for every drone that will fly.',
+            teaches='`ros2 run <package> <executable>` runs a console_scripts entry point '
+                    '(declared in that package\'s setup.cfg). In SIMULATION add '
+                    '--ros-args -p use_sim_time:=true or the script races ahead of the '
+                    '~4x slower sim clock; on hardware never add it.',
             danger='flight', requires='server_running',
-            confirm=f'{label}: the drones will move. Area clear, everyone back?',
-            params=[p('sim', 'simulation (use_sim_time)', 'select', 'no', ['no', 'yes'])],
+            confirm='The drones will move. Area clear, everyone back, hand near the E-STOP?',
+            params=[
+                _script_param(flights, 'script', 'hello_world'),
+                p('sim', 'simulation clock', 'select', 'no', ['no', 'yes'],
+                  'yes ONLY with backend:=sim.'),
+            ],
             docs='docs/RUNNING.md#multi-drone-trajectory-demos'))
 
-    acts.append(action(
-        'fly.teleop_xbox', 'Flight', 'Gamepad flight (teleop_xbox)',
-        lambda v: ['ros2', 'run', 'crazyflie_examples', 'teleop_xbox'],
-        why='Geofenced position teleop for the first enabled drone, reading /dev/input/js0 '
-            'directly. Launch the stack with teleop:=False first -- only one process may '
-            'own the controller.',
-        danger='flight', requires='server_running',
-        confirm='Gamepad flight: the drone will move. Area clear?',
-        docs='docs/RUNNING.md#teleop_xbox-geofenced-position-teleop'))
+    if grounds:
+        acts.append(action(
+            'tool.script', 'Preflight', 'Run a ground check',
+            lambda v: ['ros2', 'run', *_split(v, '')],
+            why='Scripts in the same packages that never command a drone: plan_show '
+                '(verifies a show against the current yaml, no ROS needed), the mocap '
+                'diagnostics, LED and parameter helpers.',
+            teaches='Same `ros2 run <package> <executable>` as a flight -- the only '
+                    'difference is what the script does, so no "area clear" check.',
+            requires='any',
+            params=[_script_param(grounds, 'script', 'plan_show')]))
 
     # -------------------------------------------------------------- services
     acts.append(action(
@@ -543,7 +703,11 @@ def catalog_index(acts):
 
 
 def render(action_def, values):
-    argv = action_def['build'](values or {})
+    # Fill every declared param the caller left out with its default: the
+    # compact dashboard buttons send only what they show.
+    merged = {q['name']: q['default'] for q in action_def.get('params', [])}
+    merged.update({k: v for k, v in (values or {}).items() if v is not None})
+    argv = action_def['build'](merged)
     return argv, ' '.join(shlex.quote(a) for a in argv)
 
 

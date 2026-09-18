@@ -6,6 +6,9 @@
   --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box}
+/* `hidden` loses to any author display rule (display:flex etc.) -- this used to
+   be patched per element (.modal[hidden]); one global rule ends that class of bug. */
+[hidden]{display:none!important}
 
 /* UI scale. This rig's laptop is a 2560x1600 14" panel (~188 DPI) with GNOME
    fractional scaling on, so the desktop already multiplies everything and the
@@ -23,7 +26,7 @@ body{margin:0;background:var(--bg);color:var(--fg);
 /* ---------------------------------------------------------------- topbar */
 .topbar{display:flex;align-items:center;gap:16px;padding:10px 16px;
   background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
-.brand{display:flex;align-items:center;gap:12px;min-width:280px}
+.brand{display:flex;align-items:center;gap:12px;min-width:0;flex:0 1 auto}
 .title{font-weight:650;letter-spacing:.2px}
 .headline{font-size:12.5px;color:var(--muted)}
 .dot{width:14px;height:14px;border-radius:50%;background:var(--unknown);flex:none;
@@ -31,7 +34,7 @@ body{margin:0;background:var(--bg);color:var(--fg);
 .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)}
 .dot.fail{background:var(--fail);animation:pulse 1.6s infinite}
 @keyframes pulse{50%{box-shadow:0 0 0 8px rgba(240,86,80,.18)}}
-.pills{display:flex;gap:8px;flex:1;flex-wrap:wrap}
+.pills{display:flex;gap:8px;flex:1;flex-wrap:nowrap;min-width:0;overflow:hidden}
 .pill{background:var(--panel2);border:1px solid var(--line);border-radius:999px;
   padding:3px 11px;font-size:12px;color:var(--muted);white-space:nowrap}
 .pill b{color:var(--fg);font-weight:600}
@@ -66,8 +69,11 @@ main{flex:1;min-height:0;overflow:hidden}
 .split{display:flex;height:100%;min-height:0}
 
 /* --------------------------------------------------------------- health */
-.graphwrap{flex:1;min-width:0;overflow:auto;padding:12px 16px}
-.toolbar{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.graphwrap{flex:1;min-width:0;min-height:0;overflow:hidden;padding:10px 14px;
+  display:flex;flex-direction:column}
+#graph{flex:1;min-height:0}
+.gsvg{display:block;width:100%;height:100%}
+.toolbar{display:flex;align-items:center;gap:14px;margin-bottom:8px;flex-wrap:wrap}
 #graph svg{display:block}
 .gnode rect{stroke-width:1.5px;rx:8}
 .gnode .lbl{font-size:12px;font-weight:600;fill:var(--fg)}
@@ -78,11 +84,11 @@ main{flex:1;min-height:0;overflow:hidden}
 .gedge{fill:none;stroke:#39414f;stroke-width:1.6px}
 .gedge.dead{stroke-dasharray:4 4;stroke:#333a46}
 .glabel{font-size:11px;fill:var(--muted);text-transform:uppercase;letter-spacing:.8px}
-.legend{display:flex;gap:14px;align-items:center;margin-top:12px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.legend{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted)}
 .sw{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:-1px}
 .sw.ok{background:var(--ok)} .sw.warn{background:var(--warn)} .sw.fail{background:var(--fail)}
 .sw.blocked{background:var(--blocked)} .sw.unknown{background:var(--unknown)}
-.detail{width:420px;flex:none;border-left:1px solid var(--line);background:var(--panel);
+.detail{width:340px;overflow:auto;flex:none;border-left:1px solid var(--line);background:var(--panel);
   padding:16px;overflow:auto}
 .detail h2{margin:0 0 2px;font-size:16px}
 .detail .why{color:var(--muted);font-size:12.5px;margin-bottom:12px}
@@ -210,20 +216,111 @@ pre.term{flex:1;margin:0;border:0;border-radius:0;max-height:none;font-size:11.5
 
 /* ------------------------------------------------------------- dashboard */
 .zoomctl{display:inline-flex;gap:4px;align-items:center;margin-right:6px}
-.dashwrap{flex:1;min-width:0;overflow:auto;padding:14px 16px}
-.dashstrip{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px}
-.dcell{background:var(--panel);border:1px solid var(--line);border-radius:8px;
-  padding:7px 13px;min-width:104px}
-.dcell .dk{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted)}
-.dcell .dv{font-size:14px;font-weight:600;margin-top:2px}
+
+
+/* ---------------------------------------------------------------- e-stop */
+.estopban{display:flex;align-items:center;gap:14px;padding:9px 16px;
+  border-bottom:1px solid var(--line);font-size:13px}
+.estopban .eb-main{flex:1;min-width:0;display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.estopban .eb-detail{color:var(--fg);opacity:.85}
+.estopban .eb-actions{display:flex;gap:6px}
+.estopban.pending{background:#3a2f0d;border-color:var(--warn)}
+.estopban.ok{background:#0f2e19;border-color:var(--ok)}
+.estopban.fail{background:#4a1414;border-color:var(--fail);font-size:14px}
+.btn.estop.firing{opacity:.7;cursor:progress}
+
+/* ------------------------------------------------------------ dashboard */
+/* Budget: the rig laptop is 2560x1600 at GNOME 200% (fractional scaling stays
+   off -- on this X11 session it added ~2 s of input lag), i.e. a 1280x800 desktop
+   and a browser viewport of about 1280x660 CSS px. Everything fits that at 100%. */
+.dash{height:100%;display:flex;flex-direction:column;gap:9px;padding:11px 14px;overflow:auto}
+.dashstrip{display:flex;flex-wrap:wrap;gap:8px}
+.dcell{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);
+  border-radius:8px;padding:5px 12px;min-width:92px;color:inherit;text-decoration:none;cursor:pointer}
+.dcell:hover{border-color:var(--accent)}
+.dcell .dk{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted)}
+.dcell .dv{font-size:13.5px;font-weight:600;white-space:nowrap}
 .dcell.ok .dv{color:var(--ok)}
 .dcell.bad .dv{color:var(--fail)}
 .dcell.warn .dv{color:var(--warn)}
 .dcell.idle .dv{color:var(--muted)}
-.dashhint{color:var(--muted);font-size:12.5px;margin-bottom:14px;max-width:80ch}
-.dashgrid{display:flex;flex-direction:column;gap:18px}
-.dashrow h2{margin:0 0 8px;font-size:12px;text-transform:uppercase;
-  letter-spacing:.9px;color:var(--muted);border-bottom:1px solid var(--line);
-  padding-bottom:6px}
-.dashcards{display:grid;gap:12px;padding:0;overflow:visible;
-  grid-template-columns:repeat(auto-fill,minmax(310px,1fr))}
+
+.dashissues{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:24px}
+.isslabel{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-right:2px}
+.iss{font-size:12px;padding:2px 9px;border-radius:12px;border:1px solid var(--line);color:var(--fg);
+  text-decoration:none;cursor:pointer;white-space:nowrap;max-width:380px;overflow:hidden;text-overflow:ellipsis}
+.iss:hover{border-color:var(--accent)}
+.iss.fail{border-color:var(--fail);background:#2a1110}
+.iss.warn{border-color:var(--warn);background:#231c08}
+.iss.blocked,.iss.more{color:var(--muted)}
+.iss.ok{border-color:var(--ok);color:var(--ok);cursor:default}
+
+.dashcols{flex:1;min-height:0;display:grid;gap:10px;
+  grid-template-columns:repeat(4,minmax(0,1fr)) minmax(0,1.3fr)}
+.dcol{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;
+  display:flex;flex-direction:column;gap:8px;min-height:0;overflow:auto}
+.dcol h2{margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);
+  display:flex;align-items:center;gap:8px}
+.dcol .step{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;
+  background:var(--panel2);color:var(--fg);font-size:11px;flex:none}
+.dsub{font-size:11.5px;color:var(--muted);margin-top:-4px}
+.qa{display:flex;flex-direction:column;gap:4px}
+.qa-row{display:flex;gap:4px;align-items:stretch}
+.qa-run{flex:1;min-width:0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qa-run.flight{border-color:var(--warn)}
+.qa-more{flex:none;display:grid;place-items:center;width:26px;border-radius:6px;color:var(--muted);
+  text-decoration:none;cursor:pointer;font-size:15px}
+.qa-more:hover{color:var(--accent);background:var(--panel2)}
+.qa-params{display:flex;gap:4px;min-width:0}
+.qa-params select{flex:1;min-width:0;background:#0b0e13;border:1px solid var(--line);color:var(--fg);
+  border-radius:6px;padding:3px 5px;font-size:12px;font-family:inherit}
+.qa-params select[data-param="sim"],.qa-params select[data-param="backend"]{flex:0 0 auto}
+.qa-desc{font-size:11.5px;color:var(--muted);line-height:1.35;display:-webkit-box;
+  -webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.qa-why{font-size:11px;color:var(--warn)}
+.qa-why:empty{display:none}
+.qa.blocked .qa-run{opacity:.5}
+
+.hlink{font-size:11px;text-transform:none;letter-spacing:0;color:var(--accent);text-decoration:none;cursor:pointer}
+.dcol h2 .hlink:first-of-type{margin-left:auto}
+#dashactivity{display:flex;flex-direction:column;gap:4px;min-height:0}
+#dashactivity .pad{padding:4px 2px}
+.actrow{display:grid;grid-template-columns:10px minmax(0,1fr) auto;column-gap:7px;row-gap:1px;
+  grid-template-areas:"dot label state" ". line line";padding:5px 8px;border-radius:6px;
+  background:var(--bg);color:inherit;text-decoration:none;cursor:pointer;border:1px solid transparent}
+.actrow:hover{border-color:var(--line)}
+.adot{grid-area:dot;width:8px;height:8px;border-radius:50%;background:var(--muted);align-self:center}
+.actrow.running .adot{background:var(--accent)}
+.actrow.done .adot{background:var(--ok)}
+.actrow.failed .adot{background:var(--fail)}
+.alabel{grid-area:label;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.astate{grid-area:state;font-size:11px;color:var(--muted)}
+.aline{grid-area:line;font-family:var(--mono);font-size:10.5px;color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aline:empty{display:none}
+
+/* Control cards: the script dropdown gets its description, and a link from the
+   dashboard lands on a highlighted card. */
+.params .wide{grid-column:1/-1}
+.optdesc{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4}
+.card.flash{outline:2px solid var(--accent);outline-offset:2px}
+
+/* topbar pills and the fleet row are links to the check behind them */
+.pill[data-go],.dcell[data-go]{cursor:pointer}
+.pill[data-go]:hover{border-color:var(--accent)}
+.dashstrip .rowlabel{align-self:center;font-size:10.5px;text-transform:uppercase;
+  letter-spacing:.7px;color:var(--muted);margin-right:2px}
+
+a.pill{color:inherit;text-decoration:none}
+
+.staleban{padding:8px 16px;background:#3a2f0d;border-bottom:1px solid var(--warn);font-size:13px}
+.staleban code{font-family:var(--mono);font-size:12px}
+
+/* The rig laptop runs GNOME at 200% (fractional scaling adds ~2 s of input lag
+   on X11, so it stays off): a ~1280x660 page. Give the graph the width. */
+.pill{white-space:nowrap}
+.headline{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px}
+@media (max-width:1400px){
+  .detail{width:290px}
+  .topbar{gap:12px}
+}

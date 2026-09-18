@@ -23,9 +23,12 @@
       <button class="btn ghost sm" id="btn-zoom-in">A+</button>
     </span>
     <button class="btn ghost" id="btn-refresh" title="Re-run every health probe">Re-check</button>
-    <button class="btn estop" id="btn-estop" title="ros2 service call /all/emergency std_srvs/srv/Empty {}">E-STOP</button>
+    <button class="btn estop" id="btn-estop" title="One click, no confirmation: ros2 service call /all/emergency std_srvs/srv/Empty {}">E-STOP</button>
   </div>
 </header>
+
+<div id="stale-banner" class="staleban" hidden></div>
+<div id="estop-banner" class="estopban" hidden></div>
 
 <nav class="tabs" id="tabs">
   <button data-tab="dash" class="active">Dashboard</button>
@@ -39,16 +42,10 @@
 <main>
   <!-- ---------------------------------------------------- dashboard -->
   <section id="tab-dash" class="tab active">
-    <div class="dashwrap">
+    <div class="dash">
       <div class="dashstrip" id="dashstrip"></div>
-      <div class="dashhint">
-        Everything below in the order you actually do it. Each card is the same
-        action as the Control tab, with the same argv &mdash; this pane just saves
-        the tab hop. Cards grey out when their precondition is not met: the radio
-        checks need the server <b>stopped</b>, the flight cards need it
-        <b>running</b>.
-      </div>
-      <div class="dashgrid" id="dashgrid"></div>
+      <div class="dashissues" id="dashissues"></div>
+      <div class="dashcols" id="dashcols"></div>
     </div>
   </section>
 
@@ -57,18 +54,17 @@
     <div class="split">
       <div class="graphwrap">
         <div class="toolbar">
-          <button class="btn" id="btn-scan">Scan the fleet</button>
-          <span class="hint">The go/no-go check before every launch. Needs the radio free (no server running).</span>
+          <button class="btn sm" id="btn-scan" title="The go/no-go check before every launch. Needs the radio free (no server running).">Scan the fleet</button>
+          <div class="legend">
+            <span><i class="sw ok"></i>pass</span>
+            <span><i class="sw warn"></i>warning</span>
+            <span><i class="sw fail"></i>failing</span>
+            <span><i class="sw blocked"></i>blocked upstream</span>
+            <span><i class="sw unknown"></i>not checked</span>
+          </div>
+          <span class="hint">Click a box for evidence, command and fix.</span>
         </div>
         <div id="graph"></div>
-        <div class="legend">
-          <span><i class="sw ok"></i>pass</span>
-          <span><i class="sw warn"></i>warning</span>
-          <span><i class="sw fail"></i>failing</span>
-          <span><i class="sw blocked"></i>blocked upstream</span>
-          <span><i class="sw unknown"></i>not checked</span>
-          <span class="hint">Click any box for the evidence, the command behind it, and the fix.</span>
-        </div>
       </div>
       <aside class="detail" id="node-detail">
         <div class="empty">Pick a box in the diagram.<br><br>

@@ -23,8 +23,27 @@ async function api(path, opts) {
   const r = await fetch(path, opts);
   const t = await r.text();
   let j; try { j = JSON.parse(t); } catch { j = { error: t }; }
+  // A route the running backend does not have answers exactly {"error": "not
+  // found"} (an unknown PROCESS says "no such process" instead). That means
+  // this page is newer than the console process serving it: say so, instead
+  // of surfacing a bare "not found".
+  if (r.status === 404 && j && j.error === 'not found' && path.startsWith('/api/')) {
+    markStale(`${path.split('?')[0]} is unknown to the running console`);
+    const err = new Error(`${path.split('?')[0]} not found -- this console is older than the page`);
+    err.stale = true;
+    throw err;
+  }
   if (j && j.error) throw new Error(j.error);
   return j;
+}
+
+function markStale(why) {
+  const b = $('#stale-banner');
+  if (!b) return;
+  b.innerHTML = `<b>This console is out of date.</b> The page was updated but the console
+    process was not restarted${why ? ` (${esc(why)})` : ''}. New buttons can answer
+    "not found". Restart it: stop <code>./console/run.sh</code> and start it again.`;
+  b.hidden = false;
 }
 const post = (path, body) => api(path, {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -62,6 +81,7 @@ async function boot() {
   S.health = b.health; S.procs = b.procs; S.history = b.history;
   if (S.procs.length) S.selProc = S.procs[S.procs.length - 1].id;   // show the newest on load
   S.repo = b.repo; S.env = b.env;
+  if (b.code_changed) markStale('console code changed since it started');
   S.selGroup = S.groups[0];
   // ?node=<id> selects a health box on load, so a failing check can be linked to.
   S.selNode = new URLSearchParams(location.search).get('node') || null;
@@ -76,7 +96,7 @@ function events() {
     const ev = JSON.parse(e.data);
     if (ev.type === 'health') {
       S.health = ev.health; renderHealth(); renderTop();
-      if ($('#tab-dash').classList.contains('active')) renderDash();
+      renderDashLive();
       const sig = JSON.stringify([ev.health.facts.server_running, ev.health.facts.enabled_drones]);
       if (sig !== S.factsSig) { S.factsSig = sig; renderControl(); }
     }
@@ -116,14 +136,13 @@ function renderTabs() {
     $('#headline').textContent = 'running every probe...';
     try {
       S.health = await api('/api/health?refresh=1');
-      renderHealth(); renderTop();
-      if ($('#tab-dash').classList.contains('active')) renderDash();
+      renderHealth(); renderTop(); renderDashLive();
     }
     catch (e) { toast(e.message, 'err'); }
     finally { $('#btn-refresh').disabled = false; }
   };
   wireZoom();
-  $('#btn-estop').onclick = () => runAction('srv.estop', {});
+  $('#btn-estop').onclick = fireEstop;
   $('#btn-scan').onclick = scanFleet;
   $('#btn-send').onclick = sendStdin;
   $('#stdin').onkeydown = (e) => { if (e.key === 'Enter') sendStdin(); };
@@ -171,17 +190,26 @@ function renderTop() {
     ['mocap', f.mocap_running ? 'running' : 'stopped', f.mocap_running ? 'ok' : ''],
     ['/poses', hz == null ? '--' : hz.toFixed(1) + ' Hz',
       hz == null ? '' : (hz > 30 ? 'ok' : 'warn')],
-    ['fleet', (f.enabled_drones || []).join(' ') || 'none', ''],
-    ['ROS', S.env.ros_distro + ' / domain ' + S.env.domain_id, ''],
+    // short values: at the rig laptop's 200% scale the page is ~1280 px wide and a
+    // wrapped topbar costs a line on every tab. The long form is in the tooltip.
+    ['fleet', String((f.enabled_drones || []).length), '',
+      'enabled: ' + ((f.enabled_drones || []).join(' ') || 'none') + ' -- edit crazyflies.yaml'],
+    ['domain', String(S.env.domain_id), '',
+      `ROS ${S.env.ros_distro}, ROS_DOMAIN_ID=${S.env.domain_id} -- must match the terminal that started the stack`],
   ];
-  $('#pills').innerHTML = pills.map(([k, v, c]) =>
-    `<span class="pill ${c}">${esc(k)} <b>${esc(v)}</b></span>`).join('');
+  const target = { server: 'node:server.node', mocap: 'node:mocap.node', '/poses': 'node:mocap.poses',
+                   fleet: 'config:crazyflies', domain: 'node:env.ros' };
+  $('#pills').innerHTML = pills.map(([k, v, c, tip]) =>
+    `<a class="pill ${c}" data-go="${target[k] || 'tab:health'}" title="${esc(tip || 'open the check behind this')}">` +
+    `${esc(k)} <b>${esc(v)}</b></a>`).join('');
 }
 
 /* -------------------------------------------------------- health graph */
 // Sized so the whole chain -- workspace to drones -- fits a 1280px viewport
 // beside the detail panel, without horizontal scrolling.
-const NW = 172, NH = 66, CGAP = 30, RGAP = 18, PAD = 16, TOP = 26;
+// Boxes are laid out in viewBox units; the SVG then scales to fit the pane,
+// so the whole graph is visible at any window size with no scrolling.
+const NW = 160, NH = 64, CGAP = 26, RGAP = 16, PAD = 12, TOP = 24;
 
 function renderHealth() {
   const h = S.health;
@@ -222,7 +250,7 @@ function renderHealth() {
   const stroke = { ok: 'var(--ok)', warn: 'var(--warn)', fail: 'var(--fail)', blocked: 'var(--blocked)', unknown: 'var(--unknown)', skip: 'var(--blocked)' };
   const boxes = h.nodes.map((n) => {
     const p = pos(n);
-    const sub = wrap(n.summary || n.status, 26, 2);
+    const sub = wrap(n.summary || n.status, 22, 2);
     return `<g class="gnode ${S.selNode === n.id ? 'sel' : ''}" data-id="${esc(n.id)}"
         transform="translate(${p.x},${p.y})">
       <title>${esc(n.label)} -- ${esc(n.summary || n.status)}</title>
@@ -238,7 +266,7 @@ function renderHealth() {
     `<text class="glabel" x="${c.x}" y="${c.y - 9}">${esc(c.g)}</text>`).join('');
 
   $('#graph').innerHTML =
-    `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${edges}${captions}${boxes}</svg>`;
+    `<svg class="gsvg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMin meet">${edges}${captions}${boxes}</svg>`;
   $$('#graph .gnode').forEach((g) => {
     g.onclick = () => {
       S.selNode = g.dataset.id;
@@ -316,68 +344,248 @@ window.__scan = scanFleet;
 
 /* ------------------------------------------------------------- control */
 /* ---------------------------------------------------------- dashboard */
-/* The Control tab groups actions by KIND (Launch, Preflight, Flight...). That
- * is the right way to browse 45 actions, but the wrong way to fly: a session
- * walks across four of those groups in a fixed order. This pane is that order,
- * on one screen, reusing the same cards so there is exactly one definition of
- * every command. */
-const DASH_ROWS = [
-  ['Before the server (the radio is free)',
-   ['check.scan_all', 'check.battery', 'pos.sync_dry', 'pos.sync_apply']],
-  ['Bring it up',
-   ['launch.stack', 'launch.stop']],
-  ['Is it healthy?',
-   ['check.poses_hz', 'check.status_once', 'check.services']],
-  ['Fly',
-   ['fly.hello_world', 'fly.multi_trajectory_formation', 'srv.land_all', 'srv.estop']],
+/* The Control tab is the reference: one verbose card per action, with the
+ * command, why it exists and how to read it. The dashboard is the cockpit: the
+ * same actions as one-line buttons, in the order a session uses them, with
+ * everything on one screen at the rig laptop's ~1280x660 viewport. Nothing is
+ * defined twice -- a dashboard button runs the catalog action, its tooltip is
+ * the real argv from /api/preview, and its "..." opens the full card. */
+const DASH = [
+  { title: 'Before the server', sub: 'needs the radio free', items: [
+    { id: 'check.scan_all', label: 'Scan the fleet' },
+    { id: 'check.battery', label: 'Battery', params: ['drone'] },
+    { id: 'pos.sync_dry', label: 'Preview position sync' },
+    { id: 'pos.sync_apply', label: 'Apply position sync' },
+  ] },
+  { title: 'Bring it up', items: [
+    { id: 'launch.stack', label: 'Start the stack', params: ['backend'] },
+    { id: 'launch.stop', label: 'Stop the stack' },
+  ] },
+  { title: 'Check', items: [
+    { id: 'check.poses_hz', label: 'Measure /poses' },
+    { id: 'check.status_once', label: 'Drone status', params: ['drone'] },
+    { id: 'check.services', label: '/all/* services up?' },
+    { id: 'tool.script', label: 'Ground check', params: ['script'] },
+  ] },
+  { title: 'Fly', sub: 'E-STOP is top right: one click, no confirm', items: [
+    { id: 'fly.script', label: 'Fly', params: ['script', 'sim'] },
+    { id: 'srv.land_all', label: 'Land all' },
+  ] },
 ];
 
+/* ---- remembered choices: the script you flew last is the one offered next */
+function optionsHtml(p, cur) {
+  const one = (o, text) =>
+    `<option value="${esc(o)}" ${String(o) === String(cur) ? 'selected' : ''}>${esc(text)}</option>`;
+  if (!p.grouped) return p.options.map((o) => one(o, o)).join('');
+  const groups = {};
+  p.options.forEach((o) => {
+    const i = String(o).indexOf(' ');
+    (groups[String(o).slice(0, i)] = groups[String(o).slice(0, i)] || []).push(o);
+  });
+  return Object.entries(groups).map(([g, opts]) =>
+    `<optgroup label="${esc(g)}">${opts.map((o) => one(o, String(o).slice(g.length + 1))).join('')}</optgroup>`).join('');
+}
+
+function savedParam(actionId, p) {
+  try {
+    const v = localStorage.getItem(`mc_p_${actionId}_${p.name}`);
+    if (v !== null && (p.type !== 'select' || p.options.map(String).includes(v))) return v;
+  } catch (e) { /* storage unavailable */ }
+  return p.default;
+}
+function saveParam(actionId, name, value) {
+  try { localStorage.setItem(`mc_p_${actionId}_${name}`, value); } catch (e) { /* ignore */ }
+}
+
+/* ---- one navigation vocabulary for every link on the page: data-go="kind:arg" */
+function openHealthNode(id) {
+  S.selNode = id;
+  gotoTab('health');
+  renderHealth(); renderDetail();
+}
+function openCard(actionId) {
+  const a = S.catalog.find((x) => x.id === actionId);
+  if (!a) return;
+  S.selGroup = a.group;
+  gotoTab('control');
+  renderControl();
+  const card = $(`.card[data-act="${CSS.escape(actionId)}"]`);
+  if (card) {
+    card.scrollIntoView({ block: 'center' });
+    card.classList.add('flash');
+    setTimeout(() => card.classList.remove('flash'), 1600);
+  }
+}
+function openProc(id) {
+  S.selProc = id;
+  gotoTab('procs');
+  renderProcs();
+}
+function go(target) {
+  const i = target.indexOf(':');
+  const kind = target.slice(0, i); const arg = target.slice(i + 1);
+  if (kind === 'node') openHealthNode(arg);
+  else if (kind === 'card') openCard(arg);
+  else if (kind === 'proc') openProc(arg);
+  else if (kind === 'config') { S.selFile = arg; gotoTab('config'); }
+  else if (kind === 'tab') gotoTab(arg);
+}
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-go]');
+  if (!el) return;
+  e.preventDefault();
+  go(el.dataset.go);
+});
+
+/* ---- live parts: status strip, issues, activity (cheap, re-rendered often) */
 function dashStrip() {
-  /* Keys come from health.py's facts dict -- server_running, mocap_running,
-   * poses_hz, enabled_drones, fleet -- plus env {ros_distro, domain_id}.
-   * Anything else (the radio, for one) is a health NODE, not a fact, so read
-   * it from the graph rather than inventing a fact name. */
-  const h = S.health || {}; const f = h.facts || {};
-  const node = (id) => (h.nodes || []).find((n) => n.id === id);
-  const cell = (label, val, cls) =>
-    `<div class="dcell ${cls || ''}"><div class="dk">${esc(label)}</div>` +
-    `<div class="dv">${esc(val)}</div></div>`;
+  /* The topbar pills already say server / mocap / /poses / fleet / domain on
+   * every tab, so this row carries what they cannot: each drone on its own,
+   * plus the radio. Every cell opens the health check behind it. */
+  const h = S.health || {};
+  const nodes = h.nodes || [];
+  const cls = (st) => ({ ok: 'ok', warn: 'warn', fail: 'bad' }[st] || 'idle');
+  const cell = (label, val, c, target, tip) =>
+    `<a class="dcell ${c || ''}" data-go="${esc(target)}" title="${esc(tip || '')}">` +
+    `<span class="dk">${esc(label)}</span><span class="dv">${esc(val)}</span></a>`;
+  const brief = (n) => {
+    // "4.13 V, rssi 53, latency 20.0 ms" -> "4.13 V  20 ms"; otherwise the summary
+    const v = /([\d.]+) V/.exec(n.summary || ''); const l = /latency ([\d.]+) ms/.exec(n.summary || '');
+    if (v) return `${v[1]} V` + (l ? `  ${Math.round(+l[1])} ms` : '');
+    return n.status === 'blocked' ? '--' : clip(String(n.summary || n.status).split(',')[0], 16);
+  };
+  const radio = nodes.find((n) => n.id === 'radio.usb');
+  const drones = nodes.filter((n) => n.id.startsWith('drone.'));
+  return '<span class="rowlabel">fleet</span>' +
+    (radio ? cell('radio', clip(radio.summary, 18), cls(radio.status), 'node:radio.usb', radio.summary) : '') +
+    drones.map((n) => cell(n.label, brief(n), cls(n.status), `node:${n.id}`,
+      `${n.label}: ${n.summary || n.status}`)).join('');
+}
 
-  const hz = f.poses_hz;
-  const radio = node('radio.usb');
-  const drones = f.enabled_drones || [];
-  const statusClass = (st) => (st === 'ok' ? 'ok'
-    : st === 'warn' ? 'warn' : st === 'fail' ? 'bad' : 'idle');
+function dashIssues() {
+  const nodes = (S.health && S.health.nodes) || [];
+  if (!nodes.length) return '<span class="hint">running the first checks...</span>';
+  const rank = { fail: 0, warn: 1 };
+  const bad = nodes.filter((n) => n.status in rank).sort((a, b) => rank[a.status] - rank[b.status]);
+  const blocked = nodes.filter((n) => n.status === 'blocked').length;
+  if (!bad.length && !blocked) return '<span class="iss ok">every check is green</span>';
+  const MAX = 5;
+  const chips = bad.slice(0, MAX).map((n) =>
+    `<a class="iss ${n.status}" data-go="node:${esc(n.id)}" title="${esc(n.label + ': ' + (n.summary || ''))}">` +
+    `<b>${esc(clip(n.label, 22))}</b> ${esc(clip(n.summary || n.status, 38))}</a>`);
+  if (bad.length > MAX) chips.push(`<a class="iss more" data-go="tab:health">+${bad.length - MAX} more</a>`);
+  if (blocked) {
+    chips.push(`<a class="iss blocked" data-go="tab:health" title="Checks that cannot run because something upstream failed">` +
+      `${blocked} blocked downstream</a>`);
+  }
+  return `<span class="isslabel">needs attention</span>${chips.join('')}`;
+}
 
-  return [
-    cell('server', f.server_running ? 'running' : 'stopped',
-         f.server_running ? 'ok' : 'idle'),
-    cell('mocap', f.mocap_running ? 'running' : 'stopped',
-         f.mocap_running ? 'ok' : 'idle'),
-    cell('/poses', hz == null ? '--' : hz.toFixed(1) + ' Hz',
-         hz == null ? 'idle' : (hz > 30 ? 'ok' : 'warn')),
-    cell('fleet', drones.length ? `${drones.length}: ${drones.join(' ')}` : 'none', ''),
-    cell('radio', radio ? radio.summary : '--',
-         radio ? statusClass(radio.status) : 'idle'),
-    cell('domain', `${S.env.ros_distro || '?'} / ${S.env.domain_id || '0'}`, ''),
-    cell('worst check', h.worst || '--',
-         h.worst === 'ok' ? 'ok' : statusClass(h.worst)),
-  ].join('');
+function lastLine(id) {
+  const rows = (S.lines[id] || []).filter((r) => !/^\$ /.test(r.text) && r.text.trim());
+  return rows.length ? rows[rows.length - 1].text : '';
+}
+function dashActivity() {
+  const procs = S.procs.slice(-8).reverse();
+  if (!procs.length) {
+    return '<div class="hint pad">Nothing run yet. Output appears here without leaving the dashboard.</div>';
+  }
+  return procs.map((p) => `<a class="actrow ${esc(p.state)}" data-go="proc:${esc(p.id)}" title="${esc(p.cmdline)}">
+      <span class="adot"></span><span class="alabel">${esc(clip(p.label, 30))}</span>
+      <span class="astate">${esc(p.state)}${p.returncode != null && p.state !== 'running' ? ' ' + p.returncode : ''}</span>
+      <span class="aline">${esc(clip(lastLine(p.id), 70))}</span></a>`).join('');
+}
+
+function dashBlocked(a, f) {
+  if (a.requires === 'server_running' && !f.server_running) return 'needs the server running';
+  if (a.requires === 'server_stopped' && f.server_running) return 'the server owns the radio -- stop it first';
+  return '';
+}
+
+function renderDashLive() {
+  if (!$('#tab-dash').classList.contains('active')) return;
+  const f = (S.health && S.health.facts) || {};
+  $('#dashstrip').innerHTML = dashStrip();
+  $('#dashissues').innerHTML = dashIssues();
+  $('#dashactivity').innerHTML = dashActivity();
+  $$('#dashcols .qa').forEach((el) => {
+    const a = S.catalog.find((x) => x.id === el.dataset.qa);
+    if (!a) return;
+    const why = dashBlocked(a, f);
+    el.classList.toggle('blocked', !!why);
+    $('.qa-why', el).textContent = why;
+  });
+}
+let dashTimer = null;
+function renderDashSoon() {
+  if (dashTimer) return;
+  dashTimer = setTimeout(() => { dashTimer = null; renderDashLive(); }, 250);
+}
+
+/* ---- structure: the step columns (rebuilt only when the catalog changes) */
+function qaHtml(it, a) {
+  const shown = (it.params || []).map((n) => a.params.find((q) => q.name === n)).filter(Boolean);
+  const sel = shown.map((q) => {
+    const opts = optionsHtml(q, savedParam(a.id, q));
+    return `<select data-param="${esc(q.name)}" title="${esc(q.label + (q.help ? ' -- ' + q.help : ''))}">${opts}</select>`;
+  }).join('');
+  const desc = shown.some((q) => Object.keys(q.descriptions || {}).length)
+    ? '<div class="qa-desc"></div>' : '';
+  const kind = a.danger === 'flight' ? 'flight' : '';
+  return `<div class="qa" data-qa="${esc(a.id)}">
+    <div class="qa-row">
+      <button class="btn sm qa-run ${kind}" data-run>${esc(it.label)}</button>
+      <a class="qa-more" data-go="card:${esc(a.id)}" title="Full card: every option, the exact command and how to read it">&#8943;</a>
+    </div>
+    ${sel ? `<div class="qa-params">${sel}</div>` : ''}
+    ${desc}<div class="qa-why"></div></div>`;
+}
+
+function wireQa(el, a) {
+  const values = () => {
+    const v = {};
+    $$('[data-param]', el).forEach((s) => { v[s.dataset.param] = s.value; });
+    return v;
+  };
+  const run = $('[data-run]', el);
+  const refresh = async () => {
+    const v = values();
+    const d = $('.qa-desc', el);
+    if (d) {
+      const q = a.params.find((x) => Object.keys(x.descriptions || {}).length);
+      d.textContent = (q && q.descriptions[v[q.name]]) || '';
+    }
+    try {
+      const r = await post('/api/preview', { action_id: a.id, values: v });
+      run.title = `${r.cmdline}\n\n${a.why}`;
+    } catch (e) { run.title = a.why; }
+  };
+  $$('[data-param]', el).forEach((s) => {
+    s.onchange = () => { saveParam(a.id, s.dataset.param, s.value); refresh(); };
+  });
+  run.onclick = () => runAction(a.id, values(), { stay: true });
+  refresh();
 }
 
 function renderDash() {
-  $('#dashstrip').innerHTML = dashStrip();
-  const f = (S.health && S.health.facts) || {};
   const byId = Object.fromEntries(S.catalog.map((a) => [a.id, a]));
-  const used = [];
-  $('#dashgrid').innerHTML = DASH_ROWS.map(([title, ids]) => {
-    const acts = ids.map((i) => byId[i]).filter(Boolean);
-    acts.forEach((a) => used.push(a));
-    if (!acts.length) return '';
-    return `<section class="dashrow"><h2>${esc(title)}</h2>
-      <div class="actions dashcards">${acts.map((a) => cardHtml(a, f)).join('')}</div></section>`;
+  const cols = DASH.map((c, i) => {
+    const items = c.items.filter((it) => byId[it.id]);
+    return `<section class="dcol"><h2><span class="step">${i + 1}</span>${esc(c.title)}</h2>
+      ${c.sub ? `<div class="dsub">${esc(c.sub)}</div>` : ''}
+      ${items.map((it) => qaHtml(it, byId[it.id])).join('')}</section>`;
   }).join('');
-  used.forEach((a) => wireCard(a));
+  $('#dashcols').innerHTML = cols +
+    `<section class="dcol activity"><h2>Activity
+      <a class="hlink" data-go="tab:procs">all output</a>
+      <a class="hlink" data-go="tab:log">command log</a></h2>
+      <div id="dashactivity"></div></section>`;
+  DASH.forEach((c) => c.items.forEach((it) => {
+    const el = $(`#dashcols .qa[data-qa="${CSS.escape(it.id)}"]`);
+    if (el) wireQa(el, byId[it.id]);
+  }));
+  renderDashLive();
 }
 
 function renderControl() {
@@ -406,7 +614,7 @@ function cardHtml(a, f) {
   return `<div class="card" data-act="${esc(a.id)}">
     <h3>${esc(a.label)} ${tags.join(' ')}</h3>
     <div class="why">${esc(a.why)}</div>
-    ${a.params.length ? `<div class="params">${a.params.map(paramHtml).join('')}</div>` : ''}
+    ${a.params.length ? `<div class="params">${a.params.map((q) => paramHtml(q, a.id)).join('')}</div>` : ''}
     <div class="cmdline" data-preview>building the command...</div>
     <div class="cardfoot">
       <button class="btn primary" data-run>Run</button>
@@ -418,16 +626,18 @@ function cardHtml(a, f) {
   </div>`;
 }
 
-function paramHtml(p) {
+function paramHtml(p, actionId) {
   const id = `p_${Math.random().toString(36).slice(2, 8)}`;
+  const cur = actionId ? savedParam(actionId, p) : p.default;
   if (p.type === 'select') {
-    return `<div><label for="${id}" title="${esc(p.help)}">${esc(p.label)}</label>
-      <select id="${id}" data-param="${esc(p.name)}">${p.options.map((o) =>
-        `<option ${String(o) === String(p.default) ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
+    const hasDesc = Object.keys(p.descriptions || {}).length;
+    return `<div class="${hasDesc ? 'wide' : ''}"><label for="${id}" title="${esc(p.help)}">${esc(p.label)}</label>
+      <select id="${id}" data-param="${esc(p.name)}">${optionsHtml(p, cur)}</select>
+      ${hasDesc ? `<div class="optdesc" data-desc="${esc(p.name)}">${esc(p.descriptions[cur] || '')}</div>` : ''}</div>`;
   }
   const type = p.type === 'number' ? 'number' : 'text';
   return `<div><label for="${id}" title="${esc(p.help)}">${esc(p.label)}</label>
-    <input id="${id}" type="${type}" step="any" data-param="${esc(p.name)}" value="${esc(p.default)}"></div>`;
+    <input id="${id}" type="${type}" step="any" data-param="${esc(p.name)}" value="${esc(cur)}"></div>`;
 }
 
 function cardValues(card) {
@@ -450,7 +660,13 @@ function wireCard(a) {
   };
   $$('[data-param]', card).forEach((el) => {
     el.oninput = () => { clearTimeout(timer); timer = setTimeout(refresh, 200); };
-    el.onchange = refresh;
+    el.onchange = () => {
+      saveParam(a.id, el.dataset.param, el.value);
+      const q = a.params.find((x) => x.name === el.dataset.param);
+      const d = $(`[data-desc="${CSS.escape(el.dataset.param)}"]`, card);
+      if (d && q) d.textContent = (q.descriptions || {})[el.value] || '';
+      refresh();
+    };
   });
   refresh();
   $('[data-copy]', card).onclick = () => {
@@ -460,9 +676,112 @@ function wireCard(a) {
   $('[data-run]', card).onclick = () => runAction(a.id, cardValues(card));
 }
 
-async function runAction(actionId, values) {
+/* --------------------------------------------------------------- e-stop */
+/* One click, no confirmation, no tab switch -- the same contract as the
+ * preflight GUI's button and its `e` key. It used to go through the generic
+ * run path: fetch a preview, open a confirm modal, then jump to the Processes
+ * tab, where an unreachable server (dead, hung, or on another ROS_DOMAIN_ID)
+ * showed the bare command and then nothing, forever. Now the backend answers
+ * within ESTOP_CONFIRM_S and this banner says what actually happened. */
+function estopBanner(kind, title, detail, procId) {
+  const b = $('#estop-banner');
+  b.className = 'estopban ' + kind;
+  b.innerHTML = `<div class="eb-main"><b>${esc(title)}</b>
+      ${detail ? `<span class="eb-detail">${esc(detail)}</span>` : ''}</div>
+    <div class="eb-actions">
+      ${procId ? `<button class="btn ghost sm" data-eb-proc="${esc(procId)}">output</button>` : ''}
+      <button class="btn ghost sm" data-eb-close>dismiss</button></div>`;
+  b.hidden = false;
+  const po = $('[data-eb-proc]', b);
+  if (po) po.onclick = () => { S.selProc = po.dataset.ebProc; renderProcs(); gotoTab('procs'); };
+  $('[data-eb-close]', b).onclick = () => { b.hidden = true; };
+}
+
+let estopBusy = false;
+async function fireEstop() {
+  if (estopBusy) return;          // a second click must not queue a second call
+  estopBusy = true;
+  const btn = $('#btn-estop');
+  btn.classList.add('firing');
+  estopBanner('pending', 'E-STOP sent', 'waiting for the crazyflie_server to confirm...');
+  try {
+    let r;
+    try {
+      r = await post('/api/estop', {});
+    } catch (e) {
+      if (e.stale) return await estopLegacy();   // outdated backend: still fire
+      throw e;
+    }
+    S.estopPending = r.pending ? r.proc : null;
+    if (r.confirmed) {
+      estopBanner('ok', `E-STOP confirmed in ${r.elapsed.toFixed(2)} s`,
+        'Motors cut on every drone. They need a reboot (power-cycle) before they will arm again.', r.proc);
+    } else {
+      estopBanner('fail', r.pending
+        ? `E-STOP NOT CONFIRMED after ${r.elapsed.toFixed(1)} s`
+        : 'E-STOP FAILED', r.reason, r.proc);
+    }
+  } catch (e) {
+    estopBanner('fail', 'E-STOP could not reach the console backend',
+      `${e.message} -- use the preflight GUI (e) or cut power.`);
+  } finally {
+    estopBusy = false;
+    btn.classList.remove('firing');
+  }
+}
+
+/* The running console predates /api/estop. An e-stop must still fire, so use
+ * the route every version has (/api/run -- without the confirm modal) and do
+ * the confirming here, by watching the process it starts. */
+async function estopLegacy() {
+  const t0 = performance.now();
+  let p;
+  try {
+    p = await post('/api/run', { action_id: 'srv.estop', values: {} });
+  } catch (e) {
+    estopBanner('fail', 'E-STOP could not be sent',
+      `${e.message} -- use the preflight GUI (e) or cut power.`);
+    return;
+  }
+  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+  while (performance.now() - t0 < 3000) {
+    await sleep(100);
+    let q = null;
+    try { q = (await api('/api/procs')).procs.find((x) => x.id === p.id); } catch (e) { /* keep polling */ }
+    if (q && q.state === 'done') {
+      estopBanner('ok', `E-STOP confirmed in ${((performance.now() - t0) / 1000).toFixed(2)} s`,
+        'Sent through an OUT-OF-DATE console -- restart ./console/run.sh. Drones need a power-cycle before they arm again.', p.id);
+      return;
+    }
+    if (q && (q.state === 'failed' || q.state === 'stopped')) {
+      estopBanner('fail', 'E-STOP FAILED', `exited ${q.returncode} -- use the preflight GUI (e) or cut power.`, p.id);
+      return;
+    }
+  }
+  estopBanner('fail', 'E-STOP NOT CONFIRMED after 3.0 s',
+    'Sent through an OUT-OF-DATE console, which cannot time the call out: it may still be pending. ' +
+    'Use the preflight GUI (e) or cut power, then restart ./console/run.sh.', p.id);
+}
+
+/* A NOT-CONFIRMED call keeps retrying in the backend; if it lands late, say so. */
+function estopLate(p) {
+  if (!S.estopPending || p.id !== S.estopPending) return;
+  if (p.state === 'done') {
+    S.estopPending = null;
+    const took = p.ended && p.started ? (p.ended - p.started).toFixed(1) + ' s' : 'late';
+    estopBanner('ok', `E-STOP confirmed late (${took})`,
+      'The server did accept it, but slowly -- find out why before the next flight.', p.id);
+  } else if (p.state === 'stopped' || p.state === 'failed') {
+    S.estopPending = null;
+    estopBanner('fail', 'E-STOP was never confirmed',
+      'The backend gave up waiting. Assume the motors were NOT cut.', p.id);
+  }
+}
+
+async function runAction(actionId, values, opts = {}) {
   const a = S.catalog.find((x) => x.id === actionId);
   if (!a) return;
+  if (a.danger === 'estop') return fireEstop();
   let cmd = '';
   try {
     cmd = (await post('/api/preview', { action_id: actionId, values })).cmdline;
@@ -488,7 +807,7 @@ async function runAction(actionId, values) {
     upsertProc(p); S.selProc = p.id; S.lines[p.id] = S.lines[p.id] || [];
     renderProcs();
     toast('started: ' + p.cmdline.slice(0, 70));
-    gotoTab('procs');
+    if (opts.stay) renderDashLive(); else gotoTab('procs');
   } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -718,6 +1037,8 @@ function showDiff(sel, diff) {
 function upsertProc(p) {
   const i = S.procs.findIndex((x) => x.id === p.id);
   if (i >= 0) S.procs[i] = p; else S.procs.push(p);
+  estopLate(p);
+  renderDashSoon();
   if (!S.selProc) S.selProc = p.id;
 }
 
@@ -725,6 +1046,7 @@ function pushLine(ev) {
   (S.lines[ev.proc] = S.lines[ev.proc] || []).push({ seq: ev.seq, text: ev.text });
   if (S.lines[ev.proc].length > 3000) S.lines[ev.proc].splice(0, 500);
   if (ev.proc === S.selProc) appendLine(ev.text);
+  renderDashSoon();
 }
 
 function lineClass(t) {

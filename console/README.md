@@ -79,11 +79,47 @@ known error signatures, and a match is attached to the box it belongs to.
 Boxes that do not apply to the current run (radio and mocap during a
 `backend:=sim` launch) show as "not applicable" rather than red.
 
-**Control** — the commands, grouped: Launch, Preflight, Fleet position, Flight,
-Commands (service calls), Parameters, Recovery. Actions declare whether they
-need the server running or stopped, and say so rather than silently failing.
-Anything that moves a drone asks for confirmation and shows the command first.
-The E-STOP button in the header calls `/all/emergency` from any tab.
+**Dashboard** (the default tab) — the cockpit. A session's actions as one-line
+buttons in the order you use them (before the server, bring it up, check, fly),
+a per-drone fleet row, a *needs attention* row of every failing or warning check,
+and a live Activity column, sized to fit the rig laptop's ~1280x660 viewport (GNOME at 200%)
+with no scrolling. Nothing is defined twice: each button runs the catalog action,
+its tooltip is the real argv, and its `⋯` opens the full card in Control. Every
+fleet cell, attention chip and topbar pill is a link to the check behind it.
+Running from here keeps you here; output streams into Activity.
+
+**Control** — the reference: one verbose card per action, grouped Launch,
+Preflight, Fleet position, Flight, Commands (service calls), Parameters,
+Recovery. Actions declare whether they need the server running or stopped, and
+say so rather than silently failing. Anything that moves a drone asks for
+confirmation and shows the command first.
+
+**Flight scripts are discovered, not listed.** Every package in the workspace
+that depends on `crazyflie_py` is scanned for executables — `crazyflie_examples`,
+`crazyflie_shows`, and whatever you build next — and offered in one *Run a flight
+script* card, grouped by package, each with its own module docstring as the
+description (read with `ast`, never imported). Scripts that never command a
+drone (`plan_*`, `*.sh`, `color_led`, `set_param`) go to *Run a ground check*
+instead, without the "area clear?" prompt. Build a new show package and it
+appears on the next page load; if it was built after the console started, it is
+flagged until you restart the console from a sourced shell.
+
+**E-STOP** (header, every tab) — one click, **no confirmation, no tab switch**,
+the same contract as the preflight GUI. It runs
+`ros2 service call /all/emergency std_srvs/srv/Empty {}` and a banner reports
+what happened within 3 s: confirmed (with the latency), or **NOT CONFIRMED** with
+the reason. That deadline matters: `ros2 service call` has no timeout of its own,
+so an unreachable server — dead, hung, or on a different `ROS_DOMAIN_ID` than the
+console — used to leave the call waiting forever with no output at all. A pending
+call keeps retrying for 15 s in case discovery is just slow, then is abandoned so
+it cannot e-stop a server launched later.
+
+**Restart the console after updating it.** The page is re-read from disk on every
+load but the backend is not, so a reloaded page can call routes the running
+process does not have — they answer `not found`. The page now detects this and
+shows an *out of date* banner (and warns on load when the code changed since the
+console started); the E-STOP falls back to a route every version has, so it still
+fires. Just stop `./console/run.sh` and start it again.
 
 **Config** — edit `crazyflies.yaml` as a table (enable/disable, URI, position,
 type, add/remove a drone), or any of the four config files as raw text. Writes

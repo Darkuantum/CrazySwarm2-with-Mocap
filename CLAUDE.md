@@ -293,7 +293,7 @@ A browser front-end for the rig — `./console/run.sh` → http://localhost:8077
 covering the launch, the preflight scans/checks, the flight and service commands,
 live YAML editing, and a system-health diagram that locates the failing link
 instead of leaving it in the launch log. Read `console/README.md` before touching
-it. Four rules hold it together; keep them when editing:
+it. These rules hold it together; keep them when editing:
 
 - **Stay decoupled.** It is deliberately removable: don't make `launch.py`,
   `CMakeLists.txt`, `setup.sh` or anything in `src/` depend on it, and don't turn
@@ -308,6 +308,27 @@ it. Four rules hold it together; keep them when editing:
 - **YAML writes are text-surgical** (`configio.YamlText`), never `yaml.dump()`:
   these config files carry the hard-won comments, and a round-trip deletes them.
   Writes are parse-checked, diffed and backed up to `console/backups/`.
+- **E-STOP is one click with an answer.** Never route it through the generic
+  run path's confirm modal or tab switch. It goes to `/api/estop`, which runs the
+  same `ros2 service call /all/emergency ...` but reports within 3 s: confirmed,
+  or NOT CONFIRMED with the reason. `ros2 service call` has no timeout — against
+  an unreachable server (dead, hung, or on another `ROS_DOMAIN_ID`) it waits
+  forever and prints nothing. Pending calls are abandoned at 15 s so they cannot
+  e-stop a server launched later.
+- **Restart the console after changing its code.** HTML/JS/CSS are re-read on
+  every page load; the Python backend is loaded once. A reloaded page therefore
+  calls routes an old backend lacks, which answer `{"error": "not found"}` —
+  a teammate reported the web e-stop failing with "not found"-type wording, and
+  this reproduces it exactly (the e-stop did not fire). Guards: `/api/bootstrap`
+  carries `code_changed` and the page shows a restart banner; the page treats a
+  route-miss 404 as "outdated console", not a bare error; and the e-stop falls
+  back to `/api/run` (present in every version) so it still fires. Match on the
+  body `"not found"` — an unknown PROCESS legitimately 404s as `no such process`.
+- **Flight scripts are discovered, never hardcoded.** `catalog.discover_scripts()`
+  scans every `crazyflie_py`-dependent package under `install/`; descriptions are
+  module docstrings read with `ast` (never import a flight script). Don't add
+  per-script cards back — add a module docstring, or a `SCRIPT_NOTES` entry where
+  the safety detail matters.
 - **`health.py` is where the Gotchas above become executable.** Each known silent
   failure is a graph node (UDP 1511 starvation, apt mocap driver shadowing, server
   blocked mid-connect with no `/all/*`, datarate mismatch, conda python). Adding a
