@@ -75,6 +75,8 @@ console/            # OPTIONAL mission-console GUI (its own README). Self-contai
 docs/               # RUNNING, MOCAP, TROUBLESHOOTING
 .claude/            # agents/ (build-doctor, mocap-doctor, ...) and workflows/ (deep-research)
 README.md           # single setup doc (no separate SETUP.md)
+WORKSPACE-NOTES.md  # the FORK itself: main is the working trunk (never PR from it), the sim
+                    #   arity fix still owed to AI-DA-STC (e681554), how to hand the laptop back
 ```
 
 Key customized files inside `src/`:
