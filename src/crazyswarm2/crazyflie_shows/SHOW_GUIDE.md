@@ -20,8 +20,7 @@ package and affects `demo_show` identically.
 ## 0. The short version
 
 ```bash
-# 1. deploy
-cp -r crazyflie_shows ~/CrazySwarm2-with-Mocap/src/crazyswarm2/
+# 1. build (the package lives in the workspace, src/crazyswarm2/crazyflie_shows)
 cd ~/CrazySwarm2-with-Mocap && ./scripts/build.sh crazyflie_shows
 source install/setup.bash
 ros2 pkg prefix crazyflie          # MUST print this workspace (HANDOVER 4b)
@@ -324,11 +323,9 @@ the plan.
 
 ## 5. Deploying and flying
 
-### 5a. Deploy
+### 5a. Build
 
 ```bash
-cd ~/near-intern/swarm-shows
-cp -r crazyflie_shows ~/CrazySwarm2-with-Mocap/src/crazyswarm2/
 cd ~/CrazySwarm2-with-Mocap
 ./scripts/build.sh crazyflie_shows
 source install/setup.bash
@@ -395,7 +392,8 @@ sudo ip addr add 141.23.110.162/32 dev wlp131s0f0     # >>> your NIC
 ip -o -f inet addr show dev wlp131s0f0                # expect BOTH addresses
 
 # 2. mocap actually publishing
-ros2 run crazyflie_shows mocap_verify.sh              # checks /poses and the body names
+ros2 topic hz /poses                                  # want ~50 Hz
+python3 scripts/sync_initial_positions.py --dry-run   # body names vs fleet (from the workspace root)
 ss -uanp | grep :1511                                 # two sockets = an orphan is starving it
 
 # 3. scan EVERY enabled address — one silent drone wedges the whole server

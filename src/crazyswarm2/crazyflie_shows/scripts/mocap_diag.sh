@@ -202,13 +202,17 @@ PY
 fi
 
 sec "8. THE REAL NODE, UNBUFFERED  (its stdout is normally lost to block buffering)"
+# This package's own config dir, found from the script itself (the installed
+# script is a symlink back to src/ under --symlink-install), so it follows the
+# package instead of a hardcoded home-directory path.
+PKG_CFG="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../config" 2>/dev/null && pwd)"
 CFG=""
 if [ "$BUSY" = 1 ] && [ "$FORCE" != 1 ]; then
   echo "    SKIPPED -- another process holds :$DATA_PORT (see section 4)."
   CFG="__skip__"
 fi
-for c in "$HOME/CrazySwarm2-with-Mocap/src/crazyswarm2/crazyflie_shows/config/motion_capture.yaml" \
-         "$HOME/near-intern/swarm-shows/crazyflie_shows/config/motion_capture.yaml" \
+for c in "$PKG_CFG/motion_capture.yaml" \
+         "$HOME/CrazySwarm2-with-Mocap/src/crazyswarm2/crazyflie_shows/config/motion_capture.yaml" \
          "$HOME/CrazySwarm2-with-Mocap/src/crazyswarm2/crazyflie/config/motion_capture.yaml"; do
   [ "$CFG" = "__skip__" ] && break
   [ -f "$c" ] && { CFG="$c"; break; }
@@ -241,10 +245,15 @@ def strip_empty(d):
 p = strip_empty(p)
 yaml.safe_dump({'/motion_capture_tracking': {'ros__parameters': p}}, open(sys.argv[2], 'w'))
 PY
-  NODE=/opt/ros/humble/lib/motion_capture_tracking/motion_capture_tracking_node
+  # The workspace's VENDORED driver, never the apt one: apt 1.0.9 hard-codes a
+  # foreign interface IP and is not installed on this rig (see CLAUDE.md). The
+  # workspace root is four levels above this package's config dir.
+  WS="$(cd "$PKG_CFG/../../../.." 2>/dev/null && pwd)"
+  NODE="$WS/install/motion_capture_tracking/lib/motion_capture_tracking/motion_capture_tracking_node"
   if [ -x "$NODE" ]; then
     echo "    running $NODE for 10s (stdbuf -oL, so it actually prints):"
     ( source /opt/ros/humble/setup.bash >/dev/null 2>&1
+      [ -f "$WS/install/setup.bash" ] && source "$WS/install/setup.bash" >/dev/null 2>&1
       stdbuf -oL -eL timeout 10 "$NODE" --ros-args -r __node:=motion_capture_tracking \
         --params-file "$TMP" ) 2>&1 | sed 's/^/      /'
     rc=${PIPESTATUS[0]}

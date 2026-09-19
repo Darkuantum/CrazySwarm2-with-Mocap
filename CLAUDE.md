@@ -48,6 +48,11 @@ the natnet_ros2 + `pose_bridge.py` path is an alternative, not the default.
 ```
 src/                # VENDORED source (committed)
   crazyswarm2/        # customized: configs, launch.py (foxglove node), scripts, examples
+    crazyflie_shows/  # the ~63 s five-drone SHOW (plan_show / swarm_show / demo_show).
+                      #   Folded in 2026-09-18 from ~/near-intern/swarm-shows (retired,
+                      #   commit 714affe). Rig knowledge: its HANDOVER.md; the show and
+                      #   its safety budgets: SHOW_GUIDE.md. Always run plan_show after
+                      #   a position sync -- separation sits at 99% of budget.
   natnet_ros2/        # OptiTrack driver (+ vendored NatNetSDK)
   motion_capture_tracking/  # VENDORED mocap driver: IMRCLab ros2@64d3af2 + NatNet-4.2 modeldef patch.
                             # NEVER apt-install it: apt 1.0.9 hard-codes IP 141.23.110.162 → no /poses (VENDORED.md)
@@ -60,12 +65,15 @@ scripts/
   setup_sim_firmware.sh  # build cffirmware bindings (SIM only)
   led.sh              # set the Color LED deck via `ros2 param set` (server must be running)
   color_led_cflib.py  # LED test straight over cflib (STOP the server first — one radio owner)
+  deck_check.py       # which LED decks are fitted per drone, over cflib (STOP the server first);
+                      #   fleet read from crazyflies.yaml
   sync_initial_positions.py  # rewrite crazyflies.yaml initial_position from live /poses
 pose_bridge.py      # natnet → /poses (NamedPoseArray @ 50 Hz)
 console/            # OPTIONAL mission-console GUI (its own README). Self-contained:
                     #   not a colcon package, nothing in src/ imports it, no build.
                     #   `rm -rf console/` removes the feature and changes nothing else.
 docs/               # RUNNING, MOCAP, TROUBLESHOOTING
+.claude/            # agents/ (build-doctor, mocap-doctor, ...) and workflows/ (deep-research)
 README.md           # single setup doc (no separate SETUP.md)
 ```
 

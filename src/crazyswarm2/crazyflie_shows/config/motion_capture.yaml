@@ -24,8 +24,9 @@
     #     sudo ip addr add 141.23.110.162/32 dev wlp131s0f0
     # Verify with: ip -o -f inet addr show dev wlp131s0f0
     # NetworkManager drops it on reconnect/carrier loss (seen twice on 09-04),
-    # which is exactly what made this look intermittent. scripts/mocap_verify.sh
-    # checks for it up front -- run that before trusting a launch.
+    # which is exactly what made this look intermittent. (Historical: the
+    # vendored driver does not need this address; mocap_verify.sh, which checked
+    # for it, was removed 2026-09-18.)
     #
     # Left here only so the value is not silently re-introduced as a "fix".
     # ------------------------------------------------------------------

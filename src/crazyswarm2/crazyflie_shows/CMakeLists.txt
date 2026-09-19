@@ -20,7 +20,6 @@ install(DIRECTORY
 # Lab diagnostics, executable in place: ros2 run crazyflie_shows mocap_diag.sh
 install(PROGRAMS
   scripts/mocap_diag.sh
-  scripts/mocap_verify.sh
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -4,9 +4,11 @@
 the rig in general. This file records what is *specific to this package* and
 what is *still unresolved on the rig*.
 
-It lives inside the package deliberately, so that `cp -r crazyflie_shows
-~/CrazySwarm2-with-Mocap/src/crazyswarm2/` carries the rig knowledge into the
-git-tracked repo along with the code.
+It lives inside the package deliberately, so the rig knowledge travels with the
+code. **Since 2026-09-18 the package lives in this workspace** at
+`src/crazyswarm2/crazyflie_shows/` and is edited here. It was developed
+out-of-tree in `~/near-intern/swarm-shows/` (single commit `714affe`); that copy
+is retired — do not `cp -r` it back over this one, its roster is stale.
 
 ---
 
@@ -16,7 +18,7 @@ git-tracked repo along with the code.
 |---|---|
 | Mocap `/poses` | ✅ **working, root-caused.** Needs `sudo ip addr add 141.23.110.162/32 dev wlp131s0f0` **every session** — §4a |
 | `crazyflies.yaml` | ✅ five drones enabled (cf1, cf2, cf3, cf10, cf12), planner verified offline — §3 |
-| Diagnostics | ✅ `scripts/mocap_diag.sh`, `scripts/mocap_verify.sh` — no drones, no radio, no sudo |
+| Diagnostics | ✅ `scripts/mocap_diag.sh` — no drones, no radio, no sudo (`mocap_verify.sh` removed 2026-09-18, see §4a) |
 | Flight (hardware) | ❌ **nothing has ever flown on hardware** |
 | Flight (sim) | ✅ `swarm_show` flies end to end on `backend:=sim` — 2026-09-07, after fixing a `crazyflie_sim` bug (§4d) |
 | Show algorithm | ✅ **done** — a ~62 s five-drone show. See `SHOW_GUIDE.md` |
@@ -35,11 +37,11 @@ against where the drones actually sit before flying (§6). Full list in §8.
 ## 1. What this package is
 
 A self-contained ROS 2 package for swarm choreography, built on `crazyflie_py`.
-Developed outside the main workspace in `~/near-intern/swarm-shows/`, dropped
-into `~/CrazySwarm2-with-Mocap/src/crazyswarm2/` to fly.
+Developed out-of-tree in `~/near-intern/swarm-shows/`, folded into this
+workspace on 2026-09-18.
 
 **It is relocatable by construction** — verified, no absolute paths, no `../..`.
-Four rules keep it that way; break any of them and the drop-in stops working:
+Four rules keep it that way; break any of them and it stops being relocatable:
 
 1. resolve every resource via `get_package_share_directory()`
 2. declare every dependency in `package.xml`
@@ -93,8 +95,7 @@ Keep choreography out of `figures.py`/`safety.py`, and keep geometry out of
 ## 2. Build and run
 
 ```bash
-cp -r crazyflie_shows ~/CrazySwarm2-with-Mocap/src/crazyswarm2/
-cd ~/CrazySwarm2-with-Mocap
+cd ~/CrazySwarm2-with-Mocap          # the package is already in src/crazyswarm2/
 ./scripts/build.sh crazyflie_shows
 source install/setup.bash
 ros2 pkg prefix crazyflie      # MUST print this workspace, never /opt/ros/humble
@@ -255,8 +256,9 @@ looked intermittent and unexplainable.
 
 Two consequences worth holding onto:
 
-- **Check before every launch, not just the first.** `scripts/mocap_verify.sh`
-  tests for the address up front and prints the exact command if it is missing.
+- **Check before every launch, not just the first.** (Historical: the vendored
+  driver no longer needs this address. `mocap_verify.sh`, which tested for it,
+  was removed 2026-09-18 — it ran the apt node, which this rig no longer has.)
   A missing address is at least loud (the node aborts at startup).
 - **A mid-session Wi-Fi reconnect is a live risk.** If the address goes away
   while the stack is up, you are in the fly-away case from §6, not the loud
@@ -319,9 +321,7 @@ below but are **not** blockers, per the operator on 2026-09-07:
   cf13`, with `cf2`/`cf3` absent, and positions 1.7–3.0 m from the yaml
   `initial_position` values. **A colleague was mid-session with his own Motive
   configuration**; this is not the show layout and nothing should be inferred
-  from it about the fleet. Re-check with `scripts/mocap_verify.sh` §3 once the
-  show configuration is actually loaded — that section now lists every streamed
-  body and cross-checks it against the enabled drones automatically.
+  from it about the fleet. Re-check with `python3 scripts/sync_initial_positions.py --dry-run` (workspace root: lists every streamed body against the enabled drones) or the mission console's health graph once the show configuration is actually loaded.
   In particular this run does **not** settle the `cf12` vs `cf14` question
   (§4c); it was someone else's setup.
 - **`/poses` ran at ~27 Hz**, drifting down from 31.3, `max` gap 0.215 s, std
@@ -348,9 +348,10 @@ network path is fine; only the join interface was wrong.
   command socket, and a real multicast join per interface. Needs no drones, no
   radio, no sudo. Safe alongside others sharing the Motive server; it skips the
   port-binding sections if something already holds `:1511`.
-- `scripts/mocap_verify.sh` — ROS-level: runs the node unbuffered and checks
-  whether `/poses` actually publishes, at what rate, and under which rigid-body
-  names. **This is the script that exposed the root cause.**
+- ~~`scripts/mocap_verify.sh`~~ — **removed 2026-09-18.** It ran the apt mocap
+  node, which this rig no longer has, so it aborted at its first check. It exposed
+  the original root cause; today the same questions are answered by
+  `ros2 topic hz /poses` and `python3 scripts/sync_initial_positions.py --dry-run` (workspace root: lists every streamed body against the enabled drones) or the mission console's health graph.
 
 **Why the launch logs could never settle this.** The node's stdout is
 block-buffered into the launch pipe and the process is always killed by a
@@ -526,8 +527,7 @@ anything irreplaceable.
    this is done.
 2. ~~Confirm `/poses` publishes~~ — **done 2026-09-07 16:28**, ~27 Hz.
    Still to do **once the show's own Motive configuration is loaded**: re-run
-   `scripts/mocap_verify.sh` and read §3, which lists every streamed rigid body
-   and cross-checks it against the enabled drones. The 09-07 list was a
+   `python3 scripts/sync_initial_positions.py --dry-run` (workspace root: lists every streamed body against the enabled drones) or the mission console's health graph. The 09-07 list was a
    colleague's transient setup and tells us nothing about the show fleet.
 3. ~~`interface_ip`~~ — **inert in this build**; do not spend more time on it.
    Fixing it properly means building `motion_capture_tracking` from source.
