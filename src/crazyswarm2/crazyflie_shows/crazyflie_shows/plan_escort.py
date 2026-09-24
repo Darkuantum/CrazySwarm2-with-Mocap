@@ -29,7 +29,7 @@ import sys
 
 import numpy as np
 
-from crazyflie_shows import escort
+from crazyflie_shows import escort, safety
 
 
 def simulate(cfg, script, walk_speed=0.0, duration=None, walk_bearing=90.0,
@@ -196,6 +196,96 @@ def sweep(cfg, script, hi=1.6, step=0.05):
     return ok
 
 
+def best_standing_phase(cfg, step_deg=5.0):
+    """Ring phase whose slots sit furthest inside the arena.
+
+    Where the drones STAND is the ring they will hold, so the friendliest
+    layout is the one with the most wall clearance. The VIP mark is offset
+    from room centre, so the ring is off-centre too and the phase matters:
+    with the shipped config the worst slot sits 2.50 m out at psi=60 deg and
+    2.42 m at psi=90.
+    """
+    c = np.array(cfg.room_center)
+    best, best_worst = 0.0, -np.inf
+    for psi in np.radians(np.arange(0.0, 120.0, step_deg)):
+        slots = escort.ring_targets(escort.vip_home(cfg), psi, cfg)
+        worst = cfg.arena_radius - float(np.max(np.linalg.norm(slots[:, :2] - c, axis=1)))
+        if worst > best_worst:
+            best, best_worst = float(psi), worst
+    return best, best_worst
+
+
+def recommend_marks(cfg):
+    """Where to stand the drones on the floor: (defender marks, adversary mark)."""
+    v = escort.vip_home(cfg)
+    psi, _ = best_standing_phase(cfg)
+    slots = escort.ring_targets(v, psi, cfg)
+    # The adversary goes on the open side -- away from the VIP's own offset --
+    # far enough out that it starts OUTSIDE the ring it is supposed to attack.
+    away = -np.array(cfg.vip_offset, float)
+    n = float(np.linalg.norm(away))
+    away = np.array([1.0, 0.0]) if n < 1e-6 else away / n
+    adv_r = cfg.ring_radius + cfg.min_adv_sep + 0.3
+    adv = np.array([v[0] + adv_r * away[0], v[1] + adv_r * away[1], 0.0])
+    return [np.array([s[0], s[1], 0.0]) for s in slots], adv
+
+
+def report_marks(cfg, yaml_path=None):
+    """Print where to stand the drones, and check the yaml's marks if given."""
+    v = escort.vip_home(cfg)
+    c = np.array(cfg.room_center)
+    d_marks, a_mark = recommend_marks(cfg)
+    print(f'\n  VIP mark        [{v[0]:+.2f}, {v[1]:+.2f}]  '
+          f'(room centre + vip_offset -- NOT inferred from the drones)')
+    print(f'  arena           {cfg.arena_radius:.2f} m around '
+          f'[{c[0]:+.2f}, {c[1]:+.2f}]\n')
+    print('  STAND THE DRONES HERE (metres, floor, world frame)')
+    for i, m in enumerate(d_marks):
+        print(f'    defender {i + 1}   [{m[0]:+.2f}, {m[1]:+.2f}]   '
+              f'{np.linalg.norm(m[:2] - v[:2]):.2f} m from the VIP mark, '
+              f'{np.linalg.norm(m[:2] - c):.2f} m from room centre')
+    print(f'    adversary    [{a_mark[0]:+.2f}, {a_mark[1]:+.2f}]   '
+          f'{np.linalg.norm(a_mark[:2] - v[:2]):.2f} m from the VIP mark '
+          f'(must exceed {cfg.ring_radius + cfg.min_adv_sep:.2f})')
+    print('\n  The defenders stand ON the ring they will hold, so the gather is '
+          'a lift,\n  not a march across the room. Put the adversary on the '
+          'far side of the VIP.\n')
+
+    if not yaml_path:
+        return 0
+    from crazyflie_shows.plan_show import load_fleet
+    names, starts = load_fleet(yaml_path)
+    pos = {n: p for n, p in zip(names, starts)}
+    defenders, adv = escort.pick_roles(names, pos, cfg)
+    print(f'  CHECKING {yaml_path}')
+    print(f'    roles it would pick: defenders {", ".join(defenders)}; '
+          f'adversary {adv}')
+    src = [np.array([*pos[n][:2], 0.6]) for n in defenders]
+    ctrl = escort.EscortController(cfg, src, v)
+    slots = escort.ring_targets(v, ctrl.phase.psi, cfg)
+    dst = [slots[ctrl.slot_of(i)] for i in range(len(defenders))]
+    labels = list(defenders)
+    bad = []
+    if adv:
+        src.append(np.array([*pos[adv][:2], 0.6]))
+        dst.append(escort.AdversaryScript(height=cfg.height).target(0.0, v))
+        labels.append(adv)
+        why = escort.adversary_start_problem(pos[adv], v, cfg)
+        if why:
+            bad.append(why)
+    for n, a, b in zip(labels, src, dst):
+        print(f'    {n:>5}  [{a[0]:+.2f}, {a[1]:+.2f}] -> [{b[0]:+.2f}, {b[1]:+.2f}]'
+              f'   {np.linalg.norm(b - a):.2f} m')
+    bad += escort.check_gather(src, dst, labels, cfg)
+    sep = safety.transition_min_sep(src, dst)
+    print(f'    gather legs clear {sep:.2f} m (needs '
+          f'{safety.PLAN_SEPARATION:.2f})')
+    for b in bad:
+        print(f'    *** {b}')
+    print('\n  ' + ('MARKS OK' if not bad else 'MARKS NOT OK - move the drones') + '\n')
+    return 1 if bad else 0
+
+
 def plot(tr, cfg, path):
     import matplotlib
     matplotlib.use('Agg')
@@ -225,6 +315,11 @@ def main():
     ap.add_argument('--height', type=float, help='override defender height, m')
     ap.add_argument('--vmax', type=float, help='override the speed cap, m/s')
     ap.add_argument('--phase-rate', type=float, help='override ring turn rate, rad/s')
+    ap.add_argument('--marks', action='store_true',
+                    help='where to stand the drones, and check the yaml marks')
+    ap.add_argument('--yaml', default=None,
+                    help='crazyflies.yaml to check --marks against '
+                         '(default: the installed one)')
     ap.add_argument('--sweep', action='store_true',
                     help='find the fastest walk the escort holds')
     ap.add_argument('--plot', metavar='PNG', help='write a plan-view plot')
@@ -236,6 +331,10 @@ def main():
         if val is not None:
             setattr(cfg, attr, val)
     script = escort.AdversaryScript(height=cfg.height)
+
+    if args.marks:
+        from crazyflie_shows.plan_show import default_yaml
+        return report_marks(cfg, args.yaml or default_yaml())
 
     print('\n  ESCORT DEMO - offline check\n')
     print(f'  ring          {cfg.n_defenders} defenders at {cfg.ring_radius:.2f} m, '

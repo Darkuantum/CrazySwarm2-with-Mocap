@@ -11,6 +11,7 @@ adversary. Built for the area-denial demo due **8 Oct 2026**.
 | `crazyflie_shows/escort_show.py` | the flight script (mocap + radio) |
 
 ```bash
+python3 -m crazyflie_shows.plan_escort --marks       # where to stand the drones
 python3 -m crazyflie_shows.plan_escort --sweep       # no ROS needed at all
 ros2 run crazyflie_shows plan_escort --plot /tmp/escort.png
 
@@ -166,6 +167,39 @@ Four properties worth knowing, each of which is a deliberate refusal:
 
 `duration` (seconds) bounds the run; it defaults to the script's own length
 for `adversary:=scripted` and 120 s when a human is driving.
+
+## Where to stand the drones
+
+**The VIP mark is not inferred from the fleet.** The shows centre themselves on
+the centroid of `initial_position`; the escort does not — `room_center` and
+`vip_offset` are fixed in `EscortConfig`, so syncing positions moves the
+*drones* in the plan and never moves the mark. Place the drones around the
+mark, not the other way round.
+
+`plan_escort --marks` prints the marks and then checks the yaml against them:
+
+```
+defender 1   [+0.55, -0.10]      on the ring, 1.50 m from the VIP mark
+defender 2   [-1.70, +1.20]
+defender 3   [-1.70, -1.40]
+adversary    [+1.65, -0.10]      2.60 m out, on the far side of the VIP
+```
+
+Three rules behind those numbers:
+
+1. **Defenders stand on the ring they will hold** (1.50 m from the mark, 120°
+   apart). The gather is then a lift rather than a march, and the slot
+   assignment — which goes by bearing from the mark — is unambiguous. Three
+   drones bunched in one corner share almost the same bearing, which makes the
+   assignment arbitrary and the legs long.
+2. **The adversary starts outside `ring_radius + min_adv_sep`** (2.30 m). Any
+   closer and it begins the demo already inside the ring, and its first leg out
+   crosses the defenders.
+3. **Everything stays inside the arena and at least 1 m apart** — the sync tool
+   refuses to write marks closer than 1 m, and the phase `--marks` picks is the
+   one that keeps the ring furthest from the walls (2.18 m of the 2.50 m arena
+   with the shipped config, against 2.50 m — i.e. touching — at the worst
+   phase).
 
 ## The gather is checked, as of 2026-09-24
 
