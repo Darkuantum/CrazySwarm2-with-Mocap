@@ -560,19 +560,35 @@ class Health:
                 blob_by_proc.append((proc, text))
         for pattern, node_id, level, title, detail, fix in SIGNATURES:
             rx = re.compile(pattern, re.I)
-            for proc, text in blob_by_proc:
+            # newest process first: if a signature matched twice, the evidence
+            # worth showing is from the most recent run, not the first one.
+            for proc, text in reversed(blob_by_proc):
                 hits = [l for l in text.splitlines() if rx.search(l)]
                 if not hits:
                     continue
                 n = nodes.get(node_id)
                 if n is None:
                     continue
+                # A line in a process that has already finished normally is
+                # HISTORY, not a live fault. Every `Stop the stack` leaves
+                # "process has died ... motion_capture_tracking" in the launch's
+                # output (that node aborts on shutdown, exit -6), so matching it
+                # unconditionally pinned this box to "The mocap node died" for the
+                # rest of the session -- over the top of a live `ros2 node list`
+                # that had just seen the node alive and /poses at 50 Hz.
+                # Only a process that is still running, or one that actually
+                # failed, may override a live probe.
+                authoritative = proc.state() in ('running', 'stopping', 'failed')
                 n['findings'].append({
-                    'level': level, 'title': title,
-                    'detail': detail + '\n\nSeen in: ' + proc.label + '\n  ' +
+                    'level': level if authoritative else 'info',
+                    'title': title if authoritative else f'{title} (earlier run)',
+                    'detail': detail + '\n\nSeen in: ' + proc.label +
+                              ('' if authoritative else
+                               ' -- which has since finished, so this is history, '
+                               'not the current state') + '\n  ' +
                               '\n  '.join(hits[-3:]),
                     'fix': fix, 'source': proc.id})
-                if RANK[level] > RANK[n['status']]:
+                if authoritative and RANK[level] > RANK[n['status']]:
                     n.update(status=level, summary=title, detail=n['detail'] or detail,
                              fix=n['fix'] or fix)
                 break
