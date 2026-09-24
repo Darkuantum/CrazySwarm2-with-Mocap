@@ -126,6 +126,47 @@ code's. `plan_escort` prints the consequences of whatever is chosen.
    and would arrive on `/poses` like any other, so `adversary:=external`
    already supports it whenever someone decides to try.
 
+## Manual control: testing with nobody in the room
+
+`escort_teleop` publishes a point you steer with the keyboard, so the demo can
+be exercised with no person and no mocap hat. Two independent targets:
+
+```bash
+# terminal 2 -- a virtual VIP for the defenders to escort
+ros2 run crazyflie_shows escort_teleop --ros-args -p target:=vip
+ros2 run crazyflie_shows escort_show   --ros-args -p vip_mode:=manual
+
+# or terminal 2 -- fly the adversary drone by hand instead of the script
+ros2 run crazyflie_shows escort_teleop --ros-args -p target:=adversary
+ros2 run crazyflie_shows escort_show   --ros-args -p adversary:=manual
+```
+
+Keys are `wasd` or the arrows in **plan view** — the orientation
+`plan_escort --plot` draws, x right and y up — plus `q`/`e` for the
+adversary's altitude, `space` to stop, `c` to re-centre, `x` to quit. Hold a
+key and the terminal's auto-repeat keeps it moving; the velocity decays
+`key_timeout` (0.35 s) after the last keystroke, because a terminal has no
+key-release event.
+
+Four properties worth knowing, each of which is a deliberate refusal:
+
+* **A VIP target defaults to `escort.max_vip_speed`** (0.15 m/s as shipped),
+  not to something that feels responsive. That is the speed budget the ring
+  actually has after turning; steering a virtual person faster tests whether
+  the defenders fall behind, which is a fine thing to test **on purpose** with
+  `-p speed:=...`, and a misleading thing to do by accident.
+* **The demo refuses to arm until the teleop is publishing.** A manual target
+  that never arrives is a flight that takes off, holds, and lands.
+* **A stale manual target is treated exactly like a lost mocap body**: the VIP
+  going quiet holds the ring at 0.4 s and lands it at 2.0 s, so closing the
+  teleop is a legitimate way to end a test. A stale *adversary* only freezes
+  the adversary — there is no threat moving, but the person is still fine.
+* **The teleop clamps to the arena itself**, so what you steer is what the
+  flight script will try to fly.
+
+`duration` (seconds) bounds the run; it defaults to the script's own length
+for `adversary:=scripted` and 120 s when a human is driving.
+
 ## The gather is checked, as of 2026-09-24
 
 The defenders and the adversary fly onto the ring TOGETHER, on straight goTo

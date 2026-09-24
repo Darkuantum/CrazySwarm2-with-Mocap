@@ -53,6 +53,32 @@ DEFAULT_YAML = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..", "src", "crazyswarm2", "crazyflie", "config", "crazyflies.yaml")
 
+#: The OTHER copies of crazyflies.yaml that must not be left behind.
+#:
+#: There are two in this workspace and they are not a mistake: show_launch.py
+#: passes the crazyflie_shows copy as `crazyflies_yaml_file`, so it is what the
+#: SERVER reads for a show launch, and it is what plan_show / plan_constellation
+#: / plan_escort read always. Syncing one alone leaves the planner verifying
+#: against the old marks while the server seeds the new ones -- which is
+#: exactly the state this rig was found in on 2026-09-24, the two copies
+#: 1-2 cm apart. Writing every copy that has the same enabled fleet is safer
+#: than remembering; --only sticks to --yaml when a copy is deliberately
+#: different.
+EXTRA_YAMLS = [os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..", "src", "crazyswarm2", "crazyflie_shows", "config", "crazyflies.yaml")]
+
+
+def sibling_yamls(primary):
+    """Other crazyflies.yaml copies to keep in step with ``primary``."""
+    out = []
+    primary = os.path.realpath(primary)
+    for path in EXTRA_YAMLS:
+        path = os.path.normpath(path)
+        if os.path.exists(path) and os.path.realpath(path) != primary:
+            out.append(path)
+    return out
+
 
 # --- yaml I/O ---------------------------------------------------------------
 def read_enabled(yaml_path):
@@ -260,6 +286,9 @@ def main():
     ap = argparse.ArgumentParser(
         description="Update initial_position in crazyflies.yaml from live /poses.")
     ap.add_argument("--yaml", default=os.path.normpath(DEFAULT_YAML))
+    ap.add_argument("--only", action="store_true",
+                    help="write only --yaml, not the other copies of "
+                         "crazyflies.yaml in this workspace")
     ap.add_argument("--topic", default="/poses")
     ap.add_argument("--samples", type=int, default=DEFAULT_SAMPLES)
     ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
@@ -349,6 +378,21 @@ def main():
     with open(args.yaml, "w") as f:
         f.write(new_text)
     print(f"\nwrote {args.yaml}")
+
+    for other in ([] if args.only else sibling_yamls(args.yaml)):
+        try:
+            other_enabled = read_enabled(other)
+        except Exception as e:                                  # noqa: BLE001
+            print(f"  ! could not read {other} ({e}); left alone")
+            continue
+        if set(other_enabled) != set(enabled):
+            print(f"  ! {other} has a different enabled fleet "
+                  f"({sorted(other_enabled)}); left alone deliberately")
+            continue
+        other_text, _ = rewrite_positions(other, updates, keep_z=not args.with_z)
+        with open(other, "w") as f:
+            f.write(other_text)
+        print(f"wrote {other}")
     print("The crazyflie server reads this file only at launch -- (re)start it now "
           "for the new positions to take effect.")
     return 0

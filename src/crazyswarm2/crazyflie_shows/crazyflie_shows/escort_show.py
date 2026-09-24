@@ -65,9 +65,11 @@ import sys
 import numpy as np
 import rclpy
 from crazyflie_py import Crazyswarm
+from geometry_msgs.msg import PointStamped
 from motion_capture_tracking_interfaces.msg import NamedPoseArray
 
 from crazyflie_shows import escort, safety
+from crazyflie_shows.escort_teleop import ADVERSARY_TOPIC, VIP_TOPIC
 from crazyflie_shows.constellation_show import (ShowAborted, abort_land, cue,
                                                 take_signals)
 from crazyflie_shows.swarm_show import _param, check_placement
@@ -115,6 +117,34 @@ class PoseCache:
         return np.inf if name not in self.stamp else now - self.stamp[name]
 
 
+class PointCache:
+    """Latest keyboard-driven target, with its arrival time.
+
+    Deliberately the same shape as :class:`PoseCache`: a manual target that
+    stops arriving is treated exactly like a mocap body that dropped out --
+    hold, then land. Closing the teleop is therefore a legitimate way to end a
+    test, and a teleop that crashes is not a way to strand the drones.
+    """
+
+    def __init__(self, node, topic):
+        self.node = node
+        self.pos = None
+        self.stamp = -1e9
+        node.create_subscription(PointStamped, topic, self._cb, 10)
+
+    def _cb(self, msg):
+        self.stamp = self.node.get_clock().now().nanoseconds * 1e-9
+        self.pos = np.array([msg.point.x, msg.point.y, msg.point.z])
+
+    def get(self, now, max_age):
+        if self.pos is None or now - self.stamp > max_age:
+            return None
+        return self.pos.copy()
+
+    def age(self, now):
+        return np.inf if self.pos is None else now - self.stamp
+
+
 def _cfg_from_params(node):
     cfg = escort.EscortConfig()
     for name in ('ring_radius', 'height', 'v_max', 'phase_rate', 'alert_radius',
@@ -154,6 +184,12 @@ def main():
     adv_drone_name = str(_param(node, 'adversary_drone', ''))
     want_placement = bool(_param(node, 'check_placement', True))
 
+    if vip_mode not in ('point', 'mocap', 'manual'):
+        raise SystemExit(f"vip_mode must be point | mocap | manual, not {vip_mode!r}")
+    if adv_mode not in ('scripted', 'external', 'manual', 'none'):
+        raise SystemExit("adversary must be scripted | external | manual | none, "
+                         f'not {adv_mode!r}')
+
     cfg = _cfg_from_params(node)
     script = escort.AdversaryScript(height=cfg.height)
 
@@ -175,12 +211,13 @@ def main():
                          f'{len(names)} drones ({names})')
 
     adv_drone = None
-    if adv_mode == 'scripted':
+    if adv_mode in ('scripted', 'manual'):
         adv_drone = (adv_drone_name or auto_adv
                      or next((n for n in names if n not in defenders), ''))
         if not adv_drone:
-            raise SystemExit('adversary:=scripted needs a drone that is not a '
-                             f'defender; enabled = {names}, defenders = {defenders}')
+            raise SystemExit(f'adversary:={adv_mode} needs a drone that is not '
+                             f'a defender; enabled = {names}, '
+                             f'defenders = {defenders}')
     idx = {n: i for i, n in enumerate(names)}
     dcfs = [cfs[idx[n]] for n in defenders]
     acf = cfs[idx[adv_drone]] if adv_drone else None
@@ -192,14 +229,14 @@ def main():
           f'{" as " + adv_drone if adv_drone else ""}'
           f'{" (rigid body " + adv_name + ")" if adv_mode == "external" else ""}')
     vip_desc = (str(np.round(vip_point, 3).tolist()) if vip_mode == 'point'
-                else vip_name)
+                else VIP_TOPIC if vip_mode == 'manual' else vip_name)
     print(f'  VIP           {vip_mode} {vip_desc}')
     print(f'  ring          {cfg.ring_radius:.2f} m at {cfg.height:.2f} m, '
           f'turning at {cfg.phase_rate:.2f} rad/s, cap {cfg.v_max:.2f} m/s')
     print(f'  walk budget   {escort.max_vip_speed(cfg):+.2f} m/s '
           '(how fast the VIP may move)\n')
 
-    problems = escort.check_config(cfg, moving_vip=(vip_mode == 'mocap'))
+    problems = escort.check_config(cfg, moving_vip=(vip_mode != 'point'))
     if adv_mode == 'scripted':
         problems += script.check(cfg)
     for b in problems:
@@ -212,7 +249,10 @@ def main():
     # one exists so a bad placement is caught BEFORE anything arms, which is
     # the only moment it can still be fixed by moving a drone.
     marks = {n: np.array(cf.initialPosition, float) for n, cf in zip(names, cfs)}
-    p_vip0 = np.array([vip_point[0], vip_point[1], 0.0]) if vip_mode == 'point' else None
+    # A manual VIP starts wherever the teleop starts, which is the same mark
+    # by default -- close enough to check the gather against before arming.
+    p_vip0 = (np.array([vip_point[0], vip_point[1], 0.0])
+              if vip_mode in ('point', 'manual') else None)
     if p_vip0 is not None:
         src = [np.array([*marks[n][:2], TAKEOFF_HEIGHT]) for n in defenders]
         ctrl0 = escort.EscortController(cfg, src, p_vip0)
@@ -263,6 +303,26 @@ def main():
                 'body cannot flip), and check the mocap node is publishing.\n')
         print('    all present\n')
 
+    manual_vip = PointCache(node, VIP_TOPIC) if vip_mode == 'manual' else None
+    manual_adv = PointCache(node, ADVERSARY_TOPIC) if adv_mode == 'manual' else None
+    for cache, what, topic in ((manual_vip, 'VIP', VIP_TOPIC),
+                               (manual_adv, 'adversary', ADVERSARY_TOPIC)):
+        if cache is None:
+            continue
+        # Refusing to arm until the operator's keyboard is actually publishing
+        # is the point: a manual target that never arrives is a demo that
+        # takes off and immediately holds, then lands.
+        print(f'  waiting for the {what} teleop on {topic}')
+        print(f'    ros2 run crazyflie_shows escort_teleop --ros-args '
+              f'-p target:={"vip" if cache is manual_vip else "adversary"}')
+        deadline = timeHelper.time() + 20.0
+        while timeHelper.time() < deadline and cache.pos is None:
+            rclpy.spin_once(node, timeout_sec=0.1)
+        if cache.pos is None:
+            raise SystemExit(f'\n  nothing is publishing {topic}. Start the '
+                             'teleop in another terminal first.\n')
+        print(f'    {what} at {np.round(cache.pos, 2).tolist()}\n')
+
     if want_placement and not sim:
         print('  PLACEMENT CHECK (live pose vs initial_position)')
         check_placement(node, cfs, names, _YamlStarts(cfs),
@@ -272,7 +332,14 @@ def main():
     def vip_now(now):
         if vip_mode == 'point':
             return np.array([vip_point[0], vip_point[1], 0.0])
+        if vip_mode == 'manual':
+            return manual_vip.get(now, cfg.vip_stale_hold_s)
         return poses.get(vip_name, now, cfg.vip_stale_hold_s)
+
+    def vip_age(now):
+        if vip_mode == 'manual':
+            return manual_vip.age(now)
+        return poses.age(vip_name, now)
 
     # ------------------------------------------------------------------ fly
     armed = False
@@ -301,7 +368,20 @@ def main():
         p_vip = vip_now(now)
         if p_vip is None:
             raise RuntimeError(f'no fresh pose for the VIP ({vip_name}) at takeoff')
-        here = [_live(poses, n, cf, now) for n, cf in zip(defenders, dcfs)]
+        adv_first = (manual_adv.get(now, 2.0) if adv_mode == 'manual'
+                     else script.target(0.0, vip_now(now)))
+        if adv_mode == 'manual' and adv_first is None:
+            raise RuntimeError('the adversary teleop stopped publishing before '
+                               'the gather')
+        # Expected: straight up off its own mark, which is what takeoff does.
+        blind = []
+        here = []
+        for n, cf in zip(defenders, dcfs):
+            want = np.array([*marks[n][:2], TAKEOFF_HEIGHT])
+            p, ok = _live(poses, n, cf, now, expect=want)
+            here.append(p)
+            if not ok:
+                blind.append(n)
         ctrl = escort.EscortController(cfg, here, p_vip)
         slots = escort.ring_targets(p_vip, ctrl.phase.psi, cfg)
         gather = max(3.0, float(np.max([np.linalg.norm(slots[ctrl.slot_of(i)] - here[i])
@@ -312,9 +392,19 @@ def main():
         live_dst = [slots[ctrl.slot_of(i)] for i in range(len(dcfs))]
         live_labels = list(defenders)
         if acf is not None:
-            live_src.append(_live(poses, adv_drone, acf, now))
-            live_dst.append(script.target(0.0, p_vip))
+            p_a, ok_a = _live(poses, adv_drone, acf, now,
+                              expect=np.array([*marks[adv_drone][:2], TAKEOFF_HEIGHT]))
+            if not ok_a:
+                blind.append(adv_drone)
+            live_src.append(p_a)
+            live_dst.append(adv_first)
             live_labels.append(adv_drone)
+        if blind:
+            why_blind = ('(expected under backend:=sim)' if sim
+                         else '*** ON HARDWARE THIS IS A MOCAP PROBLEM ***')
+            print(f'    no believable live pose for {", ".join(blind)} -- '
+                  f'checking the gather against their marks instead {why_blind}',
+                  flush=True)
         why = escort.check_gather(live_src, live_dst, live_labels, cfg)
         if acf is not None:
             bad_adv = escort.adversary_start_problem(live_src[-1], p_vip, cfg)
@@ -327,7 +417,7 @@ def main():
         for i, cf in enumerate(dcfs):
             cf.goTo(slots[ctrl.slot_of(i)], 0.0, gather)
         if acf is not None:
-            acf.goTo(script.target(0.0, p_vip), 0.0, gather)
+            acf.goTo(adv_first, 0.0, gather)
         timeHelper.sleep(gather + 0.5)
 
         # The gather was flown by the high-level commander, so the guards'
@@ -356,7 +446,11 @@ def main():
 
         # ---------------------------------------------------------- stream
         t0 = timeHelper.time()
-        duration = script.duration if adv_mode != 'none' else 30.0
+        # An explicit `duration` always wins; the default is the script's own
+        # length when there is a script, and a long leash when a human is
+        # driving and decides when the test is over.
+        duration = float(_param(node, 'duration',
+                                script.duration if adv_mode == 'scripted' else 120.0))
         adv_guard = escort.SetpointGuard(cfg, script.target(0.0, p_vip)) \
             if acf is not None else None
         print(f'  ESCORT LIVE - {duration:.0f} s, streaming at '
@@ -377,10 +471,11 @@ def main():
 
             p_vip = vip_now(now)
             if p_vip is None:
-                age = poses.age(vip_name, now)
+                age = vip_age(now)
                 if age > cfg.vip_stale_land_s:
                     raise RuntimeError(
-                        f'VIP ({vip_name}) has been lost for {age:.1f} s -- '
+                        f'VIP ({vip_name if vip_mode == "mocap" else VIP_TOPIC}) '
+                        f'has been lost for {age:.1f} s -- '
                         'landing rather than escorting a guess')
                 # hold: keep the last setpoints, command nothing new
                 for cf, g in zip(dcfs, ctrl.guards):
@@ -388,8 +483,16 @@ def main():
                 timeHelper.sleepForRate(cfg.rate_hz)
                 continue
 
-            if adv_mode == 'scripted':
-                p_adv = adv_guard.step(script.target(t, p_vip), step)
+            if adv_mode in ('scripted', 'manual'):
+                if adv_mode == 'manual':
+                    # A stale teleop freezes the adversary where it is; it does
+                    # NOT land the demo, because the defenders and the person
+                    # are still fine -- there is simply no threat moving.
+                    want = manual_adv.get(now, 1.0)
+                    want = adv_guard.sp if want is None else want
+                else:
+                    want = script.target(t, p_vip)
+                p_adv = adv_guard.step(want, step)
                 _stream(acf, p_adv, adv_guard.v)
             elif adv_mode == 'external':
                 p_adv = poses.get(adv_name, now, 0.5)     # gone = no threat
@@ -465,7 +568,7 @@ def _stream(cf, pos, vel):
                     0.0, _ZERO)
 
 
-def _live(poses, name, cf, now):
+def _live(poses, name, cf, now, expect=None, tol=1.0):
     """Where a defender actually is: /poses first, onboard estimate second.
 
     /poses is the mocap truth the whole demo is built on. ``get_position()``
@@ -473,9 +576,25 @@ def _live(poses, name, cf, now):
     with the plan even when the drone is in the wrong place -- fine as a
     fallback for one stale frame, wrong as the primary source (CLAUDE.md,
     "initial_position comes from /poses, never /cfX/pose").
+
+    With ``expect`` given, a pose that disagrees with it by more than ``tol``
+    (or sits below the floor) is rejected in favour of ``expect``, and the
+    caller is told via the second return value. That is not a nicety: under
+    ``backend:=sim`` there is no /poses at all and ``get_position()`` returns
+    [0, 0, 0], so every drone reads as stacked on the origin -- which made the
+    gather check refuse a perfectly good sim run. A check that cannot tell
+    "the drones are too close" from "I cannot see the drones" is worse than no
+    check, because it teaches you to ignore it.
     """
     p = poses.get(name, now, 0.3)
-    return p if p is not None else np.array(cf.get_position(), float)
+    if p is None:
+        p = np.array(cf.get_position(), float)
+    if expect is None:
+        return p
+    expect = np.asarray(expect, float)
+    if p[2] < 0.05 or float(np.linalg.norm(p - expect)) > tol:
+        return expect, False
+    return p, True
 
 
 class _YamlStarts:
