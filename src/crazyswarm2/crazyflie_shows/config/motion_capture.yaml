@@ -6,7 +6,10 @@
     # MUST be a literal dotted quad -- this backend does NOT resolve hostnames
     # and aborts with "boost ... Invalid argument" if given a name.
     # Find it with: scripts/mocap_diag.sh   (reports the NatNet sender)
-    hostname: "192.168.9.124" #"192.168.8.63"
+    # "auto": launch.py finds the Motive PC with a NatNet discovery ping, the
+    # same one it uses for the vendored config. Lab DHCP has moved this host
+    # four times (.100 -> .124 -> .152); a pinned address goes stale silently.
+    hostname: "auto"
     # ------------------------------------------------------------------
     # interface_ip IS A NO-OP IN THIS BUILD. Proven by strace 2026-09-07:
     # whatever you put here, ros-humble-motion-capture-tracking 1.0.9 always
