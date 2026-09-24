@@ -48,11 +48,32 @@ the natnet_ros2 + `pose_bridge.py` path is an alternative, not the default.
 ```
 src/                # VENDORED source (committed)
   crazyswarm2/        # customized: configs, launch.py (foxglove node), scripts, examples
-    crazyflie_shows/  # the ~63 s five-drone SHOW (plan_show / swarm_show / demo_show).
+    crazyflie_shows/  # TWO five-drone shows + ONE reactive demo, all verified
+                      #   before anything arms:
+                      #   * carousel, ~63 s (swarm_show / demo_show / plan_show) - SHOW_GUIDE.md
+                      #   * constellation, 78 s (constellation_show / plan_constellation)
+                      #     - CONSTELLATION.md. Shape changes (pentagon/arrow/pyramid/
+                      #     staircase) on a 120 BPM beat grid, light cues, staged abort.
+                      #     Clearance is enforced in PLAN VIEW: no drone over another.
+                      #     Slots are assigned by bottleneck distance, NOT tied to names.
+                      #   * ESCORT demo, reactive, NOT choreographed (escort_show /
+                      #     plan_escort) - ESCORT.md. 3 defenders hold a ring around a
+                      #     VIP (static point, then a person in a mocap hat) and ROTATE
+                      #     the ring so a defender lands on the VIP-adversary bearing;
+                      #     4th drone is the adversary (scripted, or `external` = a
+                      #     rigid body someone else flies). Streams cmdFullState (NOT
+                      #     cmdPosition: crazyflie_sil has no cmd_position, so a
+                      #     cmdPosition demo cannot be flown in sim at all). Slot order
+                      #     is fixed at gather so defenders never swap places. Built
+                      #     2026-09-23 for the 8 Oct area-denial demo; sim only, never
+                      #     flown. The open numbers (speed cap vs walking speed above
+                      #     all) are listed in ESCORT.md "Decisions still open" -- with
+                      #     the shipped defaults plan_escort --sweep measures the ring
+                      #     holding only up to a 0.20 m/s walk.
                       #   Folded in 2026-09-18 from ~/near-intern/swarm-shows (retired,
-                      #   commit 714affe). Rig knowledge: its HANDOVER.md; the show and
-                      #   its safety budgets: SHOW_GUIDE.md. Always run plan_show after
-                      #   a position sync -- separation sits at 99% of budget.
+                      #   commit 714affe). Rig knowledge: its HANDOVER.md. Always re-run
+                      #   the planner (plan_show AND plan_constellation) after a position
+                      #   sync -- the carousel sits at 99% of the separation budget.
   natnet_ros2/        # OptiTrack driver (+ vendored NatNetSDK)
   motion_capture_tracking/  # VENDORED mocap driver: IMRCLab ros2@64d3af2 + NatNet-4.2 modeldef patch.
                             # NEVER apt-install it: apt 1.0.9 hard-codes IP 141.23.110.162 → no /poses (VENDORED.md)
@@ -240,6 +261,20 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   complete and parameter service calls time out; (3) `Crazyswarm()` in a fresh
   rclpy process can hang waiting on `all/emergency` for the same reason
   (`color_led.py` avoids Crazyswarm() and calls `set_parameters` directly).
+- **Ctrl-C kills the ROS context BEFORE your handler runs — so "land on abort"
+  silently does nothing.** `rclpy.init` (inside `Crazyswarm()`) installs its own
+  SIGINT handler that shuts the context down; by the time `KeyboardInterrupt`
+  reaches the script, `allcfs.land()` dies with `failed to initialize wait set:
+  the given context is not valid` — at exactly the moment it is needed, leaving
+  the drones flying their last command. Verified failing in sim 2026-09-20.
+  Fix: after `Crazyswarm()` returns, take the signal back with
+  `signal.signal(signal.SIGINT, ...)` (and SIGTERM, which the console's Stop
+  sends) and raise your own exception — see `take_signals()` in
+  `crazyflie_shows/constellation_show.py`. Restore `SIG_DFL` once the abort
+  starts so a second Ctrl-C can still kill the process. Note `ros2 run` does
+  NOT forward a signal sent to it alone; a terminal Ctrl-C reaches the child
+  because it goes to the whole foreground process group, so test an abort with
+  `kill -INT <the script's own PID>`, not the wrapper's.
 - **Server BLOCKS FOREVER on the first unreachable enabled drone.** The cpp
   server connects drones in lexicographic `std::map` order and hangs
   **silently** on the first enabled drone that doesn't answer radio — one

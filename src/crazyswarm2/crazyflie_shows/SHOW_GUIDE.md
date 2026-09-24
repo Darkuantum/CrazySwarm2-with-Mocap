@@ -1,5 +1,10 @@
 # SHOW GUIDE — a 5-drone, ~62 s swarm show
 
+**There are two shows in this package.** This guide covers the carousel show
+(`swarm_show`) and, in §2 and §5, everything rig-specific that both shows
+need. The second show — shape changes on a beat, with lights — is
+`constellation_show`, documented in `CONSTELLATION.md`.
+
 **Written 2026-09-07.** Read `HANDOVER.md` first if you have not — this guide
 assumes the rig facts in it, especially §4a (the mocap address) and §6 (the
 safety rules). This file covers the show itself: what it does, what you must

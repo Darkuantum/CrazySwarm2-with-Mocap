@@ -663,6 +663,52 @@ def bloom_path(center, radius, start_angle_deg, sweep_deg, height, duration,
         lambda t: height + rise * bump(t / duration))
 
 
+def plateau(u, ramp=0.25):
+    """0 -> 1 -> 0 envelope: smooth rise over ``[0, ramp]``, hold, smooth fall.
+
+    Built from :func:`smoothstep`, so value, rate *and* acceleration are all
+    zero at both ends -- unlike :func:`bump`, which leaves a small step in
+    acceleration. Use it to fade a shape parameter (a tilt, an offset) in and
+    out of a figure that must stay rest-to-rest.
+    """
+    u = float(np.clip(u, 0.0, 1.0))
+    if ramp <= 0.0:
+        return 1.0
+    if u < ramp:
+        return float(smoothstep(u / ramp))
+    if u > 1.0 - ramp:
+        return float(smoothstep((1.0 - u) / ramp))
+    return 1.0
+
+
+def swashplate_path(center, radius, start_angle_deg, sweep_deg, height, duration,
+                    tilt=0.35, tilt_heading_deg=0.0, ramp=0.25):
+    """The ring spins while riding a tilted plane -- a swashplate.
+
+    Horizontally this is exactly :func:`carousel_path`: a rigid rotation, so
+    pairwise plan-view separation is the n-gon's and never changes. The tilt
+    is ``z = height + tilt * cos(theta - tilt_heading)``, faded in and out
+    with :func:`plateau` so the figure is rest-to-rest and ends every drone at
+    its own slot and height. The plane stays fixed in the room while the ring
+    turns through it, so each drone rises and dips once per revolution.
+
+    Height only ever *adds* to the 3D distance here, which is why the figure
+    is safe for the same reason :func:`wave_path` is.
+    """
+    th0 = radians(start_angle_deg)
+    dth = radians(sweep_deg)
+    hd = radians(tilt_heading_deg)
+
+    def theta(t):
+        return th0 + dth * ease_ramped(t, duration, ramp)
+
+    return polar_path(
+        center,
+        lambda t: radius,
+        theta,
+        lambda t: height + tilt * plateau(t / duration, ramp) * cos(theta(t) - hd))
+
+
 # ---------------------------------------------------- legacy / envelope
 
 def circle_trajectory(center, radius, start_angle_deg, period, height,

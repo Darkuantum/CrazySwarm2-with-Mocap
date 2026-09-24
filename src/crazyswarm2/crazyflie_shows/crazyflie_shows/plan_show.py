@@ -28,7 +28,14 @@ import sys
 import numpy as np
 import yaml
 
-from crazyflie_shows import choreography, figures, safety
+from crazyflie_shows import choreography, constellation, figures, safety
+
+#: Every show the package can plan: name -> (config class, builder, extra report).
+SHOWS = {
+    'swarm': (choreography.ShowConfig, choreography.build_plan, None),
+    'constellation': (constellation.ConstellationConfig, constellation.build_plan,
+                      constellation.report_extras),
+}
 
 
 def load_fleet(yaml_path):
@@ -237,8 +244,12 @@ def plot(plan, names, path):
     print(f'  wrote {path}')
 
 
-def main():
+def main(default_show='swarm'):
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap.add_argument('--show', choices=sorted(SHOWS), default=default_show,
+                    help=f'which show to plan (default {default_show})')
+    ap.add_argument('--bpm', type=float, default=None,
+                    help='constellation only: tempo of the beat grid')
     ap.add_argument('--yaml', default=None,
                     help='crazyflies.yaml to read initial_position from')
     ap.add_argument('--scale', type=float, default=None,
@@ -254,7 +265,12 @@ def main():
     names, starts = load_fleet(path)
     print(f'  fleet from {path}')
 
-    cfg = choreography.ShowConfig()
+    cfg_cls, build, extras = SHOWS[args.show]
+    cfg = cfg_cls()
+    if args.bpm is not None:
+        if not hasattr(cfg, 'bpm'):
+            raise SystemExit(f'--bpm applies to the constellation show, not {args.show}')
+        cfg.bpm = args.bpm
     if args.scale is not None:
         cfg.scale = args.scale
     if args.arena_radius is not None:
@@ -263,7 +279,7 @@ def main():
         cfg.ceiling = args.ceiling
 
     try:
-        plan = choreography.build_plan(names, starts, cfg)
+        plan = build(names, starts, cfg)
     except ValueError as e:
         msg = str(e)
         print('\n  PLAN REJECTED\n')
@@ -276,6 +292,8 @@ def main():
         return 1
 
     report(plan, cfg, names, verbose=not args.quiet)
+    if extras:
+        extras(plan, cfg, names)
     if args.plot:
         plot(plan, names, args.plot)
     return 0
@@ -283,3 +301,8 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
+
+
+def main_constellation():
+    """Entry point ``plan_constellation``: plan_show preset to the constellation."""
+    return main(default_show='constellation')

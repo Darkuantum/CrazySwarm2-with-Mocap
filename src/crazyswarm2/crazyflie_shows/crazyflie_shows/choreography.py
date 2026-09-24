@@ -241,6 +241,11 @@ class Phase:
     timescale: float = 1.0
     reverse: bool = False
     note: str = ''
+    #: Optional, used by the constellation show; swarm_show ignores both.
+    #: ``lights``: one 0xWWRRGGBB int for every drone, or a list per drone.
+    #: ``slot``: seconds from this phase's command to the next one's, on a beat.
+    lights: object = None
+    slot: float = None
 
     def position(self, j, t):
         """Where drone ``j`` is at ``t`` seconds into this phase."""

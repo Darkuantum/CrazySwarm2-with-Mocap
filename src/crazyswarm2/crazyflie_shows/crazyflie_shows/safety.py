@@ -91,6 +91,80 @@ def assign_min_distance(src, dst):
                    for j in range(n)))
 
 
+def pairs_transit_min(src, dst, dims=3):
+    """Vectorised :func:`transition_min_sep`: same closed form, all pairs at once.
+
+    ``dims=2`` measures in plan view only (x, y). Used inside the assignment
+    searches below, which evaluate thousands of candidate legs.
+    """
+    s = np.asarray(src, float)[:, :dims]
+    d = np.asarray(dst, float)[:, :dims]
+    iu = np.triu_indices(len(s), 1)
+    d0 = (s[:, None, :] - s[None, :, :])[iu]
+    dv = (d[:, None, :] - d[None, :, :])[iu] - d0
+    den = np.einsum('ij,ij->i', dv, dv)
+    num = -np.einsum('ij,ij->i', d0, dv)
+    ok = den > 1e-12
+    u = np.where(ok, np.clip(num / np.where(ok, den, 1.0), 0.0, 1.0), 0.0)
+    return float(np.min(np.linalg.norm(d0 + u[:, None] * dv, axis=1)))
+
+
+def assign_makespan(src, dst, min_sep=None, min_sep_xy=None, accept=None,
+                    prefer_sep_xy=None):
+    """Match drones to slots so the LONGEST leg is shortest -- and the leg is safe.
+
+    A formation change is simultaneous, so what sets its duration is when the
+    *last* drone arrives: the bottleneck (makespan) assignment, not the
+    minimum-total-distance one :func:`assign_min_distance` solves. Hoenig et
+    al. make exactly this distinction for swarm formation changes.
+
+    Only permutations whose simultaneous straight-line leg keeps every pair
+    ``>= min_sep`` (3D) and ``>= min_sep_xy`` (plan view) are considered, plus
+    anything ``accept(targets)`` rejects -- use it to check the leg *after*
+    this one. Among the survivors: shortest longest-leg, then the widest
+    plan-view clearance, then the least total travel.
+
+    ``prefer_sep_xy`` puts safety ahead of speed: any leg that clears it beats
+    every leg that does not, however much faster. Pure makespan will happily
+    pick a leg 1 cm over budget to save 5 cm of travel; for a first flight on
+    hardware that is the wrong trade.
+
+    Returns ``dict(perm, targets, longest, sep, sep_xy)`` or ``None`` if no
+    permutation is safe. Brute force over ``n!``: fine to n=8.
+    """
+    min_sep = PLAN_SEPARATION if min_sep is None else min_sep
+    src = np.asarray(src, float)
+    dst = np.asarray(dst, float)
+    n = len(src)
+    if n > 8:
+        raise ValueError(f'{n} drones: brute-force assignment is too slow')
+    cost = np.linalg.norm(src[:, None, :] - dst[None, :, :], axis=2)
+    rows = np.arange(n)
+    best, best_key = None, None
+    for p in permutations(range(n)):
+        p = list(p)
+        legs = cost[rows, p]
+        key0 = round(float(legs.max()), 2)
+        if best_key is not None and best_key[0] == 0 and key0 > best_key[1]:
+            continue
+        tgt = dst[p]
+        sep = pairs_transit_min(src, tgt, 3)
+        if sep < min_sep:
+            continue
+        sep_xy = pairs_transit_min(src, tgt, 2)
+        if min_sep_xy is not None and sep_xy < min_sep_xy:
+            continue
+        if accept is not None and not accept(tgt):
+            continue
+        comfy = 0 if prefer_sep_xy is None or sep_xy >= prefer_sep_xy else 1
+        key = (comfy, key0, -round(sep_xy, 3), float(legs.sum()))
+        if best_key is None or key < best_key:
+            best_key = key
+            best = dict(perm=p, targets=[t.copy() for t in tgt],
+                        longest=float(legs.max()), sep=sep, sep_xy=sep_xy)
+    return best
+
+
 def best_phase_ngon(starts, center, radius, height, ngon_fn, step_deg=1.0):
     """Pick the n-gon rotation that makes the gather leg safest.
 
@@ -340,3 +414,47 @@ def check_show(sample_fn, total_time, n_drones, rate=CHECK_RATE,
     if problems:
         raise ValueError('show check failed:\n  - ' + '\n  - '.join(problems))
     return report
+
+
+# ------------------------------------------------------------------------
+# Plan view and downwash
+#
+# check_show() enforces one isotropic 3D budget. A show that uses the vertical
+# axis needs two more numbers to be honest about what that budget means:
+#
+# * plan-view separation -- how close two drones get in x/y alone. If it stays
+#   over PLAN_SEPARATION, height is purely decorative: no drone is ever above
+#   another, and downwash never enters into it.
+# * downwash clearance -- the measured anisotropic model (Preiss, Hoenig et
+#   al., IROS 2017: two Crazyflies stacked, position error logged at 100 Hz)
+#   says the real keep-out region is an ellipsoid, 0.12 m horizontally and
+#   0.30 m vertically. A pair is clear when || E^-1 (p - q) || >= 2 with
+#   E = diag(r_xy, r_xy, r_z). Reported, not enforced: it is the headroom a
+#   denser show could spend once the tracking lag has been re-measured on
+#   hardware (see crazyflie_shows/reference/complex-shows-report.html).
+# ------------------------------------------------------------------------
+
+#: Measured downwash ellipsoid radii for a Crazyflie, metres.
+DOWNWASH_RXY = 0.12
+DOWNWASH_RZ = 0.30
+
+
+def downwash_clearance(samples, r_xy=DOWNWASH_RXY, r_z=DOWNWASH_RZ,
+                       margin=TRACKING_MARGIN):
+    """How many times over the downwash ellipsoid the closest pair stays.
+
+    ``samples`` is ``(n_drones, n_times, 3)``. Radii are inflated by
+    ``margin`` (the measured controller lag). Returns ``(factor, t_index, a, b)``;
+    ``factor >= 1`` means clear, and ``2.0`` means twice the required distance.
+    """
+    samples = np.asarray(samples, float)
+    scale = np.array([r_xy + margin, r_xy + margin, r_z + margin])
+    n = samples.shape[0]
+    worst, where = np.inf, (0, 0, 0)
+    for a in range(n):
+        for b in range(a + 1, n):
+            rho = np.linalg.norm((samples[a] - samples[b]) / scale, axis=1) / 2.0
+            k = int(np.argmin(rho))
+            if rho[k] < worst:
+                worst, where = float(rho[k]), (k, a, b)
+    return (worst,) + where
