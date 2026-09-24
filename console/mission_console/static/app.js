@@ -529,7 +529,11 @@ function tileHtml(o) {
 function fleetTile(n) {
   const cls = { ok: 'ok', warn: 'warn', fail: 'bad' }[n.status] || 'idle';
   const m = n.metrics || {};
-  const state = { blocked: 'standby', skip: 'n/a', unknown: 'unchecked' }[n.status] || n.status;
+  // The supervisor's own words when we have them -- E-STOPPED, FLIPPED, CRASHED,
+  // FLYING -- rather than the probe's verdict ("fail" tells you nothing about
+  // which of those it is, which is the thing you need walking up to the rig).
+  const state = m.state ||
+    ({ blocked: 'standby', skip: 'n/a', unknown: 'unchecked' }[n.status] || n.status).toUpperCase();
   let main, bar = '', foot = '';
   if (m.volts != null) {
     const pct = batteryPct(m.volts);
@@ -547,8 +551,9 @@ function fleetTile(n) {
     main = `<span class="dt-val dim">${esc(clip(n.summary || n.status, 48))}</span>`;
     bar = '<span class="bar"></span>';
   }
-  return tileHtml({ cls, name: n.label, state, main, bar, foot, target: `node:${n.id}`,
-                    tip: `${n.label}: ${n.summary || n.status}` });
+  const tip = `${n.label}: ${n.summary || n.status}` +
+    ((m.flags && m.flags.length) ? `\nsupervisor: ${m.flags.join(', ')}` : '');
+  return tileHtml({ cls, name: n.label, state, main, bar, foot, target: `node:${n.id}`, tip });
 }
 
 function dashStrip() {
@@ -566,7 +571,8 @@ function dashStrip() {
   }
   const rcls = { ok: 'ok', warn: 'warn', fail: 'bad' }[radio && radio.status] || 'idle';
   return (radio ? tileHtml({
-    cls: rcls, name: 'radio', state: radio.status === 'skip' ? 'n/a' : radio.status,
+    cls: rcls, name: 'radio',
+    state: (radio.status === 'skip' ? 'n/a' : radio.status).toUpperCase(),
     main: `<span class="dt-val dim">${esc(clip(radio.summary || '--', 46))}</span>`,
     foot: '<span>Crazyradio / USB</span>', target: 'node:radio.usb',
     tip: radio.summary || 'the USB dongle every drone talks through',

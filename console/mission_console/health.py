@@ -95,6 +95,72 @@ SIGNATURES = [
 ]
 
 
+# The supervisor's infoBitfield, as crazyflie-firmware packs it in
+# supervisor.c updateLogData(). crazyflie_interfaces/msg/Status.msg names only
+# the first seven; bit 7 (isCrashed) is packed by the firmware but has no
+# constant there, and drones in this lab have been seen reporting bits above
+# that -- their firmware is newer than the reference checkout. So decode what we
+# know and SAY SO about the rest rather than quietly dropping it: an unnamed bit
+# on a drone you are about to arm is exactly the thing you want to be told.
+SUPERVISOR_BITS = [
+    (0x0001, 'can be armed'),
+    (0x0002, 'armed'),
+    (0x0004, 'auto-arm'),
+    (0x0008, 'can fly'),
+    (0x0010, 'flying'),
+    (0x0020, 'tumbled'),
+    (0x0040, 'locked'),
+    (0x0080, 'crashed'),
+]
+PM_STATES = {0: '', 1: 'charging', 2: 'charged', 3: 'LOW POWER', 4: 'SHUTTING DOWN'}
+
+
+def supervisor_state(info, pm=None):
+    """(short state, flag names, severity) from a supervisor_info bitfield.
+
+    The short state is what a drone tile shows, so it answers the question you
+    actually have walking up to the rig: can this thing fly, and if not, why?
+    Ordered worst-first -- a locked drone that is also tumbled reads
+    "E-STOPPED + flipped", because the e-stop is what you must clear first.
+    """
+    if info is None:
+        return '', [], OK
+    flags = [name for bit, name in SUPERVISOR_BITS if info & bit]
+    unknown = info & ~sum(bit for bit, _ in SUPERVISOR_BITS)
+    if unknown:
+        flags.append(f'unknown bits 0x{unknown:04x}')
+    locked, crashed = info & 0x0040, info & 0x0080
+    tumbled, flying, armed = info & 0x0020, info & 0x0010, info & 0x0002
+    words, sev = [], OK
+    if locked:
+        words.append('E-STOPPED')
+        sev = FAIL
+    if crashed:
+        words.append('CRASHED')
+        sev = FAIL
+    if tumbled:
+        words.append('flipped' if words else 'FLIPPED')
+        sev = FAIL
+    if not words:
+        if flying:
+            words.append('FLYING')
+        elif armed:
+            words.append('armed')
+        elif info & 0x0001:
+            words.append('ready to arm')
+        else:
+            # not locked, not tumbled, simply not armable yet: a low battery, a
+            # missing position estimate, or still settling after boot
+            words.append('cannot arm yet')
+            sev = WARN
+    pm_word = PM_STATES.get(pm, '')
+    if pm_word:
+        words.append(pm_word)
+        if pm in (3, 4):
+            sev = FAIL if pm == 4 else max(sev, WARN, key=lambda s: RANK[s])
+    return ' + '.join(words), flags, sev
+
+
 def _node(id, label, col, row, group, why):
     return {'id': id, 'label': label, 'col': col, 'row': row, 'group': group,
             'why': why, 'status': UNKNOWN, 'summary': '', 'detail': '', 'fix': '',
@@ -530,24 +596,51 @@ class Health:
         volts = grab('battery_voltage')
         rssi = grab('rssi')
         latency = grab('latency_unicast')
+        info = grab('supervisor_info', int)
+        pm = grab('pm_state', int)
+        state, flags, sev = supervisor_state(info, pm)
         bits = []
+        if state:
+            bits.append(state)
         if volts is not None:
             bits.append(f'{volts:.2f} V')
         if rssi is not None:
             bits.append(f'rssi {rssi:.0f}')
         if latency is not None:
             bits.append(f'latency {latency:.1f} ms')
-        status, fix, detail = OK, '', out.strip()[:1200]
+        # Three independent things can be wrong at once -- the supervisor, the
+        # battery, the radio -- so take the WORST status and collect every fix,
+        # rather than letting whichever test runs last overwrite the others. (A
+        # low battery must not downgrade an E-STOPPED drone to a warning.)
+        detail = out.strip()[:1200]
+        if flags:
+            detail = 'supervisor: ' + ', '.join(flags) + f'  (0x{info:04x})\n\n' + detail
+        status, fixes = sev, []
+        worst = lambda a, b: a if RANK[a] >= RANK[b] else b      # noqa: E731
+        if info is not None and info & 0x0040:
+            fixes.append('The supervisor is LOCKED -- this is where an emergency stop '
+                         'leaves a drone. Power-cycle it (battery out and in); nothing '
+                         'else clears it.')
+        if info is not None and info & 0x0080:
+            fixes.append('The firmware flagged a crash. Check the airframe, then '
+                         'power-cycle it.')
+        if info is not None and info & 0x0020:
+            fixes.append('The drone is not level (tumbled). Stand it back on its feet.')
         if volts is not None and volts < 3.7:
-            status, fix = FAIL, 'Swap the battery: below voltage_critical (3.7 V).'
+            status = worst(status, FAIL)
+            fixes.append('Swap the battery: below voltage_critical (3.7 V).')
         elif volts is not None and volts < 3.8:
-            status, fix = WARN, 'Below voltage_warning (3.8 V) -- charge before a long flight.'
+            status = worst(status, WARN)
+            fixes.append('Below voltage_warning (3.8 V) -- charge before a long flight.')
         if latency is not None and latency > 10:
-            status = FAIL if status == FAIL else WARN
-            fix = (fix + ' ').strip() + ' Unicast latency is above the 10 ms threshold: '\
-                'the radio is saturated -- lower the firmware logging rates.'
+            status = worst(status, WARN)
+            fixes.append('Unicast latency is above the 10 ms threshold: the radio is '
+                         'saturated -- lower the firmware logging rates.')
+        fix = ' '.join(fixes)
         n.update(status=status, summary=', '.join(bits) or 'connected', detail=detail, fix=fix,
-                 metrics={'volts': volts, 'rssi': rssi, 'latency': latency})
+                 metrics={'volts': volts, 'rssi': rssi, 'latency': latency,
+                          'supervisor': info, 'state': state, 'flags': flags,
+                          'pm_state': pm})
 
     def _check_signatures(self, nodes):
         """Read the output of everything we have run and translate known errors."""

@@ -213,8 +213,17 @@ main{flex:1;min-height:0;overflow:hidden}
 .dt-head{display:flex;align-items:center;gap:6px;min-width:0}
 .dt-name{font-weight:650;font-size:13px;letter-spacing:.2px;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
-.dt-state{margin-left:auto;font-size:10px;text-transform:uppercase;letter-spacing:.7px;
-  color:var(--muted);white-space:nowrap}
+/* the supervisor state can be two words ("E-STOPPED + flipped"), so let it take
+   the room it needs and push the name to ellipsis rather than the other way
+   round -- which of five identical drones it is matters less than what it is */
+/* No text-transform: the state string arrives already cased on purpose --
+   "E-STOPPED + flipped" puts the thing you must clear first in caps and the
+   secondary condition in lower case, which upper-casing everything destroyed. */
+.dt-state{margin-left:auto;font-size:10px;letter-spacing:.4px;
+  color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  max-width:calc(100% - 40px);flex:0 1 auto}
+.dt-name{flex:0 1 auto;min-width:0}
+.dtile.bad .dt-state{font-weight:700}
 .dtile.ok .dt-state{color:#7ee787}
 .dtile.warn .dt-state{color:#e3b341}
 .dtile.bad .dt-state{color:#ff9c93}

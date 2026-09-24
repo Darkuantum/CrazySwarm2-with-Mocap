@@ -82,9 +82,16 @@ Boxes that do not apply to the current run (radio and mocap during a
 **Dashboard** (the default tab) — the cockpit, in four bands, sized to fit the rig
 laptop's ~1280x660 viewport (GNOME at 200%) with no scrolling:
 
-* a **fleet row** — one tile per drone plus the radio: battery voltage with a
-  percentage and a colour-graded bar, link strength, unicast latency, and a
-  status rail down the left edge you can read from across the room. The bar's
+* a **fleet row** — one tile per drone plus the radio: the drone's own
+  supervisor state in words (`FLYING`, `armed`, `ready to arm`, `E-STOPPED`,
+  `FLIPPED`, `CRASHED`, `cannot arm yet`, and combinations such as
+  `E-STOPPED + flipped`), battery voltage with a percentage and a
+  colour-graded bar, link strength, unicast latency, and a status rail down
+  the left edge you can read from across the room. The state is decoded from
+  `supervisor_info`; `crazyflie_interfaces/msg/Status.msg` names only seven of
+  the bits the firmware packs, so bit 7 (`isCrashed`) is decoded from the
+  firmware source and anything above that is reported as an unknown bit rather
+  than dropped. The bar's
   *length* is just charge (3.3 V empty → 4.2 V full); its *colour* comes from the
   same thresholds the health probe uses (3.8 V warning, 3.7 V critical), so a
   tile can never look reassuring about a voltage the check calls no-fly;
