@@ -98,7 +98,7 @@ SIGNATURES = [
 def _node(id, label, col, row, group, why):
     return {'id': id, 'label': label, 'col': col, 'row': row, 'group': group,
             'why': why, 'status': UNKNOWN, 'summary': '', 'detail': '', 'fix': '',
-            'commands': [], 'findings': []}
+            'commands': [], 'findings': [], 'metrics': {}}
 
 
 class Health:
@@ -439,11 +439,13 @@ class Health:
                      fix='Check UDP 1511, then Motive -> Settings -> Streaming '
                          '(Multicast, 50 Hz, matching motion_capture.yaml).')
         elif rate < 30:
+            n['metrics'] = {'hz': rate}
             n.update(status=WARN, summary=f'/poses at {rate:.1f} Hz (expected ~50)',
                      detail='Below the streaming rate this rig is configured for. '
                             'A sagging rate means network loss or an overloaded Motive PC.',
                      fix='Check the Motive streaming rate and the network path.')
         else:
+            n['metrics'] = {'hz': rate}
             n.update(status=OK, summary=f'/poses at {rate:.1f} Hz',
                      detail=f'{pubs} publisher(s). This is the mocap heartbeat every '
                             'drone\'s position estimate depends on.')
@@ -544,7 +546,8 @@ class Health:
             status = FAIL if status == FAIL else WARN
             fix = (fix + ' ').strip() + ' Unicast latency is above the 10 ms threshold: '\
                 'the radio is saturated -- lower the firmware logging rates.'
-        n.update(status=status, summary=', '.join(bits) or 'connected', detail=detail, fix=fix)
+        n.update(status=status, summary=', '.join(bits) or 'connected', detail=detail, fix=fix,
+                 metrics={'volts': volts, 'rssi': rssi, 'latency': latency})
 
     def _check_signatures(self, nodes):
         """Read the output of everything we have run and translate known errors."""

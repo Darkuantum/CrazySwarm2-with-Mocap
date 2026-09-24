@@ -79,14 +79,32 @@ known error signatures, and a match is attached to the box it belongs to.
 Boxes that do not apply to the current run (radio and mocap during a
 `backend:=sim` launch) show as "not applicable" rather than red.
 
-**Dashboard** (the default tab) — the cockpit. A session's actions as one-line
-buttons in the order you use them (before the server, bring it up, check, fly),
-a per-drone fleet row, a *needs attention* row of every failing or warning check,
-and a live Activity column, sized to fit the rig laptop's ~1280x660 viewport (GNOME at 200%)
-with no scrolling. Nothing is defined twice: each button runs the catalog action,
-its tooltip is the real argv, and its `⋯` opens the full card in Control. Every
-fleet cell, attention chip and topbar pill is a link to the check behind it.
-Running from here keeps you here; output streams into Activity.
+**Dashboard** (the default tab) — the cockpit, in four bands, sized to fit the rig
+laptop's ~1280x660 viewport (GNOME at 200%) with no scrolling:
+
+* a **fleet row** — one tile per drone plus the radio: battery voltage with a
+  percentage and a colour-graded bar, link strength, unicast latency, and a
+  status rail down the left edge you can read from across the room. The bar's
+  *length* is just charge (3.3 V empty → 4.2 V full); its *colour* comes from the
+  same thresholds the health probe uses (3.8 V warning, 3.7 V critical), so a
+  tile can never look reassuring about a voltage the check calls no-fly;
+* a **needs attention** row: every failing or warning check as a chip;
+* the **four steps of a session** as one-line buttons (before the server, bring
+  it up, check, fly) — when a whole run of buttons is blocked by the same thing
+  ("the server owns the radio"), it is said once, not under each button;
+* a **live console**: everything the session has run down the left, the selected
+  one's output streaming on the right. Running from the dashboard keeps you on
+  the dashboard.
+
+Nothing is defined twice: each button runs the catalog action, its tooltip is the
+real argv, and its `⋯` opens the full card in Control. Every tile, chip and pill
+is a link to the check behind it.
+
+The header carries one **verdict** — ALL SYSTEMS GO / ATTENTION / FAULT — with
+the headline behind it, and the nav bar carries the live telemetry: server,
+mocap, `/poses` (with a sparkline of the last ~40 samples, so a dropout is
+visible as a dive rather than a number that briefly changed), fleet size, ROS
+domain, and how long ago the probes last ran.
 
 **Control** — the reference: one verbose card per action, grouped Launch,
 Preflight, Fleet position, Flight, Commands (service calls), Parameters,
@@ -103,6 +121,17 @@ drone (`plan_*`, `*.sh`, `color_led`, `set_param`) go to *Run a ground check*
 instead, without the "area clear?" prompt. Build a new show package and it
 appears on the next page load; if it was built after the console started, it is
 flagged until you restart the console from a sourced shell.
+
+**Command palette** (`Ctrl-K`, or `/`) — one search box over every catalog
+action, every health check, every config file, every process and every tab.
+`Enter` runs the highlighted action with its remembered parameters, through the
+same confirm step as the buttons — so it can never quietly fly a drone;
+`Shift-Enter` opens its full card in Control instead. Action ids are search keys,
+so "fly" finds `fly.script` even though no word of its label says it.
+
+**Keyboard** (`?` shows the list) — `1`…`6` switch tab, `r` re-runs every probe,
+`Esc` closes whatever is open. E-STOP deliberately has **no** shortcut: a stray
+keypress must never cut the motors.
 
 **E-STOP** (header, every tab) — one click, **no confirmation, no tab switch**,
 the same contract as the preflight GUI. It runs
@@ -191,4 +220,10 @@ console/
 ```
 
 `?live=0` on the URL opens the page without the live event stream (a static
-snapshot, useful for a screenshot).
+snapshot, useful for a screenshot — and required for a headless-browser capture,
+which otherwise waits forever on the open stream). `?node=<id>` opens with that
+health box selected, which is what the dashboard's links use.
+
+The UI scale control (`A−` / `A+` in the header) is remembered by the console
+itself rather than relying on browser zoom, which is per-site and easily lost;
+this laptop's desktop already scales everything by 200%.

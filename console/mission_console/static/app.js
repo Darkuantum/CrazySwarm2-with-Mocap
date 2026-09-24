@@ -11,7 +11,7 @@
 const S = {
   catalog: [], groups: [], files: [], health: null, procs: [], history: [],
   lines: {}, selNode: null, selGroup: null, selFile: 'crazyflies', selProc: null, factsSig: '',
-  cfg: {}, repo: '', env: {},
+  cfg: {}, repo: '', env: {}, dashProc: null, checkedAt: 0,
 };
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -122,7 +122,10 @@ function events() {
 function renderTabs() {
   $$('#tabs button').forEach((b) => {
     b.onclick = () => {
-      $$('#tabs button').forEach((x) => x.classList.toggle('active', x === b));
+      $$('#tabs button').forEach((x) => {
+        x.classList.toggle('active', x === b);
+        if (x.role || x.getAttribute('role') === 'tab') x.setAttribute('aria-selected', String(x === b));
+      });
       $$('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + b.dataset.tab));
       history.replaceState(null, '', '#' + b.dataset.tab);   // deep-linkable tabs
       if (b.dataset.tab === 'config') loadConfig(S.selFile);
@@ -142,6 +145,8 @@ function renderTabs() {
     finally { $('#btn-refresh').disabled = false; }
   };
   wireZoom();
+  wirePalette();
+  $('#btn-keys').onclick = openKeyHelp;
   $('#btn-estop').onclick = fireEstop;
   $('#btn-scan').onclick = scanFleet;
   $('#btn-send').onclick = sendStdin;
@@ -180,51 +185,98 @@ function wireZoom() {
 }
 
 /* ------------------------------------------------------------- top bar */
-function renderTop() {
-  const h = S.health || {}; const f = h.facts || {};
-  $('#worst-dot').className = 'dot ' + (h.worst === 'skip' ? 'ok' : (h.worst || 'unknown'));
-  $('#headline').textContent = h.headline || '';
-  const hz = f.poses_hz;
-  const pills = [
-    ['server', f.server_running ? 'running' : 'stopped', f.server_running ? 'ok' : ''],
-    ['mocap', f.mocap_running ? 'running' : 'stopped', f.mocap_running ? 'ok' : ''],
-    ['/poses', hz == null ? '--' : hz.toFixed(1) + ' Hz',
-      hz == null ? '' : (hz > 30 ? 'ok' : 'warn')],
-    // short values: at the rig laptop's 200% scale the page is ~1280 px wide and a
-    // wrapped topbar costs a line on every tab. The long form is in the tooltip.
-    ['fleet', String((f.enabled_drones || []).length), '',
-      'enabled: ' + ((f.enabled_drones || []).join(' ') || 'none') + ' -- edit crazyflies.yaml'],
-    ['domain', String(S.env.domain_id), '',
-      `ROS ${S.env.ros_distro}, ROS_DOMAIN_ID=${S.env.domain_id} -- must match the terminal that started the stack`],
-  ];
-  const target = { server: 'node:server.node', mocap: 'node:mocap.node', '/poses': 'node:mocap.poses',
-                   fleet: 'config:crazyflies', domain: 'node:env.ros' };
-  $('#pills').innerHTML = pills.map(([k, v, c, tip]) =>
-    `<a class="pill ${c}" data-go="${target[k] || 'tab:health'}" title="${esc(tip || 'open the check behind this')}">` +
-    `${esc(k)} <b>${esc(v)}</b></a>`).join('');
+/* One verdict a visitor can read from two metres, then the numbers behind it.
+ * The verdict word is deliberately not the raw status name: "warn" means
+ * nothing to someone standing behind you; "ATTENTION" does. */
+const VERDICT = {
+  ok: ['ALL SYSTEMS GO', 'ok'], skip: ['ALL SYSTEMS GO', 'ok'],
+  warn: ['ATTENTION', 'warn'], fail: ['FAULT', 'fail'],
+  blocked: ['FAULT', 'fail'], unknown: ['CHECKING', ''],
+};
+const HZ_HISTORY = [];            // rolling /poses rate; the topbar draws it
+
+/* A 46x14 sparkline over the data's own range, with a minimum span so a rock
+ * steady 50 Hz draws a flat line through the middle rather than a jittery one.
+ * (A fixed 0..max scale pinned the line to the top edge and the fill below it
+ * became a solid block -- no information at all.) */
+function sparkline(values, w = 46, h = 14) {
+  if (values.length < 3) return '';
+  const lo = Math.min(...values); const hi = Math.max(...values);
+  const span = Math.max(hi - lo, 6);
+  const mid = (hi + lo) / 2;
+  const base = mid - span / 2;
+  const pts = values.map((v, i) => [
+    (i / (values.length - 1)) * w, h - ((v - base) / span) * (h - 2) - 1]);
+  const line = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join('');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" aria-hidden="true">` +
+    `<path class="area" d="${line}L${w},${h}L0,${h}Z"/><path d="${line}"/></svg>`;
 }
 
+function renderTop() {
+  const h = S.health || {}; const f = h.facts || {};
+  const [word, cls] = VERDICT[h.worst] || VERDICT.unknown;
+  $('#verdict').className = 'verdict ' + cls;
+  $('#verdict-text').textContent = word;
+  $('#headline').textContent = h.headline || '';
+  $('#verdict').title = (h.headline || 'running the first probes') + ' -- open the health diagram';
+  S.checkedAt = h.ts || S.checkedAt;
+
+  const hz = f.poses_hz;
+  if (hz != null) { HZ_HISTORY.push(hz); if (HZ_HISTORY.length > 40) HZ_HISTORY.shift(); }
+  const live = (k, on, target, tip) =>
+    `<a class="pill" data-go="${target}" title="${esc(tip)}"><span class="livedot ${on ? '' : 'off'}"></span>` +
+    `<span class="k">${esc(k)}</span><b>${on ? 'running' : 'stopped'}</b></a>`;
+  const drones = (f.enabled_drones || []);
+  $('#pills').innerHTML = [
+    live('server', f.server_running, 'node:server.node',
+      'crazyflie_server: owns the Crazyradio and every /all/* service'),
+    live('mocap', f.mocap_running, 'node:mocap.node',
+      'motion_capture_tracking: the OptiTrack -> /poses driver'),
+    `<a class="pill ${hz == null ? '' : (hz > 30 ? 'ok' : 'warn')}" data-go="node:mocap.poses"
+       title="/poses rate -- Motive streams at 50 Hz; the last ${HZ_HISTORY.length} samples are drawn">
+       <span class="k">/poses</span><b>${hz == null ? '--' : hz.toFixed(1) + ' Hz'}</b>${sparkline(HZ_HISTORY)}</a>`,
+    `<a class="pill" data-go="config:crazyflies" title="enabled: ${esc(drones.join(' ') || 'none')} -- edit crazyflies.yaml">
+       <span class="k">fleet</span><b>${drones.length}</b></a>`,
+    `<a class="pill wide-only" data-go="node:env.ros"
+       title="ROS ${esc(S.env.ros_distro)}, ROS_DOMAIN_ID=${esc(S.env.domain_id)} -- must match the terminal that started the stack">
+       <span class="k">domain</span><b>${esc(S.env.domain_id)}</b></a>`,
+  ].join('');
+  renderCheckedAgo();
+}
+
+/* "checked 4 s ago" is how you tell a frozen page from a quiet rig. */
+function renderCheckedAgo() {
+  const el = $('#checked-ago');
+  if (!el) return;
+  if (!S.checkedAt) { el.textContent = ''; return; }
+  const dt = Math.max(0, Date.now() / 1000 - S.checkedAt);
+  el.textContent = '\u21bb ' + (dt < 60 ? `${Math.round(dt)} s`
+    : dt < 3600 ? `${Math.round(dt / 60)} min` : 'a while');
+  el.title = 'every health probe last finished ' +
+    (dt < 60 ? `${Math.round(dt)} seconds` : `${Math.round(dt / 60)} minutes`) + ' ago';
+}
+setInterval(renderCheckedAgo, 1000);
+
 /* -------------------------------------------------------- health graph */
-// Sized so the whole chain -- workspace to drones -- fits a 1280px viewport
-// beside the detail panel, without horizontal scrolling.
-// Boxes are laid out in viewBox units; the SVG then scales to fit the pane,
-// so the whole graph is visible at any window size with no scrolling.
-const NW = 160, NH = 64, CGAP = 26, RGAP = 16, PAD = 12, TOP = 24;
+// Boxes are laid out in viewBox units and the SVG scales to fit the pane, so
+// the whole chain -- workspace to drones -- is visible at any window size with
+// no scrolling. The box is tall enough for three lines of evidence: the summary
+// IS the diagnosis, and truncating it to one line hides the useful half.
+const NW = 172, NH = 86, CGAP = 26, RGAP = 20, PAD = 14, TOP = 28;
 
 function renderHealth() {
   const h = S.health;
   if (!h || !h.nodes || !h.nodes.length) {
-    $('#graph').innerHTML = '<p class="hint">Running the first checks...</p>';
+    $('#graph').innerHTML = '<div class="dc-empty"><span class="big">Running the first checks...</span>' +
+      'Each box is one probe; they run in parallel.</div>';
     return;
   }
   const byId = Object.fromEntries(h.nodes.map((n) => [n.id, n]));
-  const pos = (n) => ({
-    x: PAD + n.col * (NW + CGAP), y: TOP + n.row * (NH + RGAP),
-  });
+  const pos = (n) => ({ x: PAD + n.col * (NW + CGAP), y: TOP + n.row * (NH + RGAP) });
   const maxCol = Math.max(...h.nodes.map((n) => n.col));
   const maxRow = Math.max(...h.nodes.map((n) => n.row));
   const W = PAD * 2 + (maxCol + 1) * NW + maxCol * CGAP;
-  const H = TOP + (maxRow + 1) * (NH + RGAP) + 10;
+  const H = TOP + (maxRow + 1) * (NH + RGAP) + 14;
 
   // group captions sit above the first box of each group
   const caps = {};
@@ -242,31 +294,45 @@ function renderHealth() {
     const x2 = p2.x; const y2 = p2.y + NH / 2;
     const dead = ['fail', 'blocked', 'unknown', 'skip'].includes(b.status) ||
                  ['fail', 'blocked'].includes(a.status);
+    // Marching dashes mean "messages are moving through this link right now",
+    // so only the real data path gets them -- /poses out of the mocap node, and
+    // the server's link to each drone. A dependency edge between two green
+    // boxes (config -> radio, say) carries no traffic and stays static.
+    const carries = e.to === 'mocap.poses' || e.to === 'server.services' ||
+                    e.to.startsWith('drone.');
+    const flow = carries && !dead && a.status === 'ok' && b.status === 'ok';
     const c = Math.max(26, (x2 - x1) / 2);
-    return `<path class="gedge ${dead ? 'dead' : ''}" d="M${x1},${y1} C${x1 + c},${y1} ${x2 - c},${y2} ${x2},${y2}"/>`;
+    return `<path class="gedge ${dead ? 'dead' : ''} ${flow ? 'flow' : ''}"
+      d="M${x1},${y1} C${x1 + c},${y1} ${x2 - c},${y2} ${x2},${y2}"/>`;
   }).join('');
 
-  const fill = { ok: '#123', warn: '#231c08', fail: '#2a1110', blocked: '#171b22', unknown: '#171b22', skip: '#171b22' };
-  const stroke = { ok: 'var(--ok)', warn: 'var(--warn)', fail: 'var(--fail)', blocked: 'var(--blocked)', unknown: 'var(--unknown)', skip: 'var(--blocked)' };
+  const fill = { ok: 'rgba(63,185,80,.07)', warn: 'rgba(216,161,29,.09)', fail: 'rgba(240,86,79,.11)',
+                 blocked: 'rgba(125,135,148,.05)', unknown: 'rgba(125,135,148,.05)',
+                 skip: 'rgba(125,135,148,.05)' };
+  const stroke = { ok: 'var(--ok)', warn: 'var(--warn)', fail: 'var(--fail)',
+                   blocked: 'var(--blocked)', unknown: 'var(--unknown)', skip: 'var(--blocked)' };
   const boxes = h.nodes.map((n) => {
     const p = pos(n);
-    const sub = wrap(n.summary || n.status, 22, 2);
-    return `<g class="gnode ${S.selNode === n.id ? 'sel' : ''}" data-id="${esc(n.id)}"
+    const c = stroke[n.status] || 'var(--unknown)';
+    const sub = wrap(n.summary || n.status, 26, 3);
+    return `<g class="gnode st-${esc(n.status)} ${S.selNode === n.id ? 'sel' : ''}" data-id="${esc(n.id)}"
         transform="translate(${p.x},${p.y})">
       <title>${esc(n.label)} -- ${esc(n.summary || n.status)}</title>
-      <rect width="${NW}" height="${NH}" rx="8" fill="${fill[n.status] || '#171b22'}"
-        stroke="${stroke[n.status] || 'var(--unknown)'}"/>
-      <circle cx="14" cy="16" r="5" fill="${stroke[n.status] || 'var(--unknown)'}"/>
-      <text class="lbl" x="26" y="20">${esc(clip(n.label, 17))}</text>
-      ${sub.map((l, i) => `<text class="sub" x="12" y="${38 + i * 14}">${esc(l)}</text>`).join('')}
+      <rect class="box" width="${NW}" height="${NH}" rx="9" fill="${fill[n.status] || 'rgba(125,135,148,.05)'}"
+        stroke="${c}"/>
+      <rect class="rail" x="1.4" y="11" width="3" height="${NH - 22}" rx="1.5" fill="${c}"/>
+      <circle class="halo" cx="17" cy="20" r="4.5" fill="${c}" opacity="0"/>
+      <circle cx="17" cy="20" r="4.5" fill="${c}"/>
+      <text class="lbl" x="28" y="24">${esc(clip(n.label, 22))}</text>
+      ${sub.map((l, i) => `<text class="sub" x="14" y="${46 + i * 14}">${esc(l)}</text>`).join('')}
     </g>`;
   }).join('');
 
   const captions = Object.values(caps).map((c) =>
-    `<text class="glabel" x="${c.x}" y="${c.y - 9}">${esc(c.g)}</text>`).join('');
+    `<text class="glabel" x="${c.x}" y="${c.y - 11}">${esc(c.g)}</text>`).join('');
 
   $('#graph').innerHTML =
-    `<svg class="gsvg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMin meet">${edges}${captions}${boxes}</svg>`;
+    `<svg class="gsvg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${edges}${captions}${boxes}</svg>`;
   $$('#graph .gnode').forEach((g) => {
     g.onclick = () => {
       S.selNode = g.dataset.id;
@@ -438,29 +504,73 @@ document.addEventListener('click', (e) => {
   go(el.dataset.go);
 });
 
-/* ---- live parts: status strip, issues, activity (cheap, re-rendered often) */
+/* ---- live parts: fleet tiles, attention chips, activity (re-rendered often) */
+
+/* Battery bar: a 1S LiPo runs 3.3 V (empty) to 4.2 V (full), which is all the
+ * bar LENGTH means. The COLOUR comes from the same thresholds the health probe
+ * uses -- 3.8 V warning, 3.7 V critical -- so a tile can never look reassuring
+ * about a voltage the check already calls no-fly. */
+const batteryPct = (v) => Math.max(3, Math.min(100, Math.round((v - 3.3) / 0.9 * 100)));
+
+/* RSSI arrives as a positive number of dB below zero (53 means -53 dBm), so
+ * smaller is better. Four ticks, purely a reading aid: the tile's colour still
+ * comes from the probe's verdict, never from this mapping. */
+const sigBars = (rssi) => (rssi == null ? 0 : rssi <= 45 ? 4 : rssi <= 60 ? 3 : rssi <= 75 ? 2 : 1);
+
+function tileHtml(o) {
+  return `<a class="dtile ${o.cls}" data-go="${esc(o.target)}" title="${esc(o.tip)}">
+    <span class="dt-head"><span class="dt-name">${esc(o.name)}</span>
+      <span class="dt-state">${esc(o.state)}</span></span>
+    <span class="dt-main">${o.main}</span>
+    ${o.bar || ''}
+    ${o.foot ? `<span class="dt-foot">${o.foot}</span>` : ''}</a>`;
+}
+
+function fleetTile(n) {
+  const cls = { ok: 'ok', warn: 'warn', fail: 'bad' }[n.status] || 'idle';
+  const m = n.metrics || {};
+  const state = { blocked: 'standby', skip: 'n/a', unknown: 'unchecked' }[n.status] || n.status;
+  let main, bar = '', foot = '';
+  if (m.volts != null) {
+    const pct = batteryPct(m.volts);
+    const bc = m.volts < 3.7 ? 'bad' : m.volts < 3.8 ? 'warn' : '';
+    main = `<span class="dt-val">${m.volts.toFixed(2)}</span><span class="dt-unit">V &middot; ${pct}%</span>`;
+    bar = `<span class="bar"><i class="${bc}" style="width:${pct}%"></i></span>`;
+    const bars = sigBars(m.rssi);
+    foot = (m.rssi != null
+      ? `<span class="sig ${bars <= 2 ? 'weak' : ''}">${[1, 2, 3, 4].map((i) =>
+          `<i class="${i <= bars ? 'on' : ''}"></i>`).join('')}</span><span>${Math.round(m.rssi)} dB</span>` : '') +
+      (m.latency != null ? `<span class="sep">|</span><span>${m.latency.toFixed(1)} ms</span>` : '');
+  } else {
+    // no telemetry (standby, sim, or a drone that never connected): keep the
+    // same shape as a live tile so the row reads as one instrument, not five
+    main = `<span class="dt-val dim">${esc(clip(n.summary || n.status, 48))}</span>`;
+    bar = '<span class="bar"></span>';
+  }
+  return tileHtml({ cls, name: n.label, state, main, bar, foot, target: `node:${n.id}`,
+                    tip: `${n.label}: ${n.summary || n.status}` });
+}
+
 function dashStrip() {
   /* The topbar pills already say server / mocap / /poses / fleet / domain on
    * every tab, so this row carries what they cannot: each drone on its own,
-   * plus the radio. Every cell opens the health check behind it. */
-  const h = S.health || {};
-  const nodes = h.nodes || [];
-  const cls = (st) => ({ ok: 'ok', warn: 'warn', fail: 'bad' }[st] || 'idle');
-  const cell = (label, val, c, target, tip) =>
-    `<a class="dcell ${c || ''}" data-go="${esc(target)}" title="${esc(tip || '')}">` +
-    `<span class="dk">${esc(label)}</span><span class="dv">${esc(val)}</span></a>`;
-  const brief = (n) => {
-    // "4.13 V, rssi 53, latency 20.0 ms" -> "4.13 V  20 ms"; otherwise the summary
-    const v = /([\d.]+) V/.exec(n.summary || ''); const l = /latency ([\d.]+) ms/.exec(n.summary || '');
-    if (v) return `${v[1]} V` + (l ? `  ${Math.round(+l[1])} ms` : '');
-    return n.status === 'blocked' ? '--' : clip(String(n.summary || n.status).split(',')[0], 16);
-  };
+   * with the two numbers that decide whether it flies (battery, link), plus the
+   * radio it all goes through. Every tile opens the health check behind it. */
+  const nodes = (S.health && S.health.nodes) || [];
   const radio = nodes.find((n) => n.id === 'radio.usb');
   const drones = nodes.filter((n) => n.id.startsWith('drone.'));
-  return '<span class="rowlabel">fleet</span>' +
-    (radio ? cell('radio', clip(radio.summary, 18), cls(radio.status), 'node:radio.usb', radio.summary) : '') +
-    drones.map((n) => cell(n.label, brief(n), cls(n.status), `node:${n.id}`,
-      `${n.label}: ${n.summary || n.status}`)).join('');
+  if (!nodes.length) {
+    return [0, 1, 2, 3, 4].map(() =>
+      '<span class="dtile idle"><span class="skel" style="width:42%"></span>' +
+      '<span class="skel" style="width:70%;height:17px"></span></span>').join('');
+  }
+  const rcls = { ok: 'ok', warn: 'warn', fail: 'bad' }[radio && radio.status] || 'idle';
+  return (radio ? tileHtml({
+    cls: rcls, name: 'radio', state: radio.status === 'skip' ? 'n/a' : radio.status,
+    main: `<span class="dt-val dim">${esc(clip(radio.summary || '--', 46))}</span>`,
+    foot: '<span>Crazyradio / USB</span>', target: 'node:radio.usb',
+    tip: radio.summary || 'the USB dongle every drone talks through',
+  }) : '') + drones.map(fleetTile).join('');
 }
 
 function dashIssues() {
@@ -482,19 +592,49 @@ function dashIssues() {
   return `<span class="isslabel">needs attention</span>${chips.join('')}`;
 }
 
-function lastLine(id) {
-  const rows = (S.lines[id] || []).filter((r) => !/^\$ /.test(r.text) && r.text.trim());
-  return rows.length ? rows[rows.length - 1].text : '';
+/* ---- the live console: which process, and what it is saying right now */
+function dashProcId() {
+  if (S.dashProc && S.procs.some((p) => p.id === S.dashProc)) return S.dashProc;
+  const running = S.procs.filter((p) => p.state === 'running');
+  const p = running.length ? running[running.length - 1] : S.procs[S.procs.length - 1];
+  return p ? p.id : null;
 }
+
 function dashActivity() {
-  const procs = S.procs.slice(-8).reverse();
-  if (!procs.length) {
-    return '<div class="hint pad">Nothing run yet. Output appears here without leaving the dashboard.</div>';
+  if (!S.procs.length) {
+    return '<div class="hint" style="padding:8px">Nothing run yet.</div>';
   }
-  return procs.map((p) => `<a class="actrow ${esc(p.state)}" data-go="proc:${esc(p.id)}" title="${esc(p.cmdline)}">
-      <span class="adot"></span><span class="alabel">${esc(clip(p.label, 30))}</span>
-      <span class="astate">${esc(p.state)}${p.returncode != null && p.state !== 'running' ? ' ' + p.returncode : ''}</span>
-      <span class="aline">${esc(clip(lastLine(p.id), 70))}</span></a>`).join('');
+  const sel = dashProcId();
+  return S.procs.slice(-40).reverse().map((p) => `<a class="actrow ${esc(p.state)} ${p.id === sel ? 'sel' : ''}"
+      data-dashproc="${esc(p.id)}" title="${esc(p.cmdline)}">
+      <span class="adot"></span><span class="alabel">${esc(clip(p.label, 34))}</span>
+      <span class="astate">${esc(p.state === 'running' ? 'live' : p.state)}${
+        p.returncode != null && p.state !== 'running' ? ' ' + p.returncode : ''}</span></a>`).join('');
+}
+
+function dashOutput() {
+  const head = $('#dashouthead'); const tail = $('#dashtail');
+  if (!head || !tail) return;
+  const p = S.procs.find((x) => x.id === dashProcId());
+  if (!p) {
+    head.innerHTML = '';
+    tail.innerHTML = '<div class="dc-empty"><span class="big">No output yet.</span>' +
+      'Run anything above and it streams here &mdash; without leaving the dashboard.</div>';
+    return;
+  }
+  head.innerHTML = `<span class="nm">${esc(clip(p.label, 26))}</span>
+    <span class="st ${esc(p.state)}">${esc(p.state)}</span>
+    <span class="cmd" title="${esc(p.cmdline)}">${esc(p.cmdline)}</span>
+    ${p.state === 'running' || p.state === 'stopping'
+      ? `<button class="btn ghost sm" onclick="window.__stop('${esc(p.id)}',false)">Stop</button>` : ''}
+    <a class="hlink" data-go="proc:${esc(p.id)}">full output &rarr;</a>`;
+  const rows = S.lines[p.id];
+  if (!rows) { loadProcLines(p.id); tail.innerHTML = '<span class="l-meta">loading output...</span>'; return; }
+  const near = tail.scrollHeight - tail.scrollTop - tail.clientHeight < 40;
+  tail.innerHTML = rows.slice(-80).map((l) =>
+    `<span class="${lineClass(l.text)}">${esc(l.text)}</span>`).join('\n') ||
+    '<span class="l-meta">waiting for output...</span>';
+  if (near) tail.scrollTop = tail.scrollHeight;
 }
 
 function dashBlocked(a, f) {
@@ -509,12 +649,25 @@ function renderDashLive() {
   $('#dashstrip').innerHTML = dashStrip();
   $('#dashissues').innerHTML = dashIssues();
   $('#dashactivity').innerHTML = dashActivity();
-  $$('#dashcols .qa').forEach((el) => {
-    const a = S.catalog.find((x) => x.id === el.dataset.qa);
-    if (!a) return;
-    const why = dashBlocked(a, f);
-    el.classList.toggle('blocked', !!why);
-    $('.qa-why', el).textContent = why;
+  dashOutput();
+  // when every button in a column is blocked for the same reason, say it once
+  // under the heading instead of repeating the same sentence four times
+  $$('#dashcols .dcol').forEach((col) => {
+    const items = $$('.qa', col);
+    const whys = items.map((el) => {
+      const a = S.catalog.find((x) => x.id === el.dataset.qa);
+      return a ? dashBlocked(a, f) : '';
+    });
+    const shared = whys.length > 1 && whys.every((w) => w && w === whys[0]);
+    const note = $('.dcol-why', col);
+    if (note) note.textContent = shared ? whys[0] : '';
+    let last = '';
+    items.forEach((el, i) => {
+      el.classList.toggle('blocked', !!whys[i]);
+      // say it once per run of buttons blocked by the same thing
+      $('.qa-why', el).textContent = (shared || whys[i] === last) ? '' : whys[i];
+      last = whys[i];
+    });
   });
 }
 let dashTimer = null;
@@ -522,6 +675,15 @@ function renderDashSoon() {
   if (dashTimer) return;
   dashTimer = setTimeout(() => { dashTimer = null; renderDashLive(); }, 250);
 }
+
+/* Clicking a row in Activity keeps you on the dashboard and shows its output
+ * beside it; "full output ->" is there for when you want the whole pane. */
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-dashproc]');
+  if (!el) return;
+  S.dashProc = el.dataset.dashproc;
+  renderDashLive();
+});
 
 /* ---- structure: the step columns (rebuilt only when the catalog changes) */
 function qaHtml(it, a) {
@@ -570,17 +732,13 @@ function wireQa(el, a) {
 
 function renderDash() {
   const byId = Object.fromEntries(S.catalog.map((a) => [a.id, a]));
-  const cols = DASH.map((c, i) => {
+  $('#dashcols').innerHTML = DASH.map((c, i) => {
     const items = c.items.filter((it) => byId[it.id]);
     return `<section class="dcol"><h2><span class="step">${i + 1}</span>${esc(c.title)}</h2>
       ${c.sub ? `<div class="dsub">${esc(c.sub)}</div>` : ''}
+      <div class="qa-why dcol-why"></div>
       ${items.map((it) => qaHtml(it, byId[it.id])).join('')}</section>`;
   }).join('');
-  $('#dashcols').innerHTML = cols +
-    `<section class="dcol activity"><h2>Activity
-      <a class="hlink" data-go="tab:procs">all output</a>
-      <a class="hlink" data-go="tab:log">command log</a></h2>
-      <div id="dashactivity"></div></section>`;
   DASH.forEach((c) => c.items.forEach((it) => {
     const el = $(`#dashcols .qa[data-qa="${CSS.escape(it.id)}"]`);
     if (el) wireQa(el, byId[it.id]);
@@ -1070,6 +1228,7 @@ function renderProcs() {
   const alive = (p) => p.state === 'running' || p.state === 'stopping';
   const live = S.procs.filter(alive).length;
   $('#proc-badge').textContent = live || '';
+  document.body.classList.toggle('busy', live > 0);
   $('#proclist').innerHTML = S.procs.slice().reverse().map((p) =>
     `<button class="${p.id === S.selProc ? 'active' : ''}" data-p="${esc(p.id)}">
       <div>${esc(clip(p.label, 26))}</div>
@@ -1102,6 +1261,7 @@ async function loadProcLines(id) {
     const r = await api('/api/proc/' + id);
     S.lines[id] = r.lines.map((l) => ({ seq: l.seq, text: l.text }));
     if (id === S.selProc) redrawLines();
+    renderDashSoon();
   } catch (e) { /* the process may have been pruned */ }
 }
 
@@ -1134,6 +1294,151 @@ function renderLog() {
       <button class="btn ghost sm" onclick="navigator.clipboard.writeText(this.parentNode.querySelector('.cmdline').textContent)">copy</button>
     </div>`).join('') || '<p class="hint">Nothing run yet. Every command will be listed here.</p>';
 }
+
+/* ====================================================== command palette */
+/* One search box over everything the console can do: every catalog action,
+ * every health check, every config file, every process, every tab. It is the
+ * fastest path during a demo (no hunting through tabs) and it still runs the
+ * SAME catalog action as the buttons -- including the confirm step, so Enter
+ * can never quietly fly a drone. */
+const PAL_TABS = [['dash', 'Dashboard'], ['health', 'System health'], ['control', 'Control'],
+                  ['config', 'Config'], ['procs', 'Processes'], ['log', 'Command log']];
+
+function palItems() {
+  const out = [];
+  S.catalog.forEach((a) => out.push({
+    kind: a.group, label: a.label, desc: a.why, go: 'act:' + a.id, key: a.id,
+    flag: a.danger === 'flight' ? 'drones move' : a.danger === 'estop' ? 'cuts motors' : '',
+  }));
+  ((S.health && S.health.nodes) || []).forEach((n) => out.push({
+    kind: 'check', label: n.label, desc: n.summary || n.why, go: 'node:' + n.id, key: n.id,
+  }));
+  S.files.forEach((f) => out.push({
+    kind: 'config', label: f.label, desc: f.path || '', go: 'config:' + f.key, key: f.key }));
+  PAL_TABS.forEach(([k, l]) => out.push({ kind: 'tab', label: l, desc: 'go to the ' + l + ' tab', go: 'tab:' + k }));
+  S.procs.slice(-12).reverse().forEach((p) => out.push({
+    kind: 'process', label: p.label, desc: p.cmdline, go: 'proc:' + p.id }));
+  return out;
+}
+
+/* A ranking ladder rather than a fuzzy-search dependency. The action id counts
+ * as a search key: "fly" finds fly.script, which no word of its label contains.
+ * The loose subsequence pass is last and scores low, so typing "fly" can never
+ * put an unrelated action above the one actually named that. */
+function palScore(item, q) {
+  if (!q) return 1;
+  const label = item.label.toLowerCase();
+  const key = (item.key || '').toLowerCase();
+  const desc = (item.desc || '').toLowerCase();
+  if (label.startsWith(q)) return 1000;
+  if (key.includes(q)) return 900;
+  if (new RegExp('\\b' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(label)) return 850;
+  if (label.includes(q)) return 800 - label.indexOf(q);
+  if (item.kind.toLowerCase().startsWith(q)) return 700;
+  if (desc.includes(q)) return 500;
+  let i = 0;
+  for (const ch of label) if (ch === q[i]) i += 1;
+  return i === q.length ? 150 : 0;
+}
+
+function palRender() {
+  const q = $('#pal-input').value.trim().toLowerCase();
+  const rows = palItems().map((it) => ({ it, sc: palScore(it, q) }))
+    .filter((r) => r.sc > 0)
+    .sort((a, b) => b.sc - a.sc)
+    .slice(0, 40).map((r) => r.it);
+  S.palRows = rows;
+  if (S.palSel >= rows.length) S.palSel = Math.max(0, rows.length - 1);
+  $('#pal-rows').innerHTML = rows.length ? rows.map((it, i) => `
+    <div class="palrow ${i === S.palSel ? 'sel' : ''}" data-i="${i}">
+      <span class="pk">${esc(it.kind)}</span>
+      <span class="pl">${esc(it.label)}</span>
+      <span class="pd">${esc(clip(it.desc || '', 90))}</span>
+      ${it.flag ? `<span class="pf">${esc(it.flag)}</span>` : ''}
+    </div>`).join('') : '<div class="palempty">Nothing matches that.</div>';
+  const sel = $('#pal-rows .palrow.sel');
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+  $$('#pal-rows .palrow').forEach((el) => {
+    el.onmousemove = () => { if (S.palSel !== +el.dataset.i) { S.palSel = +el.dataset.i; palRender(); } };
+    el.onclick = (e) => palChoose(e.shiftKey);
+  });
+}
+
+function palChoose(shift) {
+  const it = (S.palRows || [])[S.palSel];
+  if (!it) return;
+  closePalette();
+  if (!it.go.startsWith('act:')) { go(it.go); return; }
+  const id = it.go.slice(4);
+  if (shift) { openCard(id); return; }
+  const a = S.catalog.find((x) => x.id === id);
+  if (!a) return;
+  const values = {};
+  a.params.forEach((q) => { values[q.name] = savedParam(a.id, q); });
+  runAction(id, values, { stay: $('#tab-dash').classList.contains('active') });
+}
+
+function openPalette() {
+  closeKeyHelp();
+  S.palSel = 0;
+  const el = $('#palette');
+  el.hidden = false;
+  const inp = $('#pal-input');
+  inp.value = '';
+  palRender();
+  inp.focus();
+}
+function closePalette() { $('#palette').hidden = true; }
+
+function wirePalette() {
+  $('#pal-input').oninput = () => { S.palSel = 0; palRender(); };
+  $('#pal-input').onkeydown = (e) => {
+    if (e.key === 'ArrowDown' || (e.key === 'n' && e.ctrlKey)) {
+      e.preventDefault(); S.palSel = Math.min((S.palRows || []).length - 1, S.palSel + 1); palRender();
+    } else if (e.key === 'ArrowUp' || (e.key === 'p' && e.ctrlKey)) {
+      e.preventDefault(); S.palSel = Math.max(0, S.palSel - 1); palRender();
+    } else if (e.key === 'Enter') {
+      e.preventDefault(); palChoose(e.shiftKey);
+    } else if (e.key === 'Escape') {
+      e.preventDefault(); closePalette();
+    }
+  };
+  $('#palette').onclick = (e) => { if (e.target.id === 'palette') closePalette(); };
+  $('#keyhelp').onclick = () => closeKeyHelp();
+  $('#btn-palette').onclick = openPalette;
+}
+
+function openKeyHelp() { closePalette(); $('#keyhelp').hidden = false; }
+function closeKeyHelp() { $('#keyhelp').hidden = true; }
+
+/* ---- keyboard. Deliberately no key for E-STOP: a stray keypress must never
+ * cut the motors, and mouse-only keeps it a decision. */
+const typing = (el) => !!el && (/^(input|textarea|select)$/i.test(el.tagName) || el.isContentEditable);
+
+document.addEventListener('keydown', (e) => {
+  const palOpen = !$('#palette').hidden;
+  if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    if (palOpen) closePalette(); else openPalette();
+    return;
+  }
+  if (palOpen) return;                       // the palette input owns the rest
+  if (e.key === 'Escape') {
+    if (!$('#keyhelp').hidden) closeKeyHelp();
+    else if (!$('#modal').hidden) $('#modal-cancel').click();
+    else if (typing(e.target)) e.target.blur();
+    return;
+  }
+  if (typing(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (!$('#modal').hidden) return;           // a confirm dialog is a decision, not a shortcut
+  if (e.key === '/') { e.preventDefault(); openPalette(); }
+  else if (e.key === '?') { e.preventDefault(); if ($('#keyhelp').hidden) openKeyHelp(); else closeKeyHelp(); }
+  else if (e.key === 'r') { $('#btn-refresh').click(); }
+  else if (/^[1-6]$/.test(e.key)) {
+    const b = $$('#tabs button')[Number(e.key) - 1];
+    if (b) b.click();
+  }
+});
 
 boot().catch((e) => {
   document.body.innerHTML = `<pre class="out" style="margin:40px">console failed to start:\n\n${esc(e.message)}</pre>`;

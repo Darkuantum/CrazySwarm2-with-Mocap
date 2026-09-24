@@ -4,53 +4,92 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CrazySwarm2 mission console</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'><circle cx='20' cy='20' r='6' fill='%2358a6ff'/><circle cx='20' cy='6' r='3' fill='%23bcc8d8'/><circle cx='32' cy='27' r='3' fill='%23bcc8d8'/><circle cx='8' cy='27' r='3' fill='%23bcc8d8'/></svg>">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header class="topbar">
   <div class="brand">
-    <span class="dot" id="worst-dot"></span>
+    <!-- five satellites around a hub: the swarm. It turns while something runs. -->
+    <svg class="brandmark" viewBox="0 0 40 40" aria-hidden="true">
+      <circle class="ring" cx="20" cy="20" r="14"/>
+      <g class="spin">
+        <circle class="sat" cx="20" cy="6" r="2.6"/>
+        <circle class="sat" cx="33.3" cy="15.7" r="2.6"/>
+        <circle class="sat" cx="28.2" cy="31.3" r="2.6"/>
+        <circle class="sat" cx="11.8" cy="31.3" r="2.6"/>
+        <circle class="sat" cx="6.7" cy="15.7" r="2.6"/>
+      </g>
+      <circle class="hub" cx="20" cy="20" r="5.4"/>
+    </svg>
     <div>
-      <div class="title">CrazySwarm2 mission console</div>
-      <div class="headline" id="headline">checking the system...</div>
+      <div class="title">Mission console</div>
+      <div class="subtitle">CrazySwarm2 &middot; OptiTrack</div>
     </div>
   </div>
-  <div class="pills" id="pills"></div>
+
+  <a class="verdict" id="verdict" data-go="tab:health" role="status" aria-live="polite"
+     title="Open the system health diagram">
+    <span class="dot" id="worst-dot"></span>
+    <span class="vtext" id="verdict-text">CHECKING</span>
+    <span class="vsub headline" id="headline">running the first probes...</span>
+  </a>
+
   <div class="topactions">
+    <button class="btn ghost sm" id="btn-palette" title="Command palette: every action, check and file (Ctrl-K)">
+      Search <kbd>Ctrl K</kbd>
+    </button>
     <span class="zoomctl" title="UI scale - this display is HiDPI, so the desktop may already be scaling everything up">
-      <button class="btn ghost sm" id="btn-zoom-out">A&minus;</button>
-      <button class="btn ghost sm" id="btn-zoom-reset">100%</button>
-      <button class="btn ghost sm" id="btn-zoom-in">A+</button>
+      <button class="btn ghost sm" id="btn-zoom-out" title="Smaller">A&minus;</button>
+      <button class="btn ghost sm" id="btn-zoom-reset" title="Reset to 100%">100%</button>
+      <button class="btn ghost sm" id="btn-zoom-in" title="Bigger">A+</button>
     </span>
-    <button class="btn ghost" id="btn-refresh" title="Re-run every health probe">Re-check</button>
+    <button class="btn ghost" id="btn-refresh" title="Re-run every health probe (r)">Re-check</button>
     <button class="btn estop" id="btn-estop" title="One click, no confirmation: ros2 service call /all/emergency std_srvs/srv/Empty {}">E-STOP</button>
   </div>
 </header>
 
-<div id="stale-banner" class="staleban" hidden></div>
-<div id="estop-banner" class="estopban" hidden></div>
+<div id="stale-banner" class="staleban" role="alert" hidden></div>
+<div id="estop-banner" class="estopban" role="alert" aria-live="assertive" hidden></div>
 
-<nav class="tabs" id="tabs">
-  <button data-tab="dash" class="active">Dashboard</button>
-  <button data-tab="health">System health</button>
-  <button data-tab="control">Control</button>
-  <button data-tab="config">Config</button>
-  <button data-tab="procs">Processes <span class="badge" id="proc-badge"></span></button>
-  <button data-tab="log">Command log</button>
+<nav class="tabs" id="tabs" role="tablist" aria-label="Console sections">
+  <button data-tab="dash" class="active" role="tab" aria-selected="true" aria-controls="tab-dash">Dashboard</button>
+  <button data-tab="health" role="tab" aria-selected="false" aria-controls="tab-health">System health</button>
+  <button data-tab="control" role="tab" aria-selected="false" aria-controls="tab-control">Control</button>
+  <button data-tab="config" role="tab" aria-selected="false" aria-controls="tab-config">Config</button>
+  <button data-tab="procs" role="tab" aria-selected="false" aria-controls="tab-procs">Processes <span class="badge" id="proc-badge"></span></button>
+  <button data-tab="log" role="tab" aria-selected="false" aria-controls="tab-log">Command log</button>
+  <span class="tabspacer"></span>
+  <div class="pills" id="pills"></div>
+  <span class="tabhint"><span id="checked-ago"></span>
+    <button class="btn ghost sm keyq" id="btn-keys" title="Keyboard shortcuts (?)">?</button></span>
 </nav>
 
 <main>
   <!-- ---------------------------------------------------- dashboard -->
-  <section id="tab-dash" class="tab active">
+  <section id="tab-dash" class="tab active" role="tabpanel" aria-label="Dashboard">
     <div class="dash">
-      <div class="dashstrip" id="dashstrip"></div>
+      <div class="fleetrow" id="dashstrip"></div>
       <div class="dashissues" id="dashissues"></div>
       <div class="dashcols" id="dashcols"></div>
+      <div class="dconsole">
+        <div class="dc-list">
+          <div class="dc-head">Activity
+            <a class="hlink" data-go="tab:procs">all output</a>
+            <a class="hlink" data-go="tab:log">log</a>
+          </div>
+          <div class="dc-rows" id="dashactivity"></div>
+        </div>
+        <div class="dc-out">
+          <div class="dc-outhead" id="dashouthead"></div>
+          <pre class="dc-tail" id="dashtail"></pre>
+        </div>
+      </div>
     </div>
   </section>
 
   <!-- ------------------------------------------------------- health -->
-  <section id="tab-health" class="tab">
+  <section id="tab-health" class="tab" role="tabpanel" aria-label="System health">
     <div class="split">
       <div class="graphwrap">
         <div class="toolbar">
@@ -62,13 +101,13 @@
             <span><i class="sw blocked"></i>blocked upstream</span>
             <span><i class="sw unknown"></i>not checked</span>
           </div>
-          <span class="hint">Click a box for evidence, command and fix.</span>
+          <span class="hint">Click a box for evidence, command and fix. A moving dashed link means data is flowing.</span>
         </div>
         <div id="graph"></div>
       </div>
       <aside class="detail" id="node-detail">
-        <div class="empty">Pick a box in the diagram.<br><br>
-          The diagram follows the real data path: workspace &rarr; config &rarr;
+        <div class="empty"><span class="big">Pick a box in the diagram.</span>
+          It follows the real data path: workspace &rarr; config &rarr;
           radio and mocap &rarr; <code>/poses</code> &rarr; <code>crazyflie_server</code>
           &rarr; the drones. A box turns red where the chain actually breaks, so you do
           not have to read the launch log to find it.</div>
@@ -77,7 +116,7 @@
   </section>
 
   <!-- ------------------------------------------------------ control -->
-  <section id="tab-control" class="tab">
+  <section id="tab-control" class="tab" role="tabpanel" aria-label="Control">
     <div class="split">
       <nav class="grouplist" id="grouplist"></nav>
       <div class="actions" id="actions"></div>
@@ -85,7 +124,7 @@
   </section>
 
   <!-- ------------------------------------------------------- config -->
-  <section id="tab-config" class="tab">
+  <section id="tab-config" class="tab" role="tabpanel" aria-label="Config">
     <div class="split">
       <nav class="grouplist" id="filelist"></nav>
       <div class="configpane" id="configpane"></div>
@@ -93,7 +132,7 @@
   </section>
 
   <!-- ---------------------------------------------------- processes -->
-  <section id="tab-procs" class="tab">
+  <section id="tab-procs" class="tab" role="tabpanel" aria-label="Processes">
     <div class="split">
       <nav class="proclist" id="proclist"></nav>
       <div class="output">
@@ -109,7 +148,7 @@
   </section>
 
   <!-- ----------------------------------------------------------- log -->
-  <section id="tab-log" class="tab">
+  <section id="tab-log" class="tab" role="tabpanel" aria-label="Command log">
     <div class="logpane">
       <div class="toolbar">
         <a class="btn ghost" href="/api/history.sh" download="mission-console-session.sh">Download as a shell script</a>
@@ -121,7 +160,7 @@
   </section>
 </main>
 
-<div class="modal" id="modal" hidden>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" hidden>
   <div class="modalbox">
     <div class="modalhead" id="modal-title"></div>
     <div class="modalbody" id="modal-body"></div>
@@ -132,7 +171,39 @@
   </div>
 </div>
 
-<div id="toasts"></div>
+<!-- command palette: one search box over every action, check, file and process -->
+<div class="palette" id="palette" role="dialog" aria-modal="true" aria-label="Command palette" hidden>
+  <div class="palbox">
+    <input id="pal-input" aria-label="Search actions, checks and files"
+      placeholder="Run a command, open a check, jump to a file..." autocomplete="off" spellcheck="false">
+    <div class="palrows" id="pal-rows"></div>
+    <div class="palfoot">
+      <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> move</span>
+      <span><kbd>&crarr;</kbd> run / open</span>
+      <span><kbd>Shift &crarr;</kbd> open the full card</span>
+      <span><kbd>Esc</kbd> close</span>
+    </div>
+  </div>
+</div>
+
+<div class="keyhelp" id="keyhelp" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" hidden>
+  <div class="keybox">
+    <h2>Keyboard</h2>
+    <div class="keygrid">
+      <span><kbd>Ctrl K</kbd></span><span class="d">command palette &mdash; every action, health check and config file</span>
+      <span><kbd>/</kbd></span><span class="d">the same palette</span>
+      <span><kbd>1</kbd>&hellip;<kbd>6</kbd></span><span class="d">switch tab</span>
+      <span><kbd>r</kbd></span><span class="d">re-run every health probe</span>
+      <span><kbd>?</kbd></span><span class="d">this list</span>
+      <span><kbd>Esc</kbd></span><span class="d">close whatever is open</span>
+    </div>
+    <div class="note">E-STOP deliberately has <b>no</b> keyboard shortcut: a stray keypress
+      must never cut the motors, and the button is on every tab, top right. It is also the
+      one button with no confirmation step &mdash; one click and it fires.</div>
+  </div>
+</div>
+
+<div id="toasts" role="status" aria-live="polite"></div>
 <script src="/static/app.js"></script>
 </body>
 </html>
