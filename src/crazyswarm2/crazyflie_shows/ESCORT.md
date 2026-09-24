@@ -112,16 +112,42 @@ code's. `plan_escort` prints the consequences of whatever is chosen.
    `crazyflie_shows.safety` and have never been checked against the volume
    Motive actually covers (the same gap HANDOVER.md section 8 flags for the
    shows).
-5. **Which drones.** Defaults to the first three enabled drones as defenders
-   and the fourth as the adversary. Pick deliberately once the fleet is known
-   on the day, with `-p defenders:=cf1,cf2,cf3 -p adversary_drone:=cf5`
-   (a comma-separated string, not a list: an empty-list ROS parameter default
-   is inferred as BYTE_ARRAY and rejects string values).
+5. **Which drones.** Defaults are now chosen by GEOMETRY, not name order: the
+   three drones nearest the VIP mark defend, the farthest one attacks
+   (`escort.pick_roles`). Override with
+   `-p defenders:=cf1,cf2,cf3 -p adversary_drone:=cf5` (a comma-separated
+   string, not a list: an empty-list ROS parameter default is inferred as
+   BYTE_ARRAY and rejects string values) — but run it with `dry_run:=true`
+   first, because an override is exactly how you get an adversary parked
+   inside the ring.
 6. **The DJI adversary.** Out of scope for 8 Oct. Nothing in the survey
    verified its prop-wash risk to 30 g drones, its indoor stability without
    GPS, or the netting it would need. A Tello tracks as an ordinary rigid body
    and would arrive on `/poses` like any other, so `adversary:=external`
    already supports it whenever someone decides to try.
+
+## The gather is checked, as of 2026-09-24
+
+The defenders and the adversary fly onto the ring TOGETHER, on straight goTo
+legs, with no onboard collision avoidance — the same shape as the 2026-08-04
+collision. That leg used to be unverified. It is now checked twice against
+`safety.PLAN_SEPARATION` (0.90 m), by the same closed-form routine the shows
+use:
+
+* **before arming**, from the yaml marks, so a bad placement can still be
+  fixed by moving a drone;
+* **after takeoff**, from the live poses, where a refusal lands instead of
+  gathering.
+
+This was not theoretical. With the marks of 2026-09-24 and the OLD default
+roles (first three names defend, fourth attacks), the four gather legs close
+to **0.00 m** — cf5 outbound and cf3 inbound cross head-on. Checking only the
+three defenders misses it entirely: they clear at 1.27 m. The adversary flies
+the same leg at the same time and has to be in the check.
+
+`escort.adversary_start_problem` is the second half: an adversary inside
+`ring_radius + min_adv_sep` has already won before the demo starts, and its
+first leg out goes through the defenders' slots.
 
 ## Before any hardware flight
 

@@ -58,6 +58,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from crazyflie_shows import safety
+
 TWO_PI = 2.0 * np.pi
 
 
@@ -484,6 +486,62 @@ class AdversaryScript:
                        f'{cfg.ring_radius:.2f} m; the guard would be fighting '
                        'the script for the whole probe')
         return bad
+
+
+def check_gather(src, dst, labels, cfg, min_sep=None):
+    """Problems with the simultaneous move onto the ring (empty list = OK).
+
+    The shows verify every leg they fly (``safety.check_leg``); this one did
+    not, and got away with it on geometry alone -- with the marks of
+    2026-09-24 the gather happens to clear at 1.27 m. "Happens to" is not a
+    safety argument: the drones move to the ring TOGETHER, the firmware has no
+    collision avoidance, and wrong-corner placement is the 2026-08-04 collision
+    (HANDOVER.md section 6). ``src``/``dst`` include the adversary when it is
+    one of ours, because it flies the same leg at the same time.
+    """
+    min_sep = safety.PLAN_SEPARATION if min_sep is None else min_sep
+    bad = []
+    sep = safety.transition_min_sep(src, dst)
+    if sep < min_sep:
+        bad.append(f'gather legs close to {sep:.2f} m, under {min_sep:.2f} m '
+                   f'({", ".join(labels)}) -- move the drones apart on the '
+                   'floor, or pick roles so nobody has to cross the ring')
+    return bad
+
+
+def adversary_start_problem(p_adv, p_vip, cfg):
+    """Why this adversary position cannot start the demo, or None.
+
+    An adversary sitting INSIDE the ring has already won before the show
+    starts, and its first leg out crosses the defenders' slots. With the
+    default roles (first three enabled drones defend, the fourth attacks) this
+    is not hypothetical: on 2026-09-24 the fourth drone stood 1.21 m from the
+    VIP mark, inside a 1.50 m ring.
+    """
+    d = float(np.linalg.norm(np.asarray(p_adv, float)[:2]
+                             - np.asarray(p_vip, float)[:2]))
+    need = cfg.ring_radius + cfg.min_adv_sep
+    if d < need:
+        return (f'the adversary starts {d:.2f} m from the VIP mark, inside the '
+                f'ring plus min_adv_sep ({need:.2f} m). It would fly out '
+                'through the defenders. Stand it further out, or name a '
+                'different drone with adversary_drone.')
+    return None
+
+
+def pick_roles(names, positions, cfg, n_defenders=None):
+    """Default roles by geometry: the nearest drones defend, the farthest attacks.
+
+    Taking the first three names instead (what this used to do) is arbitrary
+    -- it depends on lexicographic order, not on where anything is standing,
+    so it can hand the adversary a mark inside the ring and send a defender
+    across the whole room.
+    """
+    n = cfg.n_defenders if n_defenders is None else n_defenders
+    p_vip = vip_home(cfg)
+    order = sorted(names, key=lambda k: float(np.linalg.norm(
+        np.asarray(positions[k], float)[:2] - p_vip[:2])))
+    return order[:n], (order[-1] if len(order) > n else None)
 
 
 class EscortController:

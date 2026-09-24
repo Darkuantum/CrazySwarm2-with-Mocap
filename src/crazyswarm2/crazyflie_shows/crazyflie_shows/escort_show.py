@@ -67,7 +67,7 @@ import rclpy
 from crazyflie_py import Crazyswarm
 from motion_capture_tracking_interfaces.msg import NamedPoseArray
 
-from crazyflie_shows import escort
+from crazyflie_shows import escort, safety
 from crazyflie_shows.constellation_show import (ShowAborted, abort_land, cue,
                                                 take_signals)
 from crazyflie_shows.swarm_show import _param, check_placement
@@ -164,15 +164,20 @@ def main():
             raise SystemExit(f'defenders {missing} are not enabled in the yaml '
                              f'(enabled: {names})')
         defenders = list(want_defenders)
+        auto_adv = None
     else:
-        defenders = names[:cfg.n_defenders]
+        # By geometry, not by name order -- see escort.pick_roles.
+        starts = {n: np.array(cf.initialPosition, float)
+                  for n, cf in zip(names, cfs)}
+        defenders, auto_adv = escort.pick_roles(names, starts, cfg)
     if len(defenders) < cfg.n_defenders:
         raise SystemExit(f'need {cfg.n_defenders} defenders, the stack has '
                          f'{len(names)} drones ({names})')
 
     adv_drone = None
     if adv_mode == 'scripted':
-        adv_drone = adv_drone_name or next((n for n in names if n not in defenders), '')
+        adv_drone = (adv_drone_name or auto_adv
+                     or next((n for n in names if n not in defenders), ''))
         if not adv_drone:
             raise SystemExit('adversary:=scripted needs a drone that is not a '
                              f'defender; enabled = {names}, defenders = {defenders}')
@@ -202,6 +207,37 @@ def main():
     if problems:
         raise SystemExit('\n  REFUSED: fix the configuration (plan_escort '
                          'reproduces this offline, with no drones).\n')
+    # --- the gather, checked on the ground, from the yaml marks -----------
+    # Predictive: the real check runs again after takeoff on live poses. This
+    # one exists so a bad placement is caught BEFORE anything arms, which is
+    # the only moment it can still be fixed by moving a drone.
+    marks = {n: np.array(cf.initialPosition, float) for n, cf in zip(names, cfs)}
+    p_vip0 = np.array([vip_point[0], vip_point[1], 0.0]) if vip_mode == 'point' else None
+    if p_vip0 is not None:
+        src = [np.array([*marks[n][:2], TAKEOFF_HEIGHT]) for n in defenders]
+        ctrl0 = escort.EscortController(cfg, src, p_vip0)
+        slots0 = escort.ring_targets(p_vip0, ctrl0.phase.psi, cfg)
+        dst = [slots0[ctrl0.slot_of(i)] for i in range(len(defenders))]
+        labels = list(defenders)
+        if adv_drone:
+            src.append(np.array([*marks[adv_drone][:2], TAKEOFF_HEIGHT]))
+            dst.append(script.target(0.0, p_vip0))
+            labels.append(adv_drone)
+            why = escort.adversary_start_problem(marks[adv_drone], p_vip0, cfg)
+            if why:
+                problems.append(why)
+        problems += escort.check_gather(src, dst, labels, cfg)
+        for n, a, b in zip(labels, src, dst):
+            print(f'    {n:>4}  {np.round(a[:2], 2).tolist()} -> '
+                  f'{np.round(b[:2], 2).tolist()}   '
+                  f'{float(np.linalg.norm(b - a)):.2f} m')
+        print(f'    gather legs clear {safety.transition_min_sep(src, dst):.2f} m '
+              f'(needs {safety.PLAN_SEPARATION:.2f})\n')
+    for b in problems:
+        print(f'  *** {b}')
+    if problems:
+        raise SystemExit('\n  REFUSED: fix the above before arming.\n')
+
     print('  configuration checks out. Run plan_escort for the full '
           'encounter simulation.\n')
     if dry_run:
@@ -270,6 +306,23 @@ def main():
         slots = escort.ring_targets(p_vip, ctrl.phase.psi, cfg)
         gather = max(3.0, float(np.max([np.linalg.norm(slots[ctrl.slot_of(i)] - here[i])
                                         for i in range(len(dcfs))])) / 0.4)
+        # Same check again, now on where the drones REALLY are. Refusing here
+        # means landing, not exiting -- they are already in the air.
+        live_src = list(here)
+        live_dst = [slots[ctrl.slot_of(i)] for i in range(len(dcfs))]
+        live_labels = list(defenders)
+        if acf is not None:
+            live_src.append(_live(poses, adv_drone, acf, now))
+            live_dst.append(script.target(0.0, p_vip))
+            live_labels.append(adv_drone)
+        why = escort.check_gather(live_src, live_dst, live_labels, cfg)
+        if acf is not None:
+            bad_adv = escort.adversary_start_problem(live_src[-1], p_vip, cfg)
+            if bad_adv:
+                why.append(bad_adv)
+        if why:
+            raise RuntimeError('gather refused on live poses: ' + '; '.join(why))
+
         print(f'  gathering onto the ring ({gather:.1f} s)')
         for i, cf in enumerate(dcfs):
             cf.goTo(slots[ctrl.slot_of(i)], 0.0, gather)
