@@ -148,7 +148,8 @@ class PointCache:
 def _cfg_from_params(node):
     cfg = escort.EscortConfig()
     for name in ('ring_radius', 'height', 'v_max', 'phase_rate', 'alert_radius',
-                 'release_radius', 'min_vip_dist', 'rate_hz'):
+                 'release_radius', 'min_vip_dist', 'rate_hz',
+                 'vip_height_offset'):
         setattr(cfg, name, float(_param(node, name, getattr(cfg, name))))
     return cfg
 
@@ -191,6 +192,10 @@ def main():
                          f'not {adv_mode!r}')
 
     cfg = _cfg_from_params(node)
+    # A mocap VIP is airborne by default, because that is what the live demo
+    # is: a hand-flown DJI being escorted. A person wearing a hat is the
+    # exception and says so with vip_airborne:=false.
+    cfg.vip_airborne = bool(_param(node, 'vip_airborne', vip_mode == 'mocap'))
     script = escort.AdversaryScript(height=cfg.height)
 
     # ------------------------------------------------------------ who is who
@@ -231,8 +236,14 @@ def main():
     vip_desc = (str(np.round(vip_point, 3).tolist()) if vip_mode == 'point'
                 else VIP_TOPIC if vip_mode == 'manual' else vip_name)
     print(f'  VIP           {vip_mode} {vip_desc}')
-    print(f'  ring          {cfg.ring_radius:.2f} m at {cfg.height:.2f} m, '
+    where = (f'level with the VIP {cfg.vip_height_offset:+.2f} m'
+             if cfg.vip_airborne else f'at {cfg.height:.2f} m')
+    print(f'  ring          {cfg.ring_radius:.2f} m, {where}, '
           f'turning at {cfg.phase_rate:.2f} rad/s, cap {cfg.v_max:.2f} m/s')
+    if cfg.vip_airborne:
+        print(f'  VIP keep-in   stay within {escort.vip_keep_in(cfg):.2f} m of '
+              f'[{cfg.room_center[0]:+.2f}, {cfg.room_center[1]:+.2f}] and under '
+              f'{escort.max_vip_speed(cfg):.2f} m/s, or the ring cannot hold')
     print(f'  walk budget   {escort.max_vip_speed(cfg):+.2f} m/s '
           '(how fast the VIP may move)\n')
 
@@ -346,7 +357,16 @@ def main():
     streaming = False
     try:
         take_signals()
-        for cf in cfs:
+        # Only the drones with a role are armed and flown. A spare hovering
+        # through the demo is a drone in the separation budget, in the shot,
+        # and on the radio, doing nothing to earn any of it. The ABORT path
+        # still broadcasts to everything -- landing a drone that should not be
+        # flying is never the wrong move.
+        flying = list(dcfs) + ([acf] if acf is not None else [])
+        idle = [n for n in names if n not in defenders and n != adv_drone]
+        if idle:
+            print(f'  grounded (no role): {", ".join(idle)}')
+        for cf in flying:
             cf.arm(True)
         armed = True
         timeHelper.sleep(1.0)
@@ -357,7 +377,8 @@ def main():
             if acf is not None:
                 cue(allcfs, [acf], [LED_ADVERSARY])
 
-        allcfs.takeoff(targetHeight=TAKEOFF_HEIGHT, duration=TAKEOFF_DURATION)
+        for cf in flying:
+            cf.takeoff(targetHeight=TAKEOFF_HEIGHT, duration=TAKEOFF_DURATION)
         timeHelper.sleep(TAKEOFF_DURATION + 0.5)
 
         # gather onto the ring with the high-level commander, BEFORE streaming:
@@ -459,6 +480,7 @@ def main():
         was_engaged = None
         last_clamp = ''
         last_untrusted = False
+        last_gripe = -1e9
         last = t0
         while True:
             rclpy.spin_once(node, timeout_sec=0.0)
@@ -506,8 +528,8 @@ def main():
 
             if info['engaged'] != was_engaged:
                 was_engaged = info['engaged']
-                what = ('BLOCKING - ring facing the adversary' if was_engaged
-                        else 'clear - ring at rest')
+                what = ('BLOCKING - wall closing on the adversary' if was_engaged
+                        else 'clear - wall opening back to the ring')
                 print(f'  [t+{t:5.1f}s] {what}', flush=True)
                 if lights_on:
                     blocker = next((i for i in range(len(dcfs))
@@ -520,6 +542,11 @@ def main():
             who = ', '.join(f'{defenders[i]}:{"+".join(sorted(set(r) - {"speed", "accel"}))}'
                             for i, r in sorted(info['clamped'].items())
                             if set(r) - {'speed', 'accel'})
+            gripes = escort.vip_problems(cfg, p_vip, info['v_vip'], live)
+            if gripes and now - last_gripe > 3.0:
+                last_gripe = now
+                for g in gripes:
+                    print(f'  [t+{t:5.1f}s] VIP: {g}', flush=True)
             if info['untrusted'] and not last_untrusted:
                 print(f'  [t+{t:5.1f}s] ignoring the live pose of '
                       f'{", ".join(defenders[i] for i in info["untrusted"])} '
@@ -536,9 +563,10 @@ def main():
         for cf in dcfs + ([acf] if acf else []):
             cf.notifySetpointsStop()
         streaming = False
-        allcfs.land(targetHeight=LAND_HEIGHT, duration=LAND_DURATION)
+        for cf in flying:
+            cf.land(targetHeight=LAND_HEIGHT, duration=LAND_DURATION)
         timeHelper.sleep(LAND_DURATION + 0.5)
-        for cf in cfs:
+        for cf in flying:
             cf.arm(False)
         armed = False
         print('\n  landed, disarmed - done\n')

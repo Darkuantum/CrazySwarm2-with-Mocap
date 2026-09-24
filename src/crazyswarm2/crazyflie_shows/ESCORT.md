@@ -127,6 +127,68 @@ code's. `plan_escort` prints the consequences of whatever is chosen.
    and would arrive on `/poses` like any other, so `adversary:=external`
    already supports it whenever someone decides to try.
 
+## The VIP: a point, a person, or a DJI
+
+Three ways to be the thing that gets escorted:
+
+| Mode | What the VIP is | Used for |
+|---|---|---|
+| `vip_mode:=point` | a fixed coordinate | sim, and the first hardware stage |
+| `vip_mode:=manual` | a point you steer with the keyboard | sim and dry runs |
+| `vip_mode:=mocap` | a rigid body — a person's hat, or **a hand-flown DJI** | the live demo |
+
+A DJI needs no config here. `/poses` carries every rigid body Motive reports
+(the driver publishes `mocap->rigidBodies()`, not just the ones listed in
+`crazyflies.yaml`), so it is enough to build the body in Motive with an
+asymmetric marker set and pass `-p vip_name:=<that name>`.
+
+**An airborne VIP changes the altitude rule.** `vip_airborne` (true by default
+for `vip_mode:=mocap`) makes the ring hold level with the VIP instead of at a
+fixed height. A fixed height would let the DJI climb over the defenders or
+drop beneath them, and a Crazyflie under a DJI is under a downwash far beyond
+the one that already costs a Crazyflie its thrust at 0.62 m of separation.
+Level is the only safe relative altitude, and it is the one the pilot does not
+have to think about. If the pilot leaves the altitude band the defenders stay
+inside it and the gap is reported, not chased.
+
+### What the pilot has to stay inside
+
+Two numbers, both printed by `plan_escort --vip-z <height>` and by the flight
+script's banner:
+
+* **Keep-in radius** = `arena_radius - ring_radius`. Outside it the ring no
+  longer fits in the arena and the far slots get clamped.
+* **VIP speed** = `max_vip_speed` = `v_max - ring_radius * phase_rate`.
+
+With the shipped config that is **1.00 m of room centre and 0.15 m/s** — a
+hover with small drifts, not a flight. That is the honest state of it, and the
+knobs trade against each other:
+
+| arena | ring R | phase_rate | v_max | keep-in | VIP max |
+|---|---|---|---|---|---|
+| 2.5 m | 1.5 m | 0.30 | 0.6 | 1.00 m | 0.15 m/s |
+| 2.5 m | 1.5 m | 0.15 | 0.6 | 1.00 m | 0.38 m/s |
+| 2.5 m | 1.5 m | 0.15 | 1.0 | 1.00 m | 0.78 m/s |
+| 3.5 m | 1.5 m | 0.15 | 1.0 | 2.00 m | 0.78 m/s |
+| 3.5 m | 2.0 m | 0.15 | 1.0 | 1.50 m | 0.70 m/s |
+
+Halving `phase_rate` buys the most for the least: the wall then closes in
+about 8 s instead of 4 s, which is slower to watch but costs no separation.
+Raising `v_max` is the one that needs a written safety argument, because it is
+the speed the defenders fly at next to whatever they are escorting.
+
+**The arena number is the lever nobody has pulled yet.** `arena_radius = 2.5 m`
+has never been measured against the volume Motive actually covers. If the real
+volume is 3.5 m the DJI gets 2.00 m of keep-in and the demo becomes flyable at
+a sensible speed; if it is smaller than 2.5 m, some of the current marks are
+outside it. Measure it before choosing anything else here.
+
+**A DJI standoff is still unset.** `min_vip_dist` is 1.5 m, inherited from a
+person-following prototype. Nothing has verified what a DJI's prop wash does
+to a 30 g Crazyflie at that range, and raising it forces `ring_radius` up,
+which eats the keep-in radius one-for-one. This is the decision that most
+wants a measurement rather than a guess.
+
 ## Manual control: testing with nobody in the room
 
 `escort_teleop` publishes a point you steer with the keyboard, so the demo can

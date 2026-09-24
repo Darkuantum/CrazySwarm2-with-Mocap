@@ -33,7 +33,7 @@ from crazyflie_shows import escort, safety
 
 
 def simulate(cfg, script, walk_speed=0.0, duration=None, walk_bearing=90.0,
-             lag_tau=0.25):
+             lag_tau=0.25, vip_z=None):
     """Run the control law against a scripted encounter. Returns a trace dict.
 
     The drones are modelled as a first-order lag on the commanded setpoint
@@ -46,6 +46,9 @@ def simulate(cfg, script, walk_speed=0.0, duration=None, walk_bearing=90.0,
     n_steps = int(round(duration / dt))
 
     p_vip = escort.vip_home(cfg)
+    if vip_z is not None:
+        p_vip = p_vip.copy()
+        p_vip[2] = vip_z
     walk = np.array([np.cos(np.radians(walk_bearing)),
                      np.sin(np.radians(walk_bearing)), 0.0]) * walk_speed
 
@@ -55,7 +58,7 @@ def simulate(cfg, script, walk_speed=0.0, duration=None, walk_bearing=90.0,
     pos = ctrl_start.copy()
 
     tr = {'t': [], 'vip': [], 'adv': [], 'def': [], 'psi': [], 'engaged': [],
-          'clamped': [], 'slot': []}
+          'clamped': [], 'slot': [], 'close': [], 'lead': []}
     for k in range(n_steps):
         t = k * dt
         # the VIP walks, and is turned back at the arena edge rather than
@@ -65,6 +68,7 @@ def simulate(cfg, script, walk_speed=0.0, duration=None, walk_bearing=90.0,
         if np.linalg.norm(r) > cfg.arena_radius - cfg.ring_radius:
             walk = -walk
             p_next = p_vip + walk * dt
+        p_next[2] = p_vip[2]
         p_vip = p_next
 
         p_adv = script.target(t, p_vip)
@@ -79,12 +83,15 @@ def simulate(cfg, script, walk_speed=0.0, duration=None, walk_bearing=90.0,
         # the ideal ring, for the formation-error measure: a run where the
         # guard rescues every separation but the ring has stopped being a ring
         # is a FAILED escort, and nothing else here would notice
-        ideal = escort.ring_targets(p_vip, info['psi'], cfg)
+        ideal = escort.ring_targets(p_vip, info['psi'], cfg, info['close'],
+                                    info['lead'])
         tr['slot'].append(np.array([ideal[ctrl.slot_of(i)] for i in range(len(pos))]))
         tr['psi'].append(info['psi'])
         tr['engaged'].append(info['engaged'])
+        tr['close'].append(info['close'])
+        tr['lead'].append(info['lead'])
         tr['clamped'].append(info['clamped'])
-    for k in ('t', 'vip', 'adv', 'def', 'psi', 'engaged', 'slot'):
+    for k in ('t', 'vip', 'adv', 'def', 'psi', 'engaged', 'slot', 'close', 'lead'):
         tr[k] = np.array(tr[k])
     return tr
 
@@ -106,7 +113,11 @@ def measure(tr, cfg):
     if tr['engaged'].any():
         want = np.arctan2(tr['adv'][:, 1] - tr['vip'][:, 1],
                           tr['adv'][:, 0] - tr['vip'][:, 0])
-        err = np.abs(escort.wrap_pi(tr['psi'] - want))[tr['engaged']]
+        # The LEAD slot holds the threat bearing, not slot 0 -- comparing psi
+        # alone reported a 120 deg miss on a wall that was aimed correctly.
+        base = escort.wrap_pi(2 * np.pi * np.arange(d.shape[1]) / d.shape[1])
+        aimed = tr['psi'] + base[tr['lead'].astype(int)]
+        err = np.abs(escort.wrap_pi(aimed - want))[tr['engaged']]
         # the tail of each engagement is what matters -- the start is the slew
         face = float(np.degrees(np.median(err)))
     # A speed or accel clamp is routine -- that is the slew doing its job. A
@@ -119,11 +130,35 @@ def measure(tr, cfg):
     sep = sum(1 for c in tr['clamped']
               if any(set(r) & sep_tags for r in c.values()))
     # Formation error: how far each drone is from the slot it is supposed to
-    # hold. Measured after the first 2 s, which is the gather transient.
+    # hold -- measured only while the formation is SETTLED, i.e. the wall is
+    # fully open or fully shut and has been for `settle` seconds.
+    #
+    # Mid-close the drones are deliberately flying somewhere else, and their
+    # lag there says nothing about whether the formation holds; it is bounded
+    # by the speed cap and it is what the cap is for. Judging the transient by
+    # this metric condemned every wall setting that was otherwise fine
+    # (0.6-1.4 m of "error" that was simply drones in transit). The transient
+    # is still judged -- by separation, speed, arena and the guard counters,
+    # which are the things that can actually hurt.
     skip = int(2.0 / dt)
-    slot_err = (float(np.max(np.linalg.norm(d[skip:] - tr['slot'][skip:], axis=2)))
-                if len(d) > skip else 0.0)
-    return {'slot_err': slot_err, 'pair_sep': pair, 'vip_dist': vip,
+    settle = int(1.5 / dt)
+    close = tr['close']
+    steady = np.array([(c in (0.0, 1.0)) for c in close])
+    for i in range(len(steady)):                      # erode after a change
+        if steady[i] and i >= settle and not steady[max(i - settle, 0):i].all():
+            steady[i] = False
+    mask = np.zeros(len(d), bool)
+    mask[skip:] = True
+    mask &= steady
+    slot_err = (float(np.max(np.linalg.norm(d[mask] - tr['slot'][mask], axis=2)))
+                if mask.any() else 0.0)
+    moving = ~steady
+    transit_err = (float(np.max(np.linalg.norm(d[moving] - tr['slot'][moving], axis=2)))
+                   if moving.any() else 0.0)
+    # How tight the wall actually got, and how close its neighbours came.
+    closed = float(np.max(tr['close'])) if len(tr['close']) else 0.0
+    return {'closed': closed, 'slot_err': slot_err, 'transit_err': transit_err,
+            'pair_sep': pair, 'vip_dist': vip,
             'adv_sep': adv, 'peak_speed': speed,
             'max_radius': float(np.max(radial)), 'max_alt': float(np.max(d[:, :, 2])),
             'engaged_frac': float(np.mean(tr['engaged'])), 'face_err_deg': face,
@@ -136,9 +171,10 @@ def verdict(m, cfg):
     # 0.5 m is a third of the ring radius: past that the three drones are no
     # longer recognisably a ring around anybody, whatever the separations say.
     if m['slot_err'] > 0.5:
-        bad.append(f'formation error {m["slot_err"]:.2f} m -- the drones are '
-                   'not holding the ring (the guard may still be keeping every '
-                   'separation legal, which is not the same as escorting)')
+        bad.append(f'formation error {m["slot_err"]:.2f} m while SETTLED -- the '
+                   'drones are not holding their slots (the guard may still be '
+                   'keeping every separation legal, which is not the same as '
+                   'escorting)')
     if m['pair_sep'] < cfg.min_pair_sep:
         bad.append(f'defender-defender {m["pair_sep"]:.2f} m < '
                    f'{cfg.min_pair_sep:.2f} m')
@@ -159,9 +195,9 @@ def verdict(m, cfg):
     return bad
 
 
-def report_case(name, cfg, script, walk, verbose=True):
+def report_case(name, cfg, script, walk, verbose=True, vip_z=None):
     """Simulate one case and print its numbers. Returns (measurements, problems)."""
-    tr = simulate(cfg, script, walk_speed=walk)
+    tr = simulate(cfg, script, walk_speed=walk, vip_z=vip_z)
     m = measure(tr, cfg)
     bad = verdict(m, cfg)
     if verbose:
@@ -169,9 +205,15 @@ def report_case(name, cfg, script, walk, verbose=True):
         print(f'    separations   defender-defender {m["pair_sep"]:.2f} m   '
               f'to VIP {m["vip_dist"]:.2f} m   to adversary {m["adv_sep"]:.2f} m')
         print(f'    peak speed    {m["peak_speed"]:.2f} m/s (cap {cfg.v_max:.2f})')
-        print(f'    formation     worst slot error {m["slot_err"]:.2f} m')
+        print(f'    formation     worst slot error {m["slot_err"]:.2f} m when '
+              f'settled, {m["transit_err"]:.2f} m in transit (lag, not error)')
         print(f'    volume        {m["max_radius"]:.2f} m radius, '
               f'{m["max_alt"]:.2f} m up')
+        print(f'    wall          closed to {m["closed"] * 100:.0f}% '
+              f'({np.degrees(cfg.wall_half_angle):.0f} deg half-angle, '
+              f'lead-to-wing '
+              f'{2 * cfg.ring_radius * np.sin(cfg.wall_half_angle / 2):.2f} m '
+              f'when shut)')
         print(f'    blocking      engaged {m["engaged_frac"] * 100:.0f}% of the '
               f'run, ring faced the threat to '
               f'{m["face_err_deg"]:.0f} deg (median)')
@@ -320,6 +362,9 @@ def main():
     ap.add_argument('--yaml', default=None,
                     help='crazyflies.yaml to check --marks against '
                          '(default: the installed one)')
+    ap.add_argument('--vip-z', type=float, default=None,
+                    help='fly the VIP at this altitude (the DJI case); implies '
+                         'vip_airborne, so the ring holds level with it')
     ap.add_argument('--sweep', action='store_true',
                     help='find the fastest walk the escort holds')
     ap.add_argument('--plot', metavar='PNG', help='write a plan-view plot')
@@ -330,6 +375,8 @@ def main():
                       ('v_max', args.vmax), ('phase_rate', args.phase_rate)):
         if val is not None:
             setattr(cfg, attr, val)
+    if args.vip_z is not None:
+        cfg.vip_airborne = True
     script = escort.AdversaryScript(height=cfg.height)
 
     if args.marks:
@@ -364,11 +411,17 @@ def main():
     if static_only or moving or script.check(cfg, escort.vip_home(cfg)):
         print()
 
-    m_static, bad = report_case('static VIP point', cfg, script, 0.0)
+    if cfg.vip_airborne:
+        print(f'  AIRBORNE VIP  ring holds level with it '
+              f'({cfg.vip_height_offset:+.2f} m); the pilot must stay within '
+              f'{escort.vip_keep_in(cfg):.2f} m of room centre and under '
+              f'{escort.max_vip_speed(cfg):.2f} m/s\n')
+    m_static, bad = report_case('static VIP point', cfg, script, 0.0,
+                                vip_z=args.vip_z)
     problems += len(bad)
     print()
-    m_walk, bad_walk = report_case(f'VIP walking at {args.walk:.2f} m/s',
-                                   cfg, script, args.walk)
+    m_walk, bad_walk = report_case(f'VIP moving at {args.walk:.2f} m/s',
+                                   cfg, script, args.walk, vip_z=args.vip_z)
     print()
 
     if args.sweep:

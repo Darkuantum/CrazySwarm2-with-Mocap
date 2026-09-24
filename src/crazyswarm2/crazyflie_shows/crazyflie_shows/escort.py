@@ -70,7 +70,21 @@ class EscortConfig:
     # -- the ring ---------------------------------------------------------
     n_defenders: int = 3
     ring_radius: float = 1.5       # m, horizontal distance from the VIP
-    height: float = 1.2            # m, defender altitude (VIP is on the floor)
+    #: Defender altitude when the VIP is on the floor (a person, or the
+    #: fixed point). Ignored when vip_airborne -- see ring_height.
+    height: float = 1.2
+
+    #: True when the VIP is itself airborne -- the live demo flies a DJI,
+    #: hand-piloted, as the thing being protected. The ring then holds
+    #: ``vip_height_offset`` above the VIP's OWN altitude instead of a fixed
+    #: height, because a fixed height means the DJI can climb over the
+    #: defenders or drop under them, and neither is survivable: a Crazyflie
+    #: under a DJI is under a downwash an order of magnitude stronger than the
+    #: one that already costs a Crazyflie its thrust below 0.62 m
+    #: (arXiv 2507.09463). Level is the only safe relative altitude, and it is
+    #: the one geometry the pilot does not have to think about.
+    vip_airborne: bool = False
+    vip_height_offset: float = 0.0  # m, ring altitude relative to the VIP
 
     # How fast the ring may turn to face a new threat bearing. This is not a
     # comfort setting: a slot moving round the ring travels at
@@ -80,6 +94,28 @@ class EscortConfig:
     # left for the P term. It also means a 120 deg swing takes ~7 s, which is
     # slower than it sounds -- check it against the adversary's probe legs.
     phase_rate: float = 0.3        # rad/s
+
+    #: When blocking, the wings leave their 120 deg posts and close up beside
+    #: the blocker, so the three of them stand as a wall across the threat
+    #: bearing instead of a ring with one drone on it. This is the half-angle
+    #: they close to: slot 0 stays on the bearing, the other two sit at
+    #: +/- this.
+    #:
+    #: It is bounded from below by the drones themselves. The tight pair is
+    #: LEAD-to-wing, an angular gap of wall_half_angle, so they stand
+    #: 2*R*sin(wall_half_angle/2) apart: 0.90 m at 35 deg (on the floor, and
+    #: it flew there), 1.27 m at 50 deg. MEASURED (plan_escort, 2026-09-24):
+    #: 50 deg holds 1.13 m in the closed wall against a 0.90 m budget, while
+    #: still gathering the three of them into a 100 deg arc from the 360 deg
+    #: they rest on -- the change reads clearly from outside.
+    wall_half_angle: float = np.radians(50.0)
+
+    #: Seconds to close the wall, and to open back out. A wing travels
+    #: R*(120-50) deg = 1.8 m to take its post; 4 s asks 0.46 m/s of a
+    #: 0.60 m/s cap, and fits inside the 8 s probe leg so the wall is shut
+    #: before the adversary arrives. Slower is calmer (6 s holds 1.25 m
+    #: instead of 1.13 m) and later.
+    wall_ramp_s: float = 4.0
 
     # -- when blocking engages (hysteresis, so it cannot chatter) ----------
     # Not the ring radius plus a bit: at 0.3 rad/s the ring needs seconds to
@@ -139,12 +175,107 @@ def wrap_pi(a):
     return (a + np.pi) % TWO_PI - np.pi
 
 
-def slot_angles(psi, n):
+def slot_offsets(n, close, half_angle, lead=0):
+    """Angular offsets of each slot from the ring phase.
+
+    ``close`` blends from the resting ring (evenly spaced, 2*pi/n apart) to
+    the wall: the LEAD slot holds the threat bearing and the others gather to
+    +/- ``half_angle`` beside it. Blending rather than switching matters --
+    the slots are what the drones chase, and a slot that teleports across the
+    ring is a drone commanded to fly there as fast as its cap allows.
+
+    ``lead`` is why this takes an index at all. Making slot 0 the blocker
+    every time forces the whole ring to spin until slot 0 reaches the threat
+    -- up to 180 deg, and measured at 155 deg on the default script, which no
+    drone can fly at 0.6 m/s while the wings are also closing (the wing that
+    had to go the long way round lagged its slot by 1.55 m). Leading with the
+    slot ALREADY nearest the threat caps that rotation at half the slot
+    spacing: 60 deg for three drones. It is also the behaviour you actually
+    want described in one line -- the drone that meets the adversary first is
+    the one the others reinforce.
+
+    Slot ORDER is untouched: each wing closes toward the lead from the side
+    it already rests on, so nobody crosses anybody.
+    """
+    base = wrap_pi(TWO_PI * np.arange(n) / n)
+    rel = wrap_pi(base - base[lead])
+    wall = base[lead] + np.sign(rel) * half_angle
+    # Blend along the SHORTEST arc to the wall post, not by interpolating the
+    # angle values. Interpolating the values sends a wing the long way round:
+    # measured (plan_escort, lead=1, 2026-09-24) a wing swept from -120 deg up
+    # through 0 to +170, passing straight through the lead's post, and the
+    # commanded separation fell to 0.26 m mid-close. Every clamp downstream
+    # then spent the blend fighting the geometry.
+    return base + close * wrap_pi(wall - base)
+
+
+def slot_angles(psi, n, close=0.0, half_angle=0.0, lead=0):
     """The ``n`` slot bearings of a ring whose slot 0 sits at ``psi``."""
-    return psi + TWO_PI * np.arange(n) / n
+    return psi + slot_offsets(n, close, half_angle, lead)
 
 
-def ring_targets(p_vip, psi, cfg):
+def ring_height(cfg, p_vip):
+    """Altitude the ring holds, given where the VIP is.
+
+    A floor VIP (a person, or the fixed point) gets the fixed ``height``. An
+    airborne VIP gets matched, clamped into the altitude band -- if the pilot
+    flies below the floor or above the ceiling the defenders stay in the band
+    and the vertical gap opens, which is reported rather than chased.
+    """
+    if not cfg.vip_airborne:
+        return cfg.height
+    z = float(np.asarray(p_vip, float)[2]) + cfg.vip_height_offset
+    return float(np.clip(z, cfg.floor, cfg.ceiling))
+
+
+def vip_keep_in(cfg):
+    """How far the VIP may stray from room centre before the ring will not fit."""
+    return cfg.arena_radius - cfg.ring_radius
+
+
+def vip_problems(cfg, p_vip, v_vip=None, defenders=()):
+    """Live complaints about where the VIP is and how fast it is going.
+
+    None of these can be fixed by commanding anything -- the VIP is a person
+    or a hand-flown DJI. They exist to be SAID, early and in plain words,
+    because each one degrades the escort silently otherwise.
+    """
+    out = []
+    p_vip = np.asarray(p_vip, float)
+    c = np.array(cfg.room_center)
+    stray = float(np.linalg.norm(p_vip[:2] - c))
+    if stray > vip_keep_in(cfg):
+        out.append(f'the VIP is {stray:.2f} m from room centre, past the '
+                   f'{vip_keep_in(cfg):.2f} m where a {cfg.ring_radius:.2f} m '
+                   'ring still fits inside the arena -- the far slots are '
+                   'being clamped and the ring is no longer a ring')
+    if v_vip is not None:
+        speed = float(np.linalg.norm(np.asarray(v_vip, float)[:2]))
+        if speed > max_vip_speed(cfg):
+            out.append(f'the VIP is moving at {speed:.2f} m/s, over the '
+                       f'{max_vip_speed(cfg):.2f} m/s the ring can follow while '
+                       'also turning -- the formation is lagging, not holding')
+    if cfg.vip_airborne:
+        for i, p in enumerate(defenders):
+            p = np.asarray(p, float)
+            dz = float(p_vip[2] - p[2])
+            if abs(dz) > DOWNWASH_DZ and float(np.linalg.norm(p[:2] - p_vip[:2])) < DOWNWASH_RXY:
+                out.append(f'the VIP is {dz:+.2f} m vertically from defender '
+                           f'{i} and only '
+                           f'{float(np.linalg.norm(p[:2] - p_vip[:2])):.2f} m '
+                           'away horizontally -- one is flying over the other')
+    return out
+
+
+#: Vertical gap below which one aircraft over another is a downwash problem,
+#: and the horizontal radius over which it matters. 0.62 m is the Crazyflie
+#: figure (dz/l > 19, arXiv 2507.09463); a DJI throws far more air than that,
+#: so treat this as the floor of the safe gap, not a measured one for the DJI.
+DOWNWASH_DZ = 0.62
+DOWNWASH_RXY = 1.0
+
+
+def ring_targets(p_vip, psi, cfg, close=0.0, lead=0):
     """Slot positions (n, 3) for a ring centred on ``p_vip`` at phase ``psi``.
 
     ``p_vip`` may be 2D or 3D; only x and y are used. The ring is always flat
@@ -154,11 +285,11 @@ def ring_targets(p_vip, psi, cfg):
     to fall out of the sky, and the measured threshold is dz/l > 19, about
     0.62 m for a Crazyflie (arXiv 2507.09463, Preiss et al. arXiv 1704.04852).
     """
-    ang = slot_angles(psi, cfg.n_defenders)
+    ang = slot_angles(psi, cfg.n_defenders, close, cfg.wall_half_angle, lead)
     out = np.empty((cfg.n_defenders, 3))
     out[:, 0] = p_vip[0] + cfg.ring_radius * np.cos(ang)
     out[:, 1] = p_vip[1] + cfg.ring_radius * np.sin(ang)
-    out[:, 2] = cfg.height
+    out[:, 2] = ring_height(cfg, p_vip)
     return out
 
 
@@ -200,6 +331,20 @@ def check_config(cfg, moving_vip=True):
         bad.append(f'adjacent slots are {chord:.2f} m apart, under '
                    f'min_pair_sep {cfg.min_pair_sep:.2f} m -- widen the ring '
                    f'or drop a defender')
+    # The tight pair in a wall is LEAD-to-wing, separated by wall_half_angle
+    # -- not wing-to-wing, which spans twice that. Checking the wide pair is
+    # how 35 deg looked fine on paper (1.72 m) and flew at 0.90 m.
+    wall_chord = 2.0 * cfg.ring_radius * np.sin(cfg.wall_half_angle / 2.0)
+    if wall_chord < safety.PLAN_SEPARATION:
+        bad.append(f'closed up as a wall, the lead and each wing stand '
+                   f'{wall_chord:.2f} m apart, under PLAN_SEPARATION '
+                   f'{safety.PLAN_SEPARATION:.2f} m -- open wall_half_angle '
+                   f'(now {np.degrees(cfg.wall_half_angle):.0f} deg) or widen '
+                   f'the ring')
+    if cfg.vip_airborne and vip_keep_in(cfg) <= 0.3:
+        bad.append(f'an airborne VIP would have only {vip_keep_in(cfg):.2f} m '
+                   'of room to fly in before the ring stops fitting in the '
+                   'arena -- shrink ring_radius, or the demo is a hover')
     if not (cfg.floor < cfg.height < cfg.ceiling):
         bad.append(f'height {cfg.height:.2f} m is outside the band '
                    f'({cfg.floor:.2f}, {cfg.ceiling:.2f}) m')
@@ -563,6 +708,12 @@ class EscortController:
         self.rest_psi = psi0
         self.engaged = False
         self.untrusted = []
+        #: 0 = resting ring, 1 = closed up as a wall. Ramped, never switched.
+        self.close = 0.0
+        #: Which slot holds the threat bearing. Chosen when blocking engages
+        #: (the one already nearest the adversary) and held until it releases,
+        #: so the wall cannot flip sides while it is closing.
+        self.lead = 0
 
     def assign(self, p_defenders, p_vip):
         """Pick the ring phase that suits where the drones already are.
@@ -608,16 +759,34 @@ class EscortController:
         p_vip = np.asarray(p_vip, float)
         v_vip = self.vip_vel.update(p_vip, dt)
 
+        was_engaged = self.engaged
         self.engaged = self.latch.update(p_vip, p_adv)
+        if self.engaged and not was_engaged:
+            # First contact: whoever is closest in bearing leads, and the ring
+            # turns the short way to put them on the threat line.
+            phi = float(np.arctan2(p_adv[1] - p_vip[1], p_adv[0] - p_vip[0]))
+            here = slot_angles(self.phase.psi, self.n)
+            self.lead = int(np.argmin(np.abs(wrap_pi(here - phi))))
         if self.engaged:
             # slot 0 goes onto the VIP-adversary bearing: a defender ends up
             # between the two, which is the whole demo.
-            psi_t = float(np.arctan2(p_adv[1] - p_vip[1], p_adv[0] - p_vip[0]))
+            base = wrap_pi(TWO_PI * np.arange(self.n) / self.n)
+            psi_t = float(np.arctan2(p_adv[1] - p_vip[1], p_adv[0] - p_vip[0])
+                          - base[self.lead])
         else:
             psi_t = self.rest_psi
         psi = self.phase.update(psi_t, dt)
 
-        slots = ring_targets(p_vip, psi, cfg)
+        # Reinforce: once a defender is on the threat bearing, the other two
+        # leave their posts and close up beside it, so the adversary faces a
+        # wall rather than one drone with 120 degrees of daylight either side.
+        # It opens back out when the threat leaves -- an escort permanently
+        # bunched on one side is not escorting anybody.
+        step_close = dt / max(cfg.wall_ramp_s, 1e-3)
+        self.close = float(np.clip(self.close + (step_close if self.engaged
+                                                 else -step_close), 0.0, 1.0))
+
+        slots = ring_targets(p_vip, psi, cfg, self.close, self.lead)
         # feedforward the VIP's velocity so the ring translates *with* the
         # person instead of forever chasing them by a lag-shaped error
         slots[:, :2] += v_vip[:2] / max(cfg.rate_hz, 1.0)
@@ -649,4 +818,5 @@ class EscortController:
             if g.reasons:
                 clamped[i] = list(g.reasons)
         return out, {'psi': psi, 'engaged': self.engaged, 'v_vip': v_vip,
-                     'clamped': clamped, 'untrusted': list(self.untrusted)}
+                     'close': self.close, 'lead': self.lead, 'clamped': clamped,
+                     'untrusted': list(self.untrusted)}
