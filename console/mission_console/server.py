@@ -27,7 +27,13 @@ from .procs import EventBus, ProcessManager
 
 STATIC = os.path.join(os.path.dirname(__file__), 'static')
 REPO = configio.REPO
-HEALTH_PERIOD = 20.0
+# Two cadences. The full sweep is the slow, complete picture; the live sweep
+# re-runs only what moves while you watch (ROS graph, /poses, per-drone battery
+# / link / supervisor state) and carries the rest over. Tiles were up to ~24 s
+# stale on the single 20 s cadence, which is a long time to look at a drone and
+# not know it is e-stopped.
+HEALTH_PERIOD = 30.0        # full sweep
+LIVE_PERIOD = 3.0           # live sweep
 
 
 class App:
@@ -64,10 +70,10 @@ class App:
         raise KeyError(action_id)
 
     # -------------------------------------------------------------- health
-    def refresh_health(self):
+    def refresh_health(self, full=True):
         with self._health_lock:
             try:
-                snap = self.health.run()
+                snap = self.health.run(full=full)
             except Exception:                            # noqa: BLE001
                 snap = {'nodes': [], 'edges': [], 'facts': {}, 'worst': 'unknown',
                         'headline': 'health check crashed',
@@ -78,12 +84,20 @@ class App:
 
     def _health_loop(self):
         time.sleep(1.0)
+        last_full = 0.0
         while True:
             try:
-                self.refresh_health()
+                # the first sweep of the process, and every HEALTH_PERIOD after,
+                # is a full one; the rest are live. Anything you DO -- an action,
+                # a config write, Re-check -- still forces a full sweep, so an
+                # edit is never waiting on this timer.
+                full = time.time() - last_full >= HEALTH_PERIOD
+                self.refresh_health(full=full)
+                if full:
+                    last_full = time.time()
             except Exception:                            # noqa: BLE001
                 pass
-            time.sleep(HEALTH_PERIOD)
+            time.sleep(LIVE_PERIOD)
 
     # ---------------------------------------------------------------- runs
     def run_action(self, action_id, values):

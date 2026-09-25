@@ -687,7 +687,25 @@ class Health:
                 break
 
     # ------------------------------------------------------------------ run
-    def run(self):
+    # Probes whose answer changes only when you edit a file, plug something in,
+    # or move the Motive PC -- never while you sit and watch. A live sweep reuses
+    # the last full sweep's result for these, which is what makes it cheap:
+    # _check_motive alone spends ~1.5 s on a NatNet broadcast ping.
+    STATIC_NODES = ('env.ros', 'env.overlay', 'env.python', 'cfg.parse', 'cfg.fleet',
+                    'radio.usb', 'mocap.host', 'mocap.port')
+    # Carried forward verbatim. NOT 'findings': _check_signatures rebuilds those
+    # from the process buffers on every sweep, so copying them would duplicate.
+    _CARRY = ('status', 'summary', 'detail', 'fix', 'commands', 'metrics')
+
+    def run(self, full=True):
+        """Refresh the graph.
+
+        full=True  every probe (startup, "Re-check", after any action or config
+                   write) -- the slow, complete picture.
+        full=False only the things that move while you watch: the ROS graph, the
+                   /poses stream and each drone's telemetry. Everything else is
+                   carried over from the last full sweep.
+        """
         started = time.time()
         cf = configio.load('crazyflies')
         mc = configio.load('motion_capture')
@@ -745,14 +763,24 @@ class Health:
             edges.append(('server.services', f'drone.{d["name"]}'))
 
         # --- run the probes ---
-        self._check_env(nodes)
-        self._check_config(nodes, cf['doc'], cf['parse_error'], mc['doc'], mc['parse_error'])
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            futures = [pool.submit(self._check_radio_usb, nodes),
-                       pool.submit(self._check_motive, nodes)]
+        cached = {n['id']: n for n in (self.last or {}).get('nodes', [])}
+        live_only = not full and bool(cached)
+        if live_only:
+            for nid in self.STATIC_NODES:
+                prev = cached.get(nid)
+                if prev and nid in nodes:
+                    nodes[nid].update({k: prev[k] for k in self._CARRY if k in prev})
             graph = self._check_graph(nodes, fleet)
-            for f in futures:
-                f.result()
+        else:
+            self._check_env(nodes)
+            self._check_config(nodes, cf['doc'], cf['parse_error'],
+                               mc['doc'], mc['parse_error'])
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                futures = [pool.submit(self._check_radio_usb, nodes),
+                           pool.submit(self._check_motive, nodes)]
+                graph = self._check_graph(nodes, fleet)
+                for f in futures:
+                    f.result()
         rate = self._check_poses(nodes, graph) if graph else None
         if graph.get('sim'):
             for nid, msg in (('mocap.node', 'not used on the sim backend'),
@@ -840,6 +868,7 @@ class Health:
             'worst': worst,
             'headline': summary,
             'elapsed': time.time() - started,
+            'full': not live_only,
             'ts': time.time(),
         }
         self.last_run = time.time()

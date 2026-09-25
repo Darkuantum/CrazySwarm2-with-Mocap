@@ -11,7 +11,7 @@
 const S = {
   catalog: [], groups: [], files: [], health: null, procs: [], history: [],
   lines: {}, selNode: null, selGroup: null, selFile: 'crazyflies', selProc: null, factsSig: '',
-  cfg: {}, repo: '', env: {}, dashProc: null, checkedAt: 0,
+  cfg: {}, repo: '', env: {}, dashProc: null, checkedAt: 0, checkedFullAt: 0,
 };
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -220,6 +220,11 @@ function renderTop() {
   $('#headline').textContent = h.headline || '';
   $('#verdict').title = (h.headline || 'running the first probes') + ' -- open the health diagram';
   S.checkedAt = h.ts || S.checkedAt;
+  // Two cadences: a live sweep every few seconds (ROS graph, /poses, per-drone
+  // telemetry) and a full one every 30 s. The stamp reports the live sweep --
+  // which is the number you want when watching a drone -- and the tooltip says
+  // when everything else was last verified, so it cannot quietly overstate.
+  if (h.full && h.ts) S.checkedFullAt = h.ts;
 
   const hz = f.poses_hz;
   if (hz != null) { HZ_HISTORY.push(hz); if (HZ_HISTORY.length > 40) HZ_HISTORY.shift(); }
@@ -252,8 +257,16 @@ function renderCheckedAgo() {
   const dt = Math.max(0, Date.now() / 1000 - S.checkedAt);
   el.textContent = '\u21bb ' + (dt < 60 ? `${Math.round(dt)} s`
     : dt < 3600 ? `${Math.round(dt / 60)} min` : 'a while');
-  el.title = 'every health probe last finished ' +
-    (dt < 60 ? `${Math.round(dt)} seconds` : `${Math.round(dt / 60)} minutes`) + ' ago';
+  const ago = (t) => {
+    const d = Math.max(0, Date.now() / 1000 - t);
+    return d < 60 ? `${Math.round(d)} s ago` : `${Math.round(d / 60)} min ago`;
+  };
+  el.title = `live checks (ROS graph, /poses, each drone's battery, link and ` +
+    `supervisor state) ran ${ago(S.checkedAt)}` +
+    (S.checkedFullAt
+      ? `\neverything else (workspace, config, radio, Motive) ran ${ago(S.checkedFullAt)}` +
+        ' -- press Re-check to force a full sweep now'
+      : '');
 }
 setInterval(renderCheckedAgo, 1000);
 

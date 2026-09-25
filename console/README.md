@@ -50,6 +50,19 @@ Copy any of it into a sourced terminal and it does the same thing.
 
 ## The tabs
 
+Health runs on **two cadences**, because the probes have very different
+volatility. A **live sweep every 3 s** re-runs only what moves while you watch:
+the ROS graph, the `/poses` stream, and each drone's battery, link and
+supervisor state. A **full sweep every 30 s** (and on startup, after any action,
+after a config write, and on *Re-check*) re-runs everything else — workspace
+overlay, Python interpreter, config parse, fleet sanity, the Crazyradio on USB
+and the Motive discovery ping. On a single 20 s cadence a drone tile could be
+24 s stale, which is a long time to look at a drone and not know it is
+e-stopped; the live sweep costs ~0.14 s against ~1.7 s for a full one, because
+the expensive probes (the NatNet broadcast ping above all) are exactly the ones
+that never change between sweeps. The `↻` stamp in the nav bar reports the live
+sweep and its tooltip says when everything else was last verified.
+
 **System health** — the flow diagram. It follows the real data path:
 
 ```
