@@ -289,6 +289,26 @@ public:
 
     }
 
+    // KEEP-ALIVE -- a guaranteed unicast floor per drone.
+    // The firmware deletes every log block by itself (log.c, logRunBlock:
+    // `if (!crtpIsConnected()) { logReset(); crtpReset(); }`) when the DRONE has
+    // received no CRTP packet for RADIO_ACTIVITY_TIMEOUT_MS = 1000 ms
+    // (radiolink.c). The host is never told, and the nRF keeps acking polls, so
+    // the link still measures perfect -- the "link alive, log data dead" stall.
+    // MEASURED: a healthy drone here already receives ~170 packets/s (the link
+    // library's auto-pings refresh the same tick), so this is insurance against
+    // that behaviour changing, NOT the fix -- a connection starved for a whole
+    // second starves this timer's packet too. The recovery below is the fix.
+    // NOT on callback_group_cf_srv: that group is mutually exclusive and the
+    // watchdog's rebuild runs there, so a rebuild would silence the keep-alive
+    // for the one drone that can least afford it.
+    keepalive_hz_ = node->get_parameter("keepalive_frequency").as_double();
+    if (keepalive_hz_ > 0.0) {
+      keepalive_timer_ = node->create_wall_timer(
+        std::chrono::milliseconds((int)(1000.0 / keepalive_hz_)),
+        [this]() { cf_.triggerLatencyMeasurement(); }, callback_group_cf_cmd);
+    }
+
     auto start = std::chrono::system_clock::now();
 
     cf_.logReset();
@@ -1238,7 +1258,12 @@ private:
     if (telemetry_watchdog_s_ <= 0.0 || recovering_) return;
     const auto now = std::chrono::steady_clock::now();
     const double quiet = std::chrono::duration<double>(now - last_log_rx_).count();
-    if (quiet < telemetry_watchdog_s_) return;
+    // A rebuild that failed part-way leaves blocks missing while others still
+    // deliver, so `quiet` never grows: retry on the flag instead, on the same
+    // cadence rather than on every tick of this timer.
+    const bool retry_due = rebuild_pending_ &&
+        std::chrono::duration<double>(now - last_rebuild_attempt_).count() >= telemetry_watchdog_s_;
+    if (quiet < telemetry_watchdog_s_ && !retry_due) return;
     const double since_latency = std::chrono::duration<double>(now - last_latency_rx_).count();
     if (since_latency > 2.0) return;    // an ordinary dead link: not ours to fix
     if (may_be_airborne()) {
@@ -1249,27 +1274,40 @@ private:
       last_log_rx_ = now;               // once per window, not once per second
       return;
     }
-    RCLCPP_WARN(logger_, "[%s] NO TELEMETRY for %.1f s though the link is alive "
-                "(latency %.1f s ago) - restarting its log blocks in place",
-                name_.c_str(), quiet, since_latency);
     recovering_ = true;
+    last_rebuild_attempt_ = now;
+    // After a part-built rebuild, stop/start would "succeed" on the blocks that
+    // survived and never recreate the missing ones, so skip straight to tier 2.
     bool recovered = false;
-    try {
-      restart_log_blocks();
-      RCLCPP_WARN(logger_, "[%s] log blocks restarted; watching for data", name_.c_str());
-      recovered = true;
-    } catch (const std::exception& e) {
-      RCLCPP_WARN(logger_, "[%s] stop/start refused (%s) - the drone no longer holds "
-                  "these blocks; recreating them", name_.c_str(), e.what());
+    if (retry_due) {
+      RCLCPP_WARN(logger_, "[%s] retrying the half-finished log-block rebuild",
+                  name_.c_str());
+    } else {
+      RCLCPP_WARN(logger_, "[%s] NO TELEMETRY for %.1f s though the link is alive "
+                  "(latency %.1f s ago) - restarting its log blocks in place",
+                  name_.c_str(), quiet, since_latency);
+      try {
+        restart_log_blocks();
+        RCLCPP_WARN(logger_, "[%s] log blocks restarted; watching for data", name_.c_str());
+        recovered = true;
+      } catch (const std::exception& e) {
+        RCLCPP_WARN(logger_, "[%s] stop/start refused (%s) - the drone no longer holds "
+                    "these blocks; recreating them", name_.c_str(), e.what());
+      }
     }
     if (!recovered) {
       try {
         rebuild_log_blocks();
         RCLCPP_WARN(logger_, "[%s] log blocks RECREATED (logReset + create + start); "
                     "watching for data", name_.c_str());
+        rebuild_pending_ = false;
       } catch (const std::exception& e) {
-        RCLCPP_ERROR(logger_, "[%s] log-block rebuild FAILED (%s) - only a server "
-                     "restart will revive this drone's telemetry", name_.c_str(), e.what());
+        // A half-built block set can still deliver SOME data, which keeps the
+        // no-telemetry trigger from ever firing again -- so the retry must be
+        // driven by this flag, not by silence.
+        rebuild_pending_ = true;
+        RCLCPP_ERROR(logger_, "[%s] log-block rebuild FAILED (%s) - retrying in %.0f s",
+                     name_.c_str(), e.what(), telemetry_watchdog_s_);
       }
     }
     last_log_rx_ = std::chrono::steady_clock::now();
@@ -1379,18 +1417,23 @@ private:
   std::list<std::unique_ptr<LogBlockGeneric>> log_blocks_generic_;
   //: Per-request bound used ONLY while rebuild_log_blocks() runs; 0 at connect,
   //  where an unbounded wait is the documented behaviour.
-  static constexpr unsigned int RECOVERY_TIMEOUT_MS = 300;
+  //: 300 ms was too tight -- MEASURED 2026-10-05, a log-block start answered
+  //  later than that, so the rebuild aborted half-finished and the drone sat
+  //  degraded until the NEXT stall. A drone that answers logReset answers these.
+  static constexpr unsigned int RECOVERY_TIMEOUT_MS = 1000;
   unsigned int recovery_timeout_ms_{0};
   //: How to create every log block again from nothing - see rebuild_log_blocks().
   std::vector<std::function<void()>> log_block_builders_;
   //: Telemetry watchdog state - see check_telemetry_watchdog().
   double telemetry_watchdog_s_{0.0};
   bool recovering_{false};
+  bool rebuild_pending_{false};
   bool commanded_flight_{false};
   bool last_mocap_z_valid_{false};
   float last_mocap_z_{0.0f};
   uint8_t period_pose_{0}, period_scan_{0}, period_odom_{0}, period_status_{0};
   std::vector<uint8_t> periods_generic_;
+  std::chrono::steady_clock::time_point last_rebuild_attempt_{std::chrono::steady_clock::now()};
   std::chrono::steady_clock::time_point last_log_rx_{std::chrono::steady_clock::now()};
   std::chrono::steady_clock::time_point last_latency_rx_{std::chrono::steady_clock::now()};
   std::list<rclcpp::Publisher<crazyflie_interfaces::msg::LogDataGeneric>::SharedPtr> publishers_generic_;
@@ -1401,6 +1444,8 @@ private:
 
   // link statistics
   rclcpp::TimerBase::SharedPtr link_statistics_timer_;
+  rclcpp::TimerBase::SharedPtr keepalive_timer_;
+  double keepalive_hz_{0.0};
   std::chrono::time_point<std::chrono::steady_clock> last_on_latency_;
   uint16_t last_latency_in_ms_;
   float warning_freq_;
@@ -1451,6 +1496,9 @@ public:
     this->declare_parameter("robot_description", "");
 
     // Warnings
+    // See the keep-alive comment in CrazyflieROS: below ~2 Hz the drone's own
+    // 1 s radio-activity timeout starts deleting its log blocks.
+    this->declare_parameter("keepalive_frequency", 4.0);
     this->declare_parameter("warnings.frequency", 1.0);
     float freq = this->get_parameter("warnings.frequency").get_parameter_value().get<float>();
     if (freq >= 0.0) {

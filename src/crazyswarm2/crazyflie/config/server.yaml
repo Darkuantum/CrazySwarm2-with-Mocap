@@ -1,5 +1,13 @@
 /crazyflie_server:
   ros__parameters:
+    # Guaranteed unicast floor, per drone. The firmware deletes ALL of its own
+    # log blocks when the DRONE has received nothing for 1000 ms (log.c
+    # logRunBlock -> crtpIsConnected -> radiolink.c RADIO_ACTIVITY_TIMEOUT_MS)
+    # and never tells the host -- the "link alive, log data dead" stall.
+    # MEASURED: a healthy drone already receives ~170 packets/s (the link
+    # library's auto-pings), so this is insurance, not the fix: a connection
+    # starved for a full second starves this too. 0 disables it.
+    keepalive_frequency: 4.0
     warnings:
       frequency: 1.0 # report/run checks once per second
       motion_capture:

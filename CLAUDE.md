@@ -337,7 +337,44 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   (`log=50 null=1` in one second), but other drones survive identical saturated
   bursts (cf1 took `log=34 null=0` and stayed healthy), so the flush alone is
   not sufficient.
-  **ROOT CAUSE, MEASURED 2026-10-05: the drone DROPS its log blocks.** The
+  **ROOT CAUSE, FOUND IN THE FIRMWARE 2026-10-05 -- the drone deletes its own
+  log blocks when it thinks WE went away.** `logRunBlock()` in the firmware's
+  `src/modules/src/log.c` ends with
+
+      // Check if the connection is still up, oherwise disable
+      // all the logging and flush all the CRTP queues.
+      if (!crtpIsConnected()) { logReset(); crtpReset(); }
+
+  and `crtpIsConnected()` -> `radiolinkIsConnected()` in `src/hal/src/radiolink.c`
+  is just `(xTaskGetTickCount() - lastPacketTick) < M2T(1000)`, where
+  `lastPacketTick` is refreshed ONLY when the DRONE RECEIVES a CRTP packet
+  (`SYSLINK_RADIO_RAW`/`_BROADCAST` in `radiolinkSyslinkDispatch`). So **one
+  second without receiving anything makes a drone delete every log block and
+  flush its CRTP queues** -- and it never tells the host. The nRF51 goes on
+  acking polls at the radio level, so every host-side counter stays perfect.
+  That is the entire syndrome. It also promotes the "~3 s link disturbance
+  before each freeze" from context to CAUSE: the drone's receive gap crossed
+  1000 ms. The firmware source is on this box (`~/crazyflie-firmware`, tag
+  2025.02, same version the fleet runs) -- read it before theorising about the
+  radio again.
+  **What the trigger therefore IS, and is not** (measured 2026-10-05, correcting
+  a first guess that the 1 Hz warning ping sat on the threshold): a healthy
+  drone on this rig reports `/cfX/status` `num_rx_unicast` ~168/s and
+  `num_rx_broadcast` ~145/s, and `count_rx_unicast` is incremented in the SAME
+  `radiolinkSyslinkDispatch` branch that refreshes `lastPacketTick` -- so the
+  timer is refreshed ~170 times a second by the link library's own auto-pings.
+  The margin is not thin. Tripping it takes a GENUINE >= 1 s window in which
+  that one drone receives nothing at all, which is exactly the "~3 s link
+  disturbance" seen before every freeze. **What causes that outage is the one
+  thing still open.** `server.yaml` `keepalive_frequency: 4.0` adds a guaranteed
+  per-drone unicast floor (4/s on top of ~170/s): cheap insurance if auto-ping
+  behaviour ever changes, NOT a fix -- a starved connection starves the
+  keep-alive too, since both go through the same radio thread. Its timer runs on
+  `callback_group_cf_cmd`, not the mutually-exclusive `callback_group_cf_srv`
+  where the watchdog's rebuild runs, so a rebuild cannot silence it.
+  **So the recovery, not the prevention, is what makes the rig usable.**
+  **How it was measured, before the firmware was read: the drone DROPS its log
+  blocks.** The
   watchdog's first remedy was a stop/start of the existing blocks; at a real cf5
   stall that came back as `Could not start log block!` -- a response, not a
   timeout, so the drone answered the control request and REFUSED it. A block
@@ -347,8 +384,7 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   explains why only a server restart ever recovered it (its connect sequence
   re-CREATES the blocks) and why a second dongle always worked (a fresh
   connection creates its own). What makes the drone drop them is still open --
-  a firmware-side log-engine reset is the obvious candidate -- but the recovery
-  no longer depends on knowing.
+  it is the firmware's own 1 s radio-activity timeout, above.
   **FIX IN PLACE -- the telemetry watchdog** (`server.yaml`
   `telemetry_watchdog_s: 5.0`, `check_telemetry_watchdog()` in
   `crazyflie_server.cpp`): when a drone delivers no log data for that long while

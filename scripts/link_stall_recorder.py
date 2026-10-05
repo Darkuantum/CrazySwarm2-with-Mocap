@@ -21,6 +21,12 @@ What it records
 ---------------
 Continuously, once a second, per enabled drone:
   * pose rate over a trailing window (the symptom),
+  * what the DRONE says it received, from /cfX/status (num_rx_unicast and
+    num_rx_broadcast). These are the decisive numbers now: the firmware deletes
+    every log block by itself once the drone has received NOTHING for 1000 ms
+    (log.c logRunBlock -> crtpIsConnected -> radiolink.c, same dispatch that
+    increments these counters), so a dip here in the second before a freeze is
+    the trigger, directly observed. A healthy drone reads ~170 and ~145.
   * the server-side link counters from /cfX/connection_statistics
     (needs `warnings.communication.publish_stats: true` in server.yaml):
     sent, sent_ping, receive, enqueued, ack.
@@ -125,17 +131,20 @@ class Recorder(Node):
         self.launcher = launcher()
         self.stamps = {n: deque(maxlen=4000) for n in names}       # pose arrivals
         self.stats = {n: None for n in names}                      # latest counters
+        self.rx = {n: None for n in names}                         # drone-side rx
         self.history = {n: deque(maxlen=int(PRECURSOR_S) + 10) for n in names}
         self.zero_run = defaultdict(int)
         self.was_alive = defaultdict(bool)
         self.stalled = set()
         self.csv = open(self.out_dir / f'link_{int(time.time())}.csv', 'w', buffering=1)
-        self.csv.write('t,launcher,drone,pose_hz,sent,sent_ping,receive,enqueued,ack\n')
+        self.csv.write('t,launcher,drone,pose_hz,sent,sent_ping,receive,enqueued,ack,'
+                       'rx_uc,rx_bc\n')
 
         for n in names:
             self.create_subscription(PoseStamped, f'/{n}/pose',
                                      self._pose_cb(n), qos_profile_sensor_data)
             self._subscribe_stats(n)
+            self._subscribe_status(n)
         self.create_timer(1.0, self.tick)
         print(f'recording {len(names)} drones -> {self.out_dir}  '
               f'(launcher: {self.launcher})', flush=True)
@@ -159,6 +168,18 @@ class Recorder(Node):
         self.create_subscription(ConnectionStatisticsArray,
                                  f'/{name}/connection_statistics', cb, 10)
 
+    def _subscribe_status(self, name):
+        """Record the drone's OWN receive counters -- see the module docstring."""
+        try:
+            from crazyflie_interfaces.msg import Status
+        except ImportError:
+            return
+
+        def cb(msg, nm=name):
+            self.rx[nm] = dict(rx_uc=getattr(msg, 'num_rx_unicast', None),
+                               rx_bc=getattr(msg, 'num_rx_broadcast', None))
+        self.create_subscription(Status, f'/{name}/status', cb, 10)
+
     def _pose_cb(self, name):
         def cb(_msg):
             self.stamps[name].append(time.time())
@@ -181,12 +202,14 @@ class Recorder(Node):
         for n in self.names:
             hz = self.rate(n, now)
             st = self.stats[n] or {}
-            row = dict(t=round(now, 2), pose_hz=round(hz, 2), **st)
+            rx = self.rx[n] or {}
+            row = dict(t=round(now, 2), pose_hz=round(hz, 2), **st, **rx)
             self.history[n].append(row)
             self.csv.write(
                 f'{now:.2f},{self.launcher},{n},{hz:.2f},'
                 f'{st.get("sent","")},{st.get("sent_ping","")},'
-                f'{st.get("receive","")},{st.get("enqueued","")},{st.get("ack","")}\n')
+                f'{st.get("receive","")},{st.get("enqueued","")},{st.get("ack","")},'
+                f'{rx.get("rx_uc","")},{rx.get("rx_bc","")}\n')
 
             if hz >= ALIVE_HZ:
                 self.was_alive[n] = True
@@ -225,9 +248,10 @@ class Recorder(Node):
         payload = dict(
             victim=victim, when=now, launcher=self.launcher,
             window_s=self.window, precursor_s=PRECURSOR_S,
-            note=('counters: sent flat = not polled; ack flat = no acks; '
-                  'ack rising + receive flat = payloads discarded; '
-                  'receive rising + enqueued flat = never queued'),
+            note=('rx_uc/rx_bc are what the DRONE received (healthy ~170/~145); '
+                  'a second at ~0 is the firmware 1 s radio-activity timeout '
+                  'that makes it delete its own log blocks. Server-side: sent '
+                  'flat = not polled; ack flat = no acks'),
             drones={n: list(self.history[n]) for n in self.names},
             still_alive=[n for n in self.names if n not in self.stalled],
             server_log_tail=tail)
@@ -242,10 +266,11 @@ class Recorder(Node):
         rows = [r for r in self.history[victim] if 'sent' in r][-6:]
         if rows:
             print('      per-second counters into the stall '
-                  '(pose_hz | sent | ack | receive):', flush=True)
+                  '(pose_hz | sent | ack | DRONE rx_uc | rx_bc):', flush=True)
             for r in rows:
                 print(f'        {r.get("pose_hz"):>5} | {r.get("sent"):>4} | '
-                      f'{r.get("ack"):>4} | {r.get("receive"):>4}', flush=True)
+                      f'{r.get("ack"):>4} | {str(r.get("rx_uc")):>6} | '
+                      f'{str(r.get("rx_bc")):>5}', flush=True)
         else:
             print('      no link counters (set warnings.communication.'
                   'publish_stats: true in server.yaml and relaunch)', flush=True)
