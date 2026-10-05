@@ -78,7 +78,7 @@
 | A drone doesn't appear in the GUI | It has `enabled: false` in `crazyflies.yaml`, or the GUI was pointed at a different yaml with `--config`. |
 | GUI shows every drone (incl. disabled) plus a yaml warning | The GUI couldn't read `crazyflies.yaml` — it then accepts everything. Fix the path / pass `--config <path>`. |
 | Mocap Hz trace in the connectivity panel decays to 0 | Mocap died — see the Mocap pipeline table above (UDP 1511 orphan is the confirmed cause on this rig). |
-| kalman telemetry panel empty | The `kalman_preflight` custom log topic was removed/renamed in `crazyflies.yaml` — restore it ([RUNNING Section F](RUNNING.md#f-enabling-extra-telemetry-logging-custom-topics)). |
+| kalman telemetry panel empty | The `kalman_preflight` custom log topic was removed/renamed in `crazyflies.yaml` — restore it ([RUNNING Section F](RUNNING.md#g-enabling-extra-telemetry-logging-custom-topics)). |
 
 ## Color LED
 

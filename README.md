@@ -571,7 +571,7 @@ python3 scripts/color_led_cflib.py           # fixed color sequence; URI edited 
 All paths set the firmware parameter `colorLedBot.wrgb8888` (`0xWWRRGGBB`, with
 a dedicated white channel). **Hardware only** — no effect with `backend:=sim`.
 Full detail (raw `ros2 param set` form, decimal color values, prerequisites):
-[docs/RUNNING.md Section G](docs/RUNNING.md#g-color-led-control-color-led-deck).
+[docs/RUNNING.md Section H](docs/RUNNING.md#h-color-led-control-color-led-deck).
 
 ## 8. Mission console — optional GUI
 

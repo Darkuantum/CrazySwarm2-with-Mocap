@@ -361,7 +361,34 @@ ros2 launch crazyflie launch.py backend:=cpp teleop:=True
 Gamepad mapping (buttons, axes, limits) is in `config/teleop.yaml`. Defaults:
 takeoff = start, land = back, emergency = red, arm = yellow.
 
-## E. Useful checks
+## E. Shows (crazyflie_shows)
+
+Three verified multi-drone shows. Each has a **runcard** — the commands in
+order with every argument — and a design document explaining why the numbers
+are what they are.
+
+| show | runcard | why | run |
+|---|---|---|---|
+| carousel, ~63 s | [CAROUSEL](../src/crazyswarm2/crazyflie_shows/runcards/CAROUSEL.runcard.md) | `SHOW_GUIDE.md` | `swarm_show` |
+| constellation, 76 s | [CONSTELLATION](../src/crazyswarm2/crazyflie_shows/runcards/CONSTELLATION.runcard.md) | `CONSTELLATION.md` | `constellation_show` |
+| escort, reactive | [ESCORT](../src/crazyswarm2/crazyflie_shows/runcards/ESCORT.runcard.md) | `ESCORT.md` | `escort_show` |
+
+Start at
+[`runcards/README.md`](../src/crazyswarm2/crazyflie_shows/runcards/README.md),
+which carries the rules common to all three: deriving the address scan from the
+yaml, and what an E-STOP costs.
+
+Every show follows `plan -> sim -> dry_run -> fly`, and each has a planner that
+needs **no radio, no mocap and no drones** (`plan_show`, `plan_constellation`,
+`plan_escort`). **Re-run the planner after every `sync_initial_positions.py`** —
+the carousel sits at 99 % of its separation budget.
+
+One difference worth knowing before you fly any of them: `constellation_show`
+and `escort_show` handle Ctrl-C and land; **`swarm_show` does not** — stopping
+the carousel in flight means the E-STOP.
+
+
+## F. Useful checks
 
 ```bash
 ros2 node list
@@ -481,7 +508,7 @@ ros2 topic echo /cf1/pose         # echo a specific drone topic
 > domain-id selector — it sets which domain the **NatNet driver node** publishes on,
 > i.e. the driver's domain, not a per-drone separation.
 
-## F. Enabling extra telemetry logging (custom topics)
+## G. Enabling extra telemetry logging (custom topics)
 
 The drones can stream onboard firmware variables back as ROS topics. This is
 configured under `all.firmware_logging.custom_topics` in
@@ -540,7 +567,7 @@ predefined names the server understands.
 > Tip: enable high-rate blocks (e.g. 50 Hz attitude/kalman) only while actively
 > debugging, then comment them out again for normal flight to free up the radio.
 
-## G. Color LED control (Color LED deck)
+## H. Color LED control (Color LED deck)
 
 Applies to drones carrying the bottom-mounted **Color LED deck**
 (`bcColorLedBot`; the firmware must expose the `colorLedBot` params). Everything

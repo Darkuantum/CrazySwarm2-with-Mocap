@@ -39,8 +39,12 @@ Parameters (``--ros-args -p name:=value``)
 ``check_placement``     true     compare live pose to initial_position
 ``placement_tol``       0.25     m, how far off a drone may be
 ``scale``               1.0      grow the whole show (ConstellationConfig.scale)
-``arena_radius``        2.5      m
-``ceiling``             2.0      m
+``arena_radius``        1.90     m, = ARENA_RADIUS_PLAN (tested 2.00 less
+                                 the 0.10 tracking margin), NOT the old 2.5
+``ceiling``             2.32     m, = CEILING_CENTRE_TESTED 2.42 less the
+                                 same margin, NOT the old 2.0
+``use_sim_time``        false    REQUIRED under backend:=sim, NEVER on
+                                 hardware
 ======================  =======  =====================================
 """
 

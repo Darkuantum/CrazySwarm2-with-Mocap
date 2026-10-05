@@ -105,12 +105,32 @@ Parameters (``--ros-args -p name:=value``)
                                     yours. Reads a LINE, so it works from a
                                     terminal or the mission console's stdin
                                     box. 'q' lands.
-``ring_radius``         1.0         m  } overrides of EscortConfig; every
-``height``              1.2         m  } one is re-verified before takeoff,
-``v_max``               0.6         m/s} and refused if it does not check out
-``phase_rate``          0.3         rad/s
 ``check_placement``     true        compare live pose to initial_position
+``placement_tol``       0.25        m, how far off a drone may be
+``vip_airborne``        (auto)      ring rides the VIP's own altitude;
+                                    defaults true only for vip_mode:=mocap
+``duration``            (script)    s. The script's own length for
+                                    adversary:=scripted, else 120 s
+``use_sim_time``        false       REQUIRED under backend:=sim, NEVER on
+                                    hardware
+----------------------  ----------  ---------------------------------
+Overrides of EscortConfig (``_cfg_from_params``). Every one is re-verified
+before takeoff and refused if it does not check out:
+``ring_radius``         1.0         m. Also the chord the closing wall uses
+``height``              1.2         m
+``v_max``               0.6         m/s
+``phase_rate``          0.3         rad/s
+``alert_radius``        1.88        m, adversary-to-VIP distance that ENGAGES
+``release_radius``      2.0         m, the larger one that disengages
+``min_vip_dist``        1.0         m, hard floor defender-to-VIP
+                                    (= ring_radius by design)
+``rate_hz``             20.0        setpoint stream rate per drone
+``vip_height_offset``   0.0         m, ring altitude relative to an airborne
+                                    VIP
 ======================  ==========  =================================
+
+``probe < alert < release < retreat`` has to hold; ``plan_escort`` refuses if
+it does not, so re-run it after changing either radius.
 """
 
 import select
