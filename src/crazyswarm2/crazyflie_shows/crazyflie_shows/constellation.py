@@ -141,6 +141,24 @@ class ConstellationConfig(choreography.ShowConfig):
     #: ``build_plan`` checks -- and the figures stay where the cameras are.
     room_center: tuple = safety.ARENA_CENTRE
 
+    #: Uniform shrink on every horizontal dimension (see ``ShowConfig.scale``).
+    #: 0.95 after the 2026-10-05 flight, which was aborted mid-show: the cause
+    #: was a failed trajectory upload, not the envelope, but the show had been
+    #: sitting at 93% of the radius budget and there was no reason to.
+    #: MEASURED with plan_constellation, homes on the slot ring:
+    #:     scale 1.00 -> radius 1.53 m (81%), min separation 1.00 m
+    #:     scale 0.95 -> radius 1.46 m (77%), min separation 0.97 m
+    #:     scale 0.92 -> radius 1.41 m (74%), min separation 0.95 m
+    #:     scale 0.90 -> radius 1.38 m (73%), min separation 0.92 m
+    #: Below 0.95 you buy radius almost 1:1 out of separation -- the floor is
+    #: 0.90 m -- because the radius is set by ``pyramid_arm``, which barely
+    #: moves. Do not go lower without re-running the planner.
+    #: BIGGER LEVER: where the drones are PARKED. The flown radius was 1.76 m
+    #: only because cf2's mark sat 1.76 m from the arena centre; the figures
+    #: never reach past 1.53 m. Park on the slot ring and re-sync before
+    #: reaching for this knob.
+    scale: float = 0.95
+
     #: Tempo. Every phase boundary lands on a beat; 120 BPM is 0.5 s a beat,
     #: 2 s a 4/4 bar. Changing it re-times every phase and re-runs every check.
     bpm: float = 120.0

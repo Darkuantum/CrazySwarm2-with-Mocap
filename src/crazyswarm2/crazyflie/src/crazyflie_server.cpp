@@ -710,6 +710,9 @@ public:
   //: Feed the telemetry watchdog's airborne guard from the server's /poses
   //: handler - the only place that sees altitude for every drone however it was
   //: commanded, broadcast /all/takeoff included.
+  //: Did trajectory `id` fail to upload to this drone? See upload_trajectory().
+  bool trajectory_is_bad(uint8_t id) const { return bad_trajectories_.count(id) > 0; }
+
   void note_mocap_z(float z)
   {
     last_mocap_z_ = z;
@@ -970,8 +973,11 @@ private:
     try {
       cf_.uploadTrajectory(request->trajectory_id, request->piece_offset, pieces);
       bad_trajectories_.erase(request->trajectory_id);
+      response->success = true;
     } catch (const std::exception& e) {
       bad_trajectories_.insert(request->trajectory_id);
+      response->success = false;
+      response->message = std::string(name_) + ": " + e.what();
       RCLCPP_FATAL(logger_, "[%s] TRAJECTORY %d UPLOAD FAILED (%s) - DO NOT FLY IT; "
                    "start_trajectory will refuse this id until it uploads cleanly",
                    name_.c_str(), request->trajectory_id, e.what());
@@ -1659,6 +1665,28 @@ private:
                 request->timescale,
                 request->reversed,
                 request->group_mask);
+
+    // REFUSE if this trajectory failed to upload to ANY drone. The per-drone
+    // handler's check is not enough: the shows start trajectories over this
+    // BROADCAST, which never touches a CrazyflieROS. On 2026-10-05 that gap let
+    // a show fly cf5 through four trajectories it had never received (its
+    // unicast receive rate was 0.00 -- "Sent: 1487. Received: 0") and the drone
+    // flew whatever was in that memory slot until it was e-stopped.
+    // Refusing for EVERYONE is the safe side: the formation holds position
+    // instead of one drone flying garbage next to four flying the figure.
+    std::string offenders;
+    for (const auto& cf : crazyflies_) {
+      if (cf.second && cf.second->trajectory_is_bad(request->trajectory_id)) {
+        offenders += (offenders.empty() ? "" : ", ") + cf.first;
+      }
+    }
+    if (!offenders.empty()) {
+      RCLCPP_FATAL(logger_, "[all] REFUSING to start trajectory %d: its upload "
+                   "FAILED on %s. Nothing will move. Re-upload before flying.",
+                   request->trajectory_id, offenders.c_str());
+      return;
+    }
+
     for (int i = 0; i < broadcasts_num_repeats_; ++i) {
       for (auto &bc : broadcaster_) {
         auto &cfbc = bc.second;

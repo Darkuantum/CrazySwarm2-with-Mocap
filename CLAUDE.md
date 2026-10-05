@@ -54,6 +54,13 @@ src/                # VENDORED source (committed)
                       #   * constellation, 76 s (constellation_show / plan_constellation)
                       #     - CONSTELLATION.md. Shape changes (n-gon/arrow/pyramid/
                       #     switchback staircase) on a 120 BPM beat grid, light cues,
+                      #     scale 0.95 since 2026-10-05. THE ENVELOPE IS SET BY WHERE
+                      #     THE DRONES ARE PARKED, not by the figures: the 2026-10-05
+                      #     flight planned to 1.76 m of the 1.90 m budget purely
+                      #     because cf2's mark sat 1.76 m from the arena centre, while
+                      #     the figures never reach past 1.53 m. Park on the gather
+                      #     ring (R=1.10 m at the slot angles) and the same show plans
+                      #     to 1.46 m. Re-run plan_constellation after every sync.
                       #     staged abort. Clearance is enforced in PLAN VIEW: no drone
                       #     over another. Slots are assigned by bottleneck distance, NOT
                       #     tied to names. Refitted 2026-10-02 to the MEASURED arena

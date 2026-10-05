@@ -418,6 +418,20 @@ class Crazyflie:
             rclpy.spin_once(self.node)
             if future.done():
                 break
+        # RAISE on a failed upload. An upload can fail while the link stays up
+        # (the drone is starved by the upload itself and stops answering), and
+        # silently continuing means arming and flying a trajectory the drone
+        # never received -- which it executes as whatever is in that memory.
+        # Server and client are built together in this workspace, so `success`
+        # is always set. getattr() only guards the case of talking to a server
+        # built from an older interface, where the field does not exist at all.
+        result = future.result()
+        if result is not None and not getattr(result, 'success', True):
+            raise RuntimeError(
+                'uploadTrajectory failed for {} (id {}): {}. DO NOT FLY -- '
+                're-upload first.'.format(
+                    self.prefix, trajectoryId,
+                    getattr(result, 'message', '') or 'no reason given'))
 
     def startTrajectory(self, trajectoryId,
                         timescale=1.0, reverse=False,
