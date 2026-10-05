@@ -511,7 +511,7 @@ public:
             // constructed: a stalled drone has DROPPED its blocks, so recovery
             // has to create them again - see rebuild_log_blocks().
             add_log_builder([this, vars, cb]() mutable {
-              log_block_pose_.reset(new LogBlock<logPose>(&cf_, vars, cb));
+              log_block_pose_.reset(new LogBlock<logPose>(&cf_, vars, cb, recovery_timeout_ms_));
               log_block_pose_->start(period_pose_);
             });
           }
@@ -531,7 +531,7 @@ public:
             });
             period_scan_ = uint8_t(100.0f / (float)freq);
             add_log_builder([this, vars, cb]() mutable {
-              log_block_scan_.reset(new LogBlock<logScan>(&cf_, vars, cb));
+              log_block_scan_.reset(new LogBlock<logScan>(&cf_, vars, cb, recovery_timeout_ms_));
               log_block_scan_->start(period_scan_);
             });
           }
@@ -557,7 +557,7 @@ public:
             });
             period_odom_ = uint8_t(100.0f / (float)freq);
             add_log_builder([this, vars, cb]() mutable {
-              log_block_odom_.reset(new LogBlock<logOdom>(&cf_, vars, cb));
+              log_block_odom_.reset(new LogBlock<logOdom>(&cf_, vars, cb, recovery_timeout_ms_));
               log_block_odom_->start(period_odom_);
             });
             
@@ -601,7 +601,7 @@ public:
 
             period_status_ = uint8_t(100.0f / (float)freq);
             add_log_builder([this, logvars, cb]() mutable {
-              log_block_status_.reset(new LogBlock<logStatus>(&cf_, logvars, cb));
+              log_block_status_.reset(new LogBlock<logStatus>(&cf_, logvars, cb, recovery_timeout_ms_));
               log_block_status_->start(period_status_);
             });
           }
@@ -629,7 +629,7 @@ public:
             const uint8_t period = uint8_t(100.0f / (float)freq);
             add_log_builder([this, vars, cb, user_data, period]() mutable {
               log_blocks_generic_.emplace_back(new LogBlockGeneric(
-                &cf_, vars, user_data, cb));
+                &cf_, vars, user_data, cb, recovery_timeout_ms_));
               periods_generic_.push_back(period);
               log_blocks_generic_.back()->start(period);
             });
@@ -1201,16 +1201,36 @@ private:
   {
     // Destroy first: ~LogBlock frees its id, so the rebuild reuses the same
     // ids and the drone's own log state is wiped by logReset() underneath.
+    // Abandon rather than stop(): the blocks are already gone from the drone,
+    // so the stop handshake can only burn its retries, and logReset() wipes the
+    // drone's log state anyway.
+    if (log_block_pose_)   log_block_pose_->abandon();
+    if (log_block_scan_)   log_block_scan_->abandon();
+    if (log_block_odom_)   log_block_odom_->abandon();
+    if (log_block_status_) log_block_status_->abandon();
+    for (auto& b : log_blocks_generic_) { if (b) b->abandon(); }
     log_block_pose_.reset();
     log_block_scan_.reset();
     log_block_odom_.reset();
     log_block_status_.reset();
     log_blocks_generic_.clear();
     periods_generic_.clear();                 // the builders push these back
-    cf_.logReset();
-    for (auto& build : log_block_builders_) {
-      build();
+    // Bail early if the drone will not even answer a reset: every wait on this
+    // path is bounded, because it runs in a timer sharing a mutually-exclusive
+    // callback group with this drone's land/emergency services.
+    if (!cf_.logReset(RECOVERY_TIMEOUT_MS, 2)) {
+      throw std::runtime_error("no reply to logReset");
     }
+    recovery_timeout_ms_ = RECOVERY_TIMEOUT_MS;   // builders pass it to the blocks
+    try {
+      for (auto& build : log_block_builders_) {
+        build();
+      }
+    } catch (...) {
+      recovery_timeout_ms_ = 0;
+      throw;
+    }
+    recovery_timeout_ms_ = 0;
   }
 
   void check_telemetry_watchdog()
@@ -1357,6 +1377,10 @@ private:
   const CrazyflieBroadcaster* cfbc_;
 
   std::list<std::unique_ptr<LogBlockGeneric>> log_blocks_generic_;
+  //: Per-request bound used ONLY while rebuild_log_blocks() runs; 0 at connect,
+  //  where an unbounded wait is the documented behaviour.
+  static constexpr unsigned int RECOVERY_TIMEOUT_MS = 300;
+  unsigned int recovery_timeout_ms_{0};
   //: How to create every log block again from nothing - see rebuild_log_blocks().
   std::vector<std::function<void()>> log_block_builders_;
   //: Telemetry watchdog state - see check_telemetry_watchdog().

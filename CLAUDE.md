@@ -359,7 +359,17 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   and start them all again, which is the logging half of a server restart
   without the restart. Tier 2 is why every block is now registered through
   `add_log_builder()` at connect instead of just being constructed -- the
-  builder closure is the only record of how to make that block again. It
+  builder closure is the only record of how to make that block again.
+  **VERIFIED ON HARDWARE 2026-10-05:** cf5 stalled twice in one 20-minute run;
+  each time tier 1 was refused, tier 2 recreated the blocks, and `/cf5/pose`,
+  `/cf5/status` and `/cf5/kalman_preflight` were all back **~1.0 s** after the
+  stall was declared -- no server restart, no power cycle. Note the stall
+  RECURS on the same drone, so the watchdog treats it as an ongoing condition,
+  not a one-off. Every wait on the recovery path is **bounded** (300 ms x 2 per
+  request, and it bails out entirely if `logReset` goes unanswered) because the
+  link timer shares a mutually-exclusive callback group with that drone's
+  `land` and `emergency` services -- an unbounded wait there would be worse
+  than the stall. The connect path still waits unbounded, unchanged. It
   **refuses to act unless mocap positively shows the drone on the floor** (`z <= 0.10 m`): the shows take off with broadcast `/all/takeoff`,
   which no per-drone command handler ever observes, and `/cfX/status` is dead
   exactly when it would be asked, so mocap altitude is the only signal that sees

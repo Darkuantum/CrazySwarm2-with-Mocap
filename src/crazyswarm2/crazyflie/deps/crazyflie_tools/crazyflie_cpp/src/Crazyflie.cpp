@@ -128,6 +128,18 @@ void Crazyflie::logReset()
   }
 }
 
+bool Crazyflie::logReset(unsigned int timeout_ms, size_t numTries)
+{
+  crtpLogResetRequest request;
+  m_connection.send(request);
+  using res = crtpLogControlResponse;
+  auto p = waitForResponse(&res::valid, timeout_ms, numTries);
+  if (!p) {
+    return false;             // the drone never answered: nothing else will work
+  }
+  return res::result(p) == crtpLogControlResultOk;
+}
+
 void Crazyflie::sendSetpoint(
   float roll,
   float pitch,

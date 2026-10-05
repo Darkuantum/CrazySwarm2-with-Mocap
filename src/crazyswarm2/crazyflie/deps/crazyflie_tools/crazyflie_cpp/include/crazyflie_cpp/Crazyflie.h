@@ -174,6 +174,13 @@ public:
 
   void logReset();
 
+  //: Bounded variant for the telemetry-watchdog recovery path, which runs in a
+  //  ROS timer that shares a mutually-exclusive callback group with this
+  //  drone's land/emergency services: an unbounded wait there would be worse
+  //  than the stall it is trying to fix. Returns false on timeout or refusal
+  //  instead of throwing or blocking.
+  bool logReset(unsigned int timeout_ms, size_t numTries);
+
   void sendSetpoint(
     float roll,
     float pitch,
@@ -515,13 +522,18 @@ template<class T>
 class LogBlock
 {
 public:
+  //: timeout_ms == 0 keeps the original unbounded wait (what connect wants:
+  //  the server is documented to block on an unreachable drone). The watchdog
+  //  recovery passes a bound so it can never wedge a service callback group.
   LogBlock(
     Crazyflie* cf,
     std::list<std::pair<std::string, std::string> > variables,
-    std::function<void(uint32_t, const T*)>& callback)
+    std::function<void(uint32_t, const T*)>& callback,
+    unsigned int timeout_ms = 0)
     : m_cf(cf)
     , m_callback(callback)
     , m_id(0)
+    , m_timeout_ms(timeout_ms)
   {
     m_id = m_cf->registerLogBlock([=](const bitcraze::crazyflieLinkCpp::Packet& p, uint8_t s) { this->handleData(p, s); });
     crtpLogCreateBlockV2Request req(m_id);
@@ -546,7 +558,11 @@ public:
     }
     m_cf->m_connection.send(req);
     using res = crtpLogControlResponse;
-    auto p = m_cf->waitForResponse(&res::valid);
+    auto p = m_timeout_ms ? m_cf->waitForResponse(&res::valid, m_timeout_ms, 2)
+                          : m_cf->waitForResponse(&res::valid);
+    if (!p) {
+      throw std::runtime_error("No reply to log-block create!");
+    }
     auto result = res::result(p);
     if (result != crtpLogControlResultOk && result != crtpLogControlResultBlockExists)
     {
@@ -556,16 +572,27 @@ public:
 
   ~LogBlock()
   {
-    stop();
+    if (!m_abandoned) {
+      stop();
+    }
     m_cf->unregisterLogBlock(m_id);
   }
+
+  //: Destroy without the stop() handshake. Used when the block is already known
+  //  to be gone from the drone (the stall), where stop() can only burn its
+  //  bounded retries before a logReset() wipes the drone's log state anyway.
+  void abandon() { m_abandoned = true; }
 
   void start(uint8_t period)
   {
     crtpLogStartRequest request(m_id, period);
     m_cf->m_connection.send(request);
     using res = crtpLogControlResponse;
-    auto p = m_cf->waitForResponse(&res::valid);
+    auto p = m_timeout_ms ? m_cf->waitForResponse(&res::valid, m_timeout_ms, 2)
+                          : m_cf->waitForResponse(&res::valid);
+    if (!p) {
+      throw std::runtime_error("No reply to log-block start!");
+    }
     auto result = res::result(p);
     if (result != crtpLogControlResultOk)
     {
@@ -604,6 +631,8 @@ private:
   Crazyflie* m_cf;
   std::function<void(uint32_t, const T*)> m_callback;
   uint8_t m_id;
+  unsigned int m_timeout_ms{0};
+  bool m_abandoned{false};
 };
 ///
 
@@ -614,11 +643,13 @@ public:
     Crazyflie* cf,
     const std::vector<std::string>& variables,
     void* userData,
-    std::function<void(uint32_t, const std::vector<float>*, void* userData)>& callback)
+    std::function<void(uint32_t, const std::vector<float>*, void* userData)>& callback,
+    unsigned int timeout_ms = 0)   // 0 = unbounded, as at connect; see LogBlock
     : m_cf(cf)
     , m_userData(userData)
     , m_callback(callback)
     , m_id(0)
+    , m_timeout_ms(timeout_ms)
   {
     m_id = m_cf->registerLogBlock([=](const bitcraze::crazyflieLinkCpp::Packet& p, uint8_t s) { this->handleData(p, s); });
     crtpLogCreateBlockV2Request req(m_id);
@@ -657,7 +688,11 @@ public:
     }
     m_cf->m_connection.send(req);
     using res = crtpLogControlResponse;
-    auto p = m_cf->waitForResponse(&res::valid);
+    auto p = m_timeout_ms ? m_cf->waitForResponse(&res::valid, m_timeout_ms, 2)
+                          : m_cf->waitForResponse(&res::valid);
+    if (!p) {
+      throw std::runtime_error("No reply to log-block create!");
+    }
     auto result = res::result(p);
     if (result != crtpLogControlResultOk
         && result != crtpLogControlResultBlockExists) {
@@ -667,17 +702,25 @@ public:
 
   ~LogBlockGeneric()
   {
-    stop();
+    if (!m_abandoned) {
+      stop();
+    }
     m_cf->unregisterLogBlock(m_id);
   }
 
+  //: See LogBlock::abandon().
+  void abandon() { m_abandoned = true; }
 
   void start(uint8_t period)
   {
     crtpLogStartRequest request(m_id, period);
     m_cf->m_connection.send(request);
     using res = crtpLogControlResponse;
-    auto p = m_cf->waitForResponse(&res::valid);
+    auto p = m_timeout_ms ? m_cf->waitForResponse(&res::valid, m_timeout_ms, 2)
+                          : m_cf->waitForResponse(&res::valid);
+    if (!p) {
+      throw std::runtime_error("No reply to log-block start!");
+    }
     auto result = res::result(p);
     if (result != crtpLogControlResultOk)
     {
@@ -775,6 +818,8 @@ private:
   std::function<void(uint32_t, const std::vector<float>*, void*)> m_callback;
   uint8_t m_id;
   std::vector<Crazyflie::LogType> m_types;
+  unsigned int m_timeout_ms{0};
+  bool m_abandoned{false};
 };
 ///
 
