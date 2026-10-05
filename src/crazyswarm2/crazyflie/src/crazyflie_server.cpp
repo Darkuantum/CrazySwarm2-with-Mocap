@@ -1,4 +1,5 @@
 #include <memory>
+#include <set>
 #include <vector>
 #include <regex>
 
@@ -883,6 +884,12 @@ private:
       request->reversed,
       request->relative,
       request->group_mask);
+    if (bad_trajectories_.count(request->trajectory_id)) {
+      RCLCPP_FATAL(logger_, "[%s] REFUSING to start trajectory %d: its upload did "
+                   "not complete. Re-upload it before flying.",
+                   name_.c_str(), request->trajectory_id);
+      return;
+    }
     cf_.startTrajectory(request->trajectory_id,
       request->timescale,
       request->reversed,
@@ -954,7 +961,21 @@ private:
         pieces[i].p[3][j] = request->pieces[i].poly_yaw[j];
       }
     }
-    cf_.uploadTrajectory(request->trajectory_id, request->piece_offset, pieces);
+    // The upload can now give up instead of blocking forever (see
+    // Crazyflie::uploadTrajectory). It MUST NOT escape into rclcpp: this
+    // callback group is mutually exclusive and shared with this drone's
+    // land/takeoff/arm/emergency services and the telemetry watchdog.
+    // UploadTrajectory.srv carries no success field, so the caller cannot be
+    // told -- hence FATAL, and the flag that start_trajectory checks.
+    try {
+      cf_.uploadTrajectory(request->trajectory_id, request->piece_offset, pieces);
+      bad_trajectories_.erase(request->trajectory_id);
+    } catch (const std::exception& e) {
+      bad_trajectories_.insert(request->trajectory_id);
+      RCLCPP_FATAL(logger_, "[%s] TRAJECTORY %d UPLOAD FAILED (%s) - DO NOT FLY IT; "
+                   "start_trajectory will refuse this id until it uploads cleanly",
+                   name_.c_str(), request->trajectory_id, e.what());
+    }
   }
 
   void notify_setpoints_stop(const std::shared_ptr<NotifySetpointsStop::Request> request,
@@ -1428,6 +1449,8 @@ private:
   double telemetry_watchdog_s_{0.0};
   bool recovering_{false};
   bool rebuild_pending_{false};
+  //: Trajectory ids whose upload did not complete - start_trajectory refuses them.
+  std::set<uint8_t> bad_trajectories_;
   bool commanded_flight_{false};
   bool last_mocap_z_valid_{false};
   float last_mocap_z_{0.0f};

@@ -416,6 +416,40 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   is a launch argument, NOT `--ros-args` (`ros2 launch` has no such flag), and
   is read at connect because this rig's `/parameter_events` never loop back.
   Backups of every traced file: `data/patch-backups/trace-<sha>/REVERT.sh`.
+- **An UPLOAD can wedge the server permanently -- the worst failure on this
+  rig, and the watchdog above cannot save you from it.** Seen 2026-10-05
+  mid-show: all five drones stopped publishing telemetry during the trajectory
+  upload and **did not recover when the show was stopped**, because the server
+  itself was stuck, not the drones. The chain, each link verified in the log or
+  the source:
+  1. The upload saturates the radio and starves the other connections --
+     measured `[cf5] Low unicast receive rate (0.10 < 0.90). Sent: 2807.
+     Received: 289`, i.e. the drone got 10% of what was sent to it.
+  2. A starved drone crosses the firmware's 1 s radio-activity timeout and runs
+     `logReset(); crtpReset();` (see the stall entry above). **`crtpReset()`
+     flushes its CRTP queues -- including the memory-write response the server
+     is at that moment waiting for.**
+  3. `Crazyflie::uploadTrajectory` waited for that response with an UNBOUNDED
+     `waitForResponse`, so the service callback never returned.
+  4. `callback_group_cf_srv` is **mutually exclusive** and carries that drone's
+     `land`, `takeoff`, `arm`, `emergency` and `spin_once` AND the telemetry
+     watchdog's timer. One stuck upload therefore disables all of them for that
+     drone, for good. `[cfX] upload_trajectory(...)` is logged on ENTRY, so a
+     line with nothing after it is the signature. The preflight GUI showing
+     `takeoff (cfX): timed out waiting for response` is the same wedge.
+  SIGINT will not stop a server in this state (its threads are blocked); it
+  needs SIGKILL, and `ros2 launch` leaves the node behind.
+  **FIXED**: the memory-write wait is now bounded (500 ms x 2, the chunk resent
+  up to 3 times) and `uploadTrajectory` throws if it still gets nothing. The
+  server catches that, logs FATAL, and records the id in `bad_trajectories_` --
+  **`start_trajectory` then REFUSES that id** until it uploads cleanly, because
+  `UploadTrajectory.srv` has no success field and the caller otherwise flies a
+  partially written trajectory. Do not "simplify" that refusal away.
+  **Still unbounded, same trap:** most other `waitForResponse()` calls in
+  `crazyflie_cpp` (params, log TOC, memory TOC). They run at connect, where
+  blocking is the documented behaviour, but any of them reached while the rig is
+  saturated can wedge a drone's services the same way. Bound them before calling
+  them from a service handler.
 - **A second Crazyradio is the best diagnostic probe on this rig.** With the
   server holding one dongle, a second one lets another process talk to the same
   drone: the link library **skips any radio whose serial it cannot query**

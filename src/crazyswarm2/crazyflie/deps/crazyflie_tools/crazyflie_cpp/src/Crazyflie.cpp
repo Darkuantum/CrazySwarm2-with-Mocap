@@ -1203,9 +1203,31 @@ void Crazyflie::uploadTrajectory(
         req.setDataSize(size);
         m_connection.send(req);
 
-        // wait for the response
+        // Wait for the response -- BOUNDED, and resend the chunk if it is
+        // lost. An unbounded wait here wedged the whole server on 2026-10-05:
+        // a heavy upload starves the other drones, one of them crosses the
+        // firmware's 1 s radio-activity timeout, and the firmware responds with
+        // `logReset(); crtpReset();` -- the queue flush DISCARDS the memory
+        // write response we are waiting for. The service callback then never
+        // returns, and because the per-drone callback group is mutually
+        // exclusive it takes that drone's land/takeoff/arm/emergency AND the
+        // telemetry watchdog down with it, permanently, until the server is
+        // restarted.
         using res = crtpMemoryWriteResponse;
-        auto p = waitForResponse(&res::valid);
+        bitcraze::crazyflieLinkCpp::Packet p;
+        for (size_t attempt = 0; attempt < 3; ++attempt) {
+          p = waitForResponse(&res::valid, 500 /*ms*/, 2 /*tries*/);
+          if (p) {
+            break;
+          }
+          m_logger.warning("uploadTrajectory: no response for chunk " +
+                           std::to_string(i) + ", resending");
+          m_connection.send(req);
+        }
+        if (!p) {
+          throw std::runtime_error(
+            "uploadTrajectory: no response after 3 attempts - upload ABANDONED");
+        }
         if (   res::id(p) != entry.id
             || res::address(p) != pieceOffset * sizeof(poly4d) + i*24
             || res::status(p) != 0) {
