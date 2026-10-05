@@ -7,6 +7,11 @@ a mocap hat, a point you steer yourself.
     # terminal 2 -- the thing the defenders escort
     ros2 run crazyflie_shows escort_teleop --ros-args -p target:=vip
 
+    # ...and in SIM, on the same clock as the show, or the point covers
+    # wall-time distance per sim-time second and looks 4x too fast:
+    ros2 run crazyflie_shows escort_teleop --ros-args -p target:=vip \
+        -p use_sim_time:=true
+
     # terminal 3 -- or the thing they block (a real drone flies to it)
     ros2 run crazyflie_shows escort_teleop --ros-args -p target:=adversary
 
@@ -31,13 +36,24 @@ than as a held-key latch.
 Two things this node will not let you do
 ----------------------------------------
 * **Outrun the escort.** A VIP target defaults to ``escort.max_vip_speed`` --
-  0.15 m/s with the shipped config -- because that is the speed budget the
+  0.30 m/s with the shipped config, and note ``plan_escort --sweep`` only
+  clears the whole run to 0.20 m/s -- because that is the speed budget the
   ring actually has left after turning. Steering a virtual person at 1 m/s
   proves nothing except that the defenders cannot keep up. Raise ``speed`` on
   purpose, knowing that is what you are testing.
 * **Leave the room.** Every published point is clamped to the arena cylinder
   and, for the adversary, to the altitude band. The clamp is the same one the
   flight script applies, so what you steer is what it will try to fly.
+
+What stops a keyboard-driven ADVERSARY
+-------------------------------------
+Less than you would think, so know the one floor it has. ``escort_show``
+clamps a manual adversary ``min_adv_sep`` (0.80 m) off the VIP and nothing
+else: not off the defenders, who yield to it by design. Steering it at the
+ring will take it THROUGH the ring -- that is the demo, not a fault -- and it
+will stop 0.80 m short of the VIP. See "What bounds a manual adversary" in
+``escort_show`` for why those are the numbers, and note 0.80 m has never been
+measured against a real DJI.
 
 Publishing stops when this node stops, and ``escort_show`` treats a stale
 manual target exactly like a stale mocap pose: hold, then land. Quitting this
@@ -60,6 +76,7 @@ Parameters (``--ros-args -p name:=value``)
 import select
 import sys
 import termios
+import time
 import tty
 
 import numpy as np
@@ -119,6 +136,9 @@ class Teleop(Node):
         print(f'\n  ESCORT TELEOP - driving the {self.target} on {topic}')
         print(f'  start  {np.round(self.pos, 2).tolist()}   speed {self.speed:.2f} m/s'
               f'{"  (= the ring speed budget; raise it on purpose)" if is_vip else ""}')
+        sim = bool(self.get_parameter('use_sim_time').value)
+        print(f'  timebase  {"sim clock (/clock)" if sim else "wall clock"}'
+              f'{"" if sim else "  -- add -p use_sim_time:=true when the show runs in sim"}')
         print('  wasd / arrows move in plan view, q/e altitude, space stop, '
               'c centre, x quit\n')
 
@@ -172,21 +192,40 @@ def main():
     node = Teleop()
     fd = sys.stdin.fileno()
     saved = termios.tcgetattr(fd)
-    dt = 1.0 / node.rate_hz
+    poll = 1.0 / node.rate_hz           # how often the loop wakes, in wall time
+    prev = None                         # previous reading of the node clock
     try:
         tty.setcbreak(fd)
         while rclpy.ok():
+            # Two clocks on purpose.
+            #
+            # Motion integrates against the NODE clock, so a point told to move
+            # at 0.15 m/s covers 0.15 m per second OF THE TIMEBASE THE FLIGHT
+            # SCRIPT IS USING. This used to advance by a fixed 1/rate_hz per
+            # loop iteration, which is only the commanded speed if the loop
+            # hits its rate exactly: under `use_sim_time` (sim runs ~4x slower
+            # than wall) escort_show measured a 0.15 m/s VIP at 0.32-0.64 m/s
+            # and reported the ring lagging, and on hardware any CPU load made
+            # the point quietly move slower than the `speed` parameter claims.
+            #
+            # Key repeat and the decay timeout stay on WALL time, because a
+            # human pressing a key is a wall-time event -- deciding a keypress
+            # has stopped in sim seconds would make the controls feel laggy in
+            # exactly the case the slow clock already makes worse.
+            wall = time.monotonic()
             now = node.get_clock().now().nanoseconds * 1e-9
+            dt = 0.0 if prev is None else min(max(now - prev, 0.0), 0.5)
+            prev = now
             # Escape sequences arrive as 3 bytes; read what is waiting rather
             # than one byte, or an arrow key is seen as three keystrokes.
-            if select.select([sys.stdin], [], [], dt)[0]:
+            if select.select([sys.stdin], [], [], poll)[0]:
                 seq = sys.stdin.read(1)
                 if seq == '\x1b':
                     while select.select([sys.stdin], [], [], 0.002)[0] and len(seq) < 3:
                         seq += sys.stdin.read(1)
-                if not node.on_key(seq, now):
+                if not node.on_key(seq, wall):
                     break
-            node.step(dt, now)
+            node.step(dt, wall)
             print(f'\r  {node.target} at '
                   f'[{node.pos[0]:+.2f}, {node.pos[1]:+.2f}, {node.pos[2]:.2f}]  '
                   f'|v| {np.linalg.norm(node.vel):.2f} m/s   ', end='', flush=True)

@@ -319,6 +319,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/config/kv':
                 return self._json(_edit_kv(body))
             return self._json({'error': 'not found'}, 404)
+        except ValueError as exc:
+            # A rejected parameter field is the operator's typo, not a
+            # crash. /api/preview runs on every keystroke, so this is the
+            # text they read while typing -- a traceback there is noise
+            # that hides it.
+            return self._json({'error': str(exc)}, 400)
         except Exception:                                # noqa: BLE001
             return self._json({'error': traceback.format_exc()}, 500)
 

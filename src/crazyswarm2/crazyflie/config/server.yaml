@@ -3,15 +3,43 @@
     warnings:
       frequency: 1.0 # report/run checks once per second
       motion_capture:
-        warning_if_rate_outside: [80.0, 120.0]
+        # Motive streams this rig at 50 Hz, so [80, 120] cried wolf on every
+        # single launch ("Motion capture rate off (Avg: 50.3)") and taught us to
+        # ignore the one warning that would matter if the stream really sagged.
+        warning_if_rate_outside: [40.0, 60.0]
       communication:
         max_unicast_latency: 10.0 # ms
         min_unicast_ack_rate: 0.9
         min_unicast_receive_rate: 0.9 # requires status topic to be enabled
         min_broadcast_receive_rate: 0.9 # requires status topic to be enabled
-        publish_stats: false
+        # ON since 2026-10-02 to chase the "link alive, log data dead" stall:
+        # one or more drones stop delivering /pose, /status AND kalman_preflight
+        # (exactly 0.00 Hz, not degraded) while still answering latency pings and
+        # accepting param writes. This publishes /cfX/connection_statistics with
+        # the server-side link counters, which tell the candidates apart:
+        # MEASURED SEMANTICS (2026-10-05, read from CrazyradioThread.cpp:348-372
+        # and Connection.cpp:260-262 -- an earlier version of this comment got
+        # them wrong, so trust these):
+        #   sent_count       packets sent, per second (~175/s for a live drone)
+        #   sent_ping_count  of which were auto-pings
+        #   ack_count        VALID acks received. A safelink down-bit mismatch
+        #                    invalidates the ack BEFORE this, so a high ack_count
+        #                    RULES OUT the safelink discard path.
+        #   receive_count    acks pushed to the app queue -- but the null-packet
+        #                    filter is commented out (`ack.size() == 0` never
+        #                    matches a 1-byte null), so this counts the drone's
+        #                    "nothing to send" nulls too. receive == ack is the
+        #                    normal, healthy pattern, NOT proof of payloads.
+        #   enqueued_count   OUTGOING queue depth (a gauge, not a counter): ++ when
+        #                    the app queues a packet, -- when one is transmitted.
+        #                    0 is healthy. It can underflow to 2^64-1 (seen during
+        #                    a stall) -- a real accounting bug in the library.
+        # So the useful reading is: sent high + ack high + NO log topics means the
+        # drone answers every poll with nothing to say, on that link only.
+        # Costs one small message per drone per second. Turn back off when done.
+        publish_stats: true
     firmware_params:
-      query_all_values_on_connect: True
+      query_all_values_on_connect: true
     # simulation related
     sim:
       max_dt: 0 #0.1              # artificially limit the step() function (set to 0 to disable)

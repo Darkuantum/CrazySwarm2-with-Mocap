@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include <cstring>
 #include <sstream>
 #include <functional>
@@ -142,6 +144,15 @@ public:
   bitcraze::crazyflieLinkCpp::Connection::Statistics connectionStatsDelta()
   {
     return m_connection.statisticsDelta();
+  }
+
+  // Packet tracing for THIS drone (default off). Arms both the link layer (every
+  // non-null ack) and processPacket (the dispatch decision per packet), so a
+  // silent log block can be localised: see CLAUDE.md, "link alive, log data dead".
+  void setTrace(bool enable)
+  {
+    m_trace = enable;
+    m_connection.setTrace(enable);
   }
 
   // returns the URI for this Crazyflie
@@ -464,6 +475,12 @@ private:
 private:
   std::vector<LogTocEntry> m_logTocEntries;
   std::map<uint8_t, std::function<void(const bitcraze::crazyflieLinkCpp::Packet&, uint8_t)>> m_logBlockCb;
+  std::atomic<bool> m_trace{false};
+  uint32_t m_trace_null{0};
+  uint32_t m_trace_log{0};
+  uint32_t m_trace_logcb{0};
+  uint32_t m_trace_other{0};
+  std::chrono::steady_clock::time_point m_trace_tick{};
   std::vector<ParamTocEntry> m_paramTocEntries;
   std::map<uint16_t, ParamValue> m_paramValues;
 

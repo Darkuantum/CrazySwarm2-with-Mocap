@@ -106,7 +106,10 @@ Everything rig-specific is tagged. Find it all with:
 grep -rn 'FILL IN' crazyflie_shows/
 ```
 
-### 2a. `config/crazyflies.yaml` — radios and start positions
+### 2a. `crazyflie/config/crazyflies.yaml` — radios and start positions
+
+**One file, since 2026-10-02:** the workspace's own, which the server reads.
+This package used to ship a copy and it drifted; see `HANDOVER.md` § Config.
 
 This is the file that decides *which* drones fly and *where the plan thinks
 they are*. Per drone:
@@ -206,7 +209,8 @@ that module around `crazyflie_py`'s rclpy import so the whole planner runs on
 a laptop with no ROS installed:
 
 ```bash
-python3 -m crazyflie_shows.plan_show --yaml config/crazyflies.yaml
+python3 -m crazyflie_shows.plan_show \
+    --yaml ../crazyflie/config/crazyflies.yaml   # the default when sourced
 ```
 
 ---

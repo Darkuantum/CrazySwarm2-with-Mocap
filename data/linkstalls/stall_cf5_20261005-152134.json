@@ -1,0 +1,3578 @@
+{
+ "victim": "cf5",
+ "when": 1791184894.9634655,
+ "launcher": "other:/lib/systemd/systemd",
+ "window_s": 5.0,
+ "precursor_s": 60.0,
+ "note": "counters: sent flat = not polled; ack flat = no acks; ack rising + receive flat = payloads discarded; receive rising + enqueued flat = never queued",
+ "drones": {
+  "cf1": [
+   {
+    "t": 1791184825.96,
+    "pose_hz": 0.0,
+    "sent": 176,
+    "sent_ping": 78,
+    "receive": 78,
+    "enqueued": 0,
+    "ack": 78
+   },
+   {
+    "t": 1791184826.96,
+    "pose_hz": 0.0,
+    "sent": 170,
+    "sent_ping": 111,
+    "receive": 113,
+    "enqueued": 0,
+    "ack": 113
+   },
+   {
+    "t": 1791184827.96,
+    "pose_hz": 0.0,
+    "sent": 174,
+    "sent_ping": 104,
+    "receive": 104,
+    "enqueued": 0,
+    "ack": 104
+   },
+   {
+    "t": 1791184828.96,
+    "pose_hz": 0.0,
+    "sent": 168,
+    "sent_ping": 86,
+    "receive": 88,
+    "enqueued": 0,
+    "ack": 88
+   },
+   {
+    "t": 1791184829.96,
+    "pose_hz": 0.0,
+    "sent": 178,
+    "sent_ping": 146,
+    "receive": 146,
+    "enqueued": 0,
+    "ack": 146
+   },
+   {
+    "t": 1791184830.96,
+    "pose_hz": 0.0,
+    "sent": 164,
+    "sent_ping": 80,
+    "receive": 81,
+    "enqueued": 1,
+    "ack": 81
+   },
+   {
+    "t": 1791184831.96,
+    "pose_hz": 0.0,
+    "sent": 163,
+    "sent_ping": 80,
+    "receive": 81,
+    "enqueued": 18446744073709551615,
+    "ack": 81
+   },
+   {
+    "t": 1791184832.96,
+    "pose_hz": 0.0,
+    "sent": 163,
+    "sent_ping": 80,
+    "receive": 81,
+    "enqueued": 0,
+    "ack": 81
+   },
+   {
+    "t": 1791184833.96,
+    "pose_hz": 0.0,
+    "sent": 188,
+    "sent_ping": 138,
+    "receive": 139,
+    "enqueued": 1,
+    "ack": 139
+   },
+   {
+    "t": 1791184834.96,
+    "pose_hz": 0.0,
+    "sent": 159,
+    "sent_ping": 90,
+    "receive": 91,
+    "enqueued": 0,
+    "ack": 91
+   },
+   {
+    "t": 1791184835.96,
+    "pose_hz": 0.0,
+    "sent": 164,
+    "sent_ping": 66,
+    "receive": 67,
+    "enqueued": 0,
+    "ack": 67
+   },
+   {
+    "t": 1791184836.96,
+    "pose_hz": 0.0,
+    "sent": 178,
+    "sent_ping": 98,
+    "receive": 99,
+    "enqueued": 0,
+    "ack": 99
+   },
+   {
+    "t": 1791184837.96,
+    "pose_hz": 0.0,
+    "sent": 162,
+    "sent_ping": 78,
+    "receive": 79,
+    "enqueued": 18446744073709551615,
+    "ack": 79
+   },
+   {
+    "t": 1791184838.96,
+    "pose_hz": 0.0,
+    "sent": 190,
+    "sent_ping": 147,
+    "receive": 149,
+    "enqueued": 0,
+    "ack": 149
+   },
+   {
+    "t": 1791184839.96,
+    "pose_hz": 0.0,
+    "sent": 195,
+    "sent_ping": 175,
+    "receive": 175,
+    "enqueued": 0,
+    "ack": 175
+   },
+   {
+    "t": 1791184840.96,
+    "pose_hz": 0.0,
+    "sent": 193,
+    "sent_ping": 155,
+    "receive": 156,
+    "enqueued": 1,
+    "ack": 156
+   },
+   {
+    "t": 1791184841.96,
+    "pose_hz": 0.0,
+    "sent": 198,
+    "sent_ping": 178,
+    "receive": 179,
+    "enqueued": 18446744073709551615,
+    "ack": 179
+   },
+   {
+    "t": 1791184842.96,
+    "pose_hz": 0.0,
+    "sent": 195,
+    "sent_ping": 149,
+    "receive": 150,
+    "enqueued": 0,
+    "ack": 150
+   },
+   {
+    "t": 1791184843.96,
+    "pose_hz": 0.0,
+    "sent": 153,
+    "sent_ping": 60,
+    "receive": 61,
+    "enqueued": 0,
+    "ack": 61
+   },
+   {
+    "t": 1791184844.96,
+    "pose_hz": 0.0,
+    "sent": 189,
+    "sent_ping": 150,
+    "receive": 152,
+    "enqueued": 0,
+    "ack": 152
+   },
+   {
+    "t": 1791184845.96,
+    "pose_hz": 0.0,
+    "sent": 224,
+    "sent_ping": 218,
+    "receive": 218,
+    "enqueued": 1,
+    "ack": 218
+   },
+   {
+    "t": 1791184846.96,
+    "pose_hz": 0.0,
+    "sent": 204,
+    "sent_ping": 168,
+    "receive": 170,
+    "enqueued": 18446744073709551615,
+    "ack": 170
+   },
+   {
+    "t": 1791184847.96,
+    "pose_hz": 0.0,
+    "sent": 223,
+    "sent_ping": 210,
+    "receive": 211,
+    "enqueued": 0,
+    "ack": 211
+   },
+   {
+    "t": 1791184848.96,
+    "pose_hz": 0.0,
+    "sent": 198,
+    "sent_ping": 163,
+    "receive": 164,
+    "enqueued": 0,
+    "ack": 164
+   },
+   {
+    "t": 1791184849.96,
+    "pose_hz": 0.0,
+    "sent": 193,
+    "sent_ping": 145,
+    "receive": 146,
+    "enqueued": 0,
+    "ack": 146
+   },
+   {
+    "t": 1791184850.96,
+    "pose_hz": 0.0,
+    "sent": 192,
+    "sent_ping": 165,
+    "receive": 166,
+    "enqueued": 0,
+    "ack": 166
+   },
+   {
+    "t": 1791184851.96,
+    "pose_hz": 0.0,
+    "sent": 198,
+    "sent_ping": 159,
+    "receive": 159,
+    "enqueued": 0,
+    "ack": 159
+   },
+   {
+    "t": 1791184852.96,
+    "pose_hz": 0.0,
+    "sent": 186,
+    "sent_ping": 130,
+    "receive": 131,
+    "enqueued": 1,
+    "ack": 131
+   },
+   {
+    "t": 1791184853.96,
+    "pose_hz": 0.0,
+    "sent": 167,
+    "sent_ping": 112,
+    "receive": 113,
+    "enqueued": 0,
+    "ack": 113
+   },
+   {
+    "t": 1791184854.96,
+    "pose_hz": 0.0,
+    "sent": 208,
+    "sent_ping": 180,
+    "receive": 181,
+    "enqueued": 18446744073709551615,
+    "ack": 181
+   },
+   {
+    "t": 1791184855.96,
+    "pose_hz": 0.0,
+    "sent": 189,
+    "sent_ping": 149,
+    "receive": 151,
+    "enqueued": 0,
+    "ack": 151
+   },
+   {
+    "t": 1791184856.96,
+    "pose_hz": 0.0,
+    "sent": 202,
+    "sent_ping": 169,
+    "receive": 170,
+    "enqueued": 0,
+    "ack": 170
+   },
+   {
+    "t": 1791184857.96,
+    "pose_hz": 0.0,
+    "sent": 220,
+    "sent_ping": 207,
+    "receive": 207,
+    "enqueued": 0,
+    "ack": 207
+   },
+   {
+    "t": 1791184858.96,
+    "pose_hz": 0.0,
+    "sent": 227,
+    "sent_ping": 221,
+    "receive": 223,
+    "enqueued": 0,
+    "ack": 223
+   },
+   {
+    "t": 1791184859.96,
+    "pose_hz": 0.0,
+    "sent": 208,
+    "sent_ping": 187,
+    "receive": 188,
+    "enqueued": 0,
+    "ack": 188
+   },
+   {
+    "t": 1791184860.96,
+    "pose_hz": 0.0,
+    "sent": 118,
+    "sent_ping": 72,
+    "receive": 72,
+    "enqueued": 1,
+    "ack": 72
+   },
+   {
+    "t": 1791184861.96,
+    "pose_hz": 0.0,
+    "sent": 197,
+    "sent_ping": 168,
+    "receive": 170,
+    "enqueued": 18446744073709551615,
+    "ack": 170
+   },
+   {
+    "t": 1791184862.96,
+    "pose_hz": 0.0,
+    "sent": 223,
+    "sent_ping": 220,
+    "receive": 221,
+    "enqueued": 0,
+    "ack": 221
+   },
+   {
+    "t": 1791184863.96,
+    "pose_hz": 0.0,
+    "sent": 231,
+    "sent_ping": 222,
+    "receive": 223,
+    "enqueued": 0,
+    "ack": 223
+   },
+   {
+    "t": 1791184864.96,
+    "pose_hz": 0.0,
+    "sent": 212,
+    "sent_ping": 208,
+    "receive": 209,
+    "enqueued": 0,
+    "ack": 209
+   },
+   {
+    "t": 1791184865.96,
+    "pose_hz": 0.0,
+    "sent": 206,
+    "sent_ping": 192,
+    "receive": 193,
+    "enqueued": 0,
+    "ack": 193
+   },
+   {
+    "t": 1791184866.96,
+    "pose_hz": 0.0,
+    "sent": 215,
+    "sent_ping": 202,
+    "receive": 203,
+    "enqueued": 0,
+    "ack": 203
+   },
+   {
+    "t": 1791184867.96,
+    "pose_hz": 0.0,
+    "sent": 213,
+    "sent_ping": 205,
+    "receive": 205,
+    "enqueued": 0,
+    "ack": 205
+   },
+   {
+    "t": 1791184868.96,
+    "pose_hz": 0.0,
+    "sent": 185,
+    "sent_ping": 123,
+    "receive": 124,
+    "enqueued": 1,
+    "ack": 124
+   },
+   {
+    "t": 1791184869.96,
+    "pose_hz": 0.0,
+    "sent": 204,
+    "sent_ping": 176,
+    "receive": 178,
+    "enqueued": 18446744073709551615,
+    "ack": 178
+   },
+   {
+    "t": 1791184870.96,
+    "pose_hz": 0.0,
+    "sent": 206,
+    "sent_ping": 177,
+    "receive": 178,
+    "enqueued": 0,
+    "ack": 178
+   },
+   {
+    "t": 1791184871.96,
+    "pose_hz": 0.0,
+    "sent": 183,
+    "sent_ping": 136,
+    "receive": 136,
+    "enqueued": 1,
+    "ack": 136
+   },
+   {
+    "t": 1791184872.96,
+    "pose_hz": 0.0,
+    "sent": 201,
+    "sent_ping": 182,
+    "receive": 184,
+    "enqueued": 18446744073709551615,
+    "ack": 184
+   },
+   {
+    "t": 1791184873.96,
+    "pose_hz": 0.0,
+    "sent": 215,
+    "sent_ping": 209,
+    "receive": 209,
+    "enqueued": 0,
+    "ack": 209
+   },
+   {
+    "t": 1791184874.96,
+    "pose_hz": 0.0,
+    "sent": 174,
+    "sent_ping": 112,
+    "receive": 113,
+    "enqueued": 1,
+    "ack": 113
+   },
+   {
+    "t": 1791184875.96,
+    "pose_hz": 0.0,
+    "sent": 158,
+    "sent_ping": 59,
+    "receive": 61,
+    "enqueued": 18446744073709551615,
+    "ack": 61
+   },
+   {
+    "t": 1791184876.96,
+    "pose_hz": 0.0,
+    "sent": 194,
+    "sent_ping": 149,
+    "receive": 150,
+    "enqueued": 0,
+    "ack": 150
+   },
+   {
+    "t": 1791184877.96,
+    "pose_hz": 0.0,
+    "sent": 177,
+    "sent_ping": 111,
+    "receive": 112,
+    "enqueued": 0,
+    "ack": 112
+   },
+   {
+    "t": 1791184878.96,
+    "pose_hz": 0.0,
+    "sent": 160,
+    "sent_ping": 43,
+    "receive": 43,
+    "enqueued": 1,
+    "ack": 43
+   },
+   {
+    "t": 1791184879.96,
+    "pose_hz": 0.0,
+    "sent": 201,
+    "sent_ping": 154,
+    "receive": 156,
+    "enqueued": 18446744073709551615,
+    "ack": 156
+   },
+   {
+    "t": 1791184880.96,
+    "pose_hz": 0.0,
+    "sent": 201,
+    "sent_ping": 190,
+    "receive": 191,
+    "enqueued": 0,
+    "ack": 191
+   },
+   {
+    "t": 1791184881.96,
+    "pose_hz": 0.0,
+    "sent": 171,
+    "sent_ping": 151,
+    "receive": 151,
+    "enqueued": 0,
+    "ack": 151
+   },
+   {
+    "t": 1791184882.96,
+    "pose_hz": 0.0,
+    "sent": 211,
+    "sent_ping": 188,
+    "receive": 190,
+    "enqueued": 0,
+    "ack": 190
+   },
+   {
+    "t": 1791184883.96,
+    "pose_hz": 0.0,
+    "sent": 204,
+    "sent_ping": 192,
+    "receive": 193,
+    "enqueued": 0,
+    "ack": 193
+   },
+   {
+    "t": 1791184884.96,
+    "pose_hz": 0.0,
+    "sent": 205,
+    "sent_ping": 192,
+    "receive": 193,
+    "enqueued": 0,
+    "ack": 193
+   },
+   {
+    "t": 1791184885.96,
+    "pose_hz": 0.0,
+    "sent": 163,
+    "sent_ping": 157,
+    "receive": 157,
+    "enqueued": 0,
+    "ack": 157
+   },
+   {
+    "t": 1791184886.96,
+    "pose_hz": 0.0,
+    "sent": 147,
+    "sent_ping": 142,
+    "receive": 144,
+    "enqueued": 0,
+    "ack": 144
+   },
+   {
+    "t": 1791184887.96,
+    "pose_hz": 0.0,
+    "sent": 162,
+    "sent_ping": 157,
+    "receive": 157,
+    "enqueued": 1,
+    "ack": 157
+   },
+   {
+    "t": 1791184888.96,
+    "pose_hz": 0.0,
+    "sent": 192,
+    "sent_ping": 185,
+    "receive": 187,
+    "enqueued": 18446744073709551615,
+    "ack": 187
+   },
+   {
+    "t": 1791184889.96,
+    "pose_hz": 0.0,
+    "sent": 188,
+    "sent_ping": 173,
+    "receive": 174,
+    "enqueued": 0,
+    "ack": 174
+   },
+   {
+    "t": 1791184890.96,
+    "pose_hz": 0.0,
+    "sent": 164,
+    "sent_ping": 101,
+    "receive": 101,
+    "enqueued": 1,
+    "ack": 101
+   },
+   {
+    "t": 1791184891.96,
+    "pose_hz": 0.0,
+    "sent": 176,
+    "sent_ping": 109,
+    "receive": 110,
+    "enqueued": 0,
+    "ack": 110
+   },
+   {
+    "t": 1791184892.96,
+    "pose_hz": 0.0,
+    "sent": 180,
+    "sent_ping": 145,
+    "receive": 146,
+    "enqueued": 0,
+    "ack": 146
+   },
+   {
+    "t": 1791184893.96,
+    "pose_hz": 0.0,
+    "sent": 163,
+    "sent_ping": 64,
+    "receive": 65,
+    "enqueued": 0,
+    "ack": 65
+   },
+   {
+    "t": 1791184894.96,
+    "pose_hz": 0.0,
+    "sent": 185,
+    "sent_ping": 128,
+    "receive": 129,
+    "enqueued": 18446744073709551615,
+    "ack": 129
+   }
+  ],
+  "cf2": [
+   {
+    "t": 1791184825.96,
+    "pose_hz": 10.0,
+    "sent": 186,
+    "sent_ping": 182,
+    "receive": 183,
+    "enqueued": 0,
+    "ack": 183
+   },
+   {
+    "t": 1791184826.96,
+    "pose_hz": 10.0,
+    "sent": 162,
+    "sent_ping": 155,
+    "receive": 155,
+    "enqueued": 1,
+    "ack": 155
+   },
+   {
+    "t": 1791184827.96,
+    "pose_hz": 10.0,
+    "sent": 171,
+    "sent_ping": 162,
+    "receive": 164,
+    "enqueued": 18446744073709551615,
+    "ack": 164
+   },
+   {
+    "t": 1791184828.96,
+    "pose_hz": 10.0,
+    "sent": 174,
+    "sent_ping": 171,
+    "receive": 171,
+    "enqueued": 0,
+    "ack": 171
+   },
+   {
+    "t": 1791184829.96,
+    "pose_hz": 10.0,
+    "sent": 178,
+    "sent_ping": 173,
+    "receive": 175,
+    "enqueued": 0,
+    "ack": 175
+   },
+   {
+    "t": 1791184830.96,
+    "pose_hz": 10.0,
+    "sent": 159,
+    "sent_ping": 154,
+    "receive": 155,
+    "enqueued": 0,
+    "ack": 155
+   },
+   {
+    "t": 1791184831.96,
+    "pose_hz": 10.0,
+    "sent": 163,
+    "sent_ping": 160,
+    "receive": 161,
+    "enqueued": 0,
+    "ack": 161
+   },
+   {
+    "t": 1791184832.96,
+    "pose_hz": 10.0,
+    "sent": 162,
+    "sent_ping": 160,
+    "receive": 161,
+    "enqueued": 0,
+    "ack": 161
+   },
+   {
+    "t": 1791184833.96,
+    "pose_hz": 10.0,
+    "sent": 199,
+    "sent_ping": 196,
+    "receive": 197,
+    "enqueued": 0,
+    "ack": 197
+   },
+   {
+    "t": 1791184834.96,
+    "pose_hz": 10.0,
+    "sent": 149,
+    "sent_ping": 142,
+    "receive": 143,
+    "enqueued": 0,
+    "ack": 143
+   },
+   {
+    "t": 1791184835.96,
+    "pose_hz": 10.0,
+    "sent": 170,
+    "sent_ping": 166,
+    "receive": 167,
+    "enqueued": 0,
+    "ack": 167
+   },
+   {
+    "t": 1791184836.96,
+    "pose_hz": 10.0,
+    "sent": 173,
+    "sent_ping": 171,
+    "receive": 172,
+    "enqueued": 0,
+    "ack": 172
+   },
+   {
+    "t": 1791184837.96,
+    "pose_hz": 10.0,
+    "sent": 166,
+    "sent_ping": 162,
+    "receive": 162,
+    "enqueued": 0,
+    "ack": 162
+   },
+   {
+    "t": 1791184838.96,
+    "pose_hz": 10.0,
+    "sent": 192,
+    "sent_ping": 186,
+    "receive": 188,
+    "enqueued": 0,
+    "ack": 188
+   },
+   {
+    "t": 1791184839.96,
+    "pose_hz": 10.0,
+    "sent": 196,
+    "sent_ping": 190,
+    "receive": 191,
+    "enqueued": 0,
+    "ack": 191
+   },
+   {
+    "t": 1791184840.96,
+    "pose_hz": 10.0,
+    "sent": 192,
+    "sent_ping": 187,
+    "receive": 188,
+    "enqueued": 0,
+    "ack": 188
+   },
+   {
+    "t": 1791184841.96,
+    "pose_hz": 10.0,
+    "sent": 193,
+    "sent_ping": 187,
+    "receive": 188,
+    "enqueued": 0,
+    "ack": 188
+   },
+   {
+    "t": 1791184842.96,
+    "pose_hz": 10.0,
+    "sent": 194,
+    "sent_ping": 182,
+    "receive": 183,
+    "enqueued": 0,
+    "ack": 183
+   },
+   {
+    "t": 1791184843.96,
+    "pose_hz": 10.0,
+    "sent": 152,
+    "sent_ping": 149,
+    "receive": 149,
+    "enqueued": 1,
+    "ack": 149
+   },
+   {
+    "t": 1791184844.96,
+    "pose_hz": 10.0,
+    "sent": 201,
+    "sent_ping": 197,
+    "receive": 199,
+    "enqueued": 18446744073709551615,
+    "ack": 199
+   },
+   {
+    "t": 1791184845.96,
+    "pose_hz": 10.0,
+    "sent": 223,
+    "sent_ping": 220,
+    "receive": 221,
+    "enqueued": 0,
+    "ack": 221
+   },
+   {
+    "t": 1791184846.96,
+    "pose_hz": 10.0,
+    "sent": 201,
+    "sent_ping": 194,
+    "receive": 195,
+    "enqueued": 0,
+    "ack": 195
+   },
+   {
+    "t": 1791184847.96,
+    "pose_hz": 10.0,
+    "sent": 224,
+    "sent_ping": 217,
+    "receive": 218,
+    "enqueued": 0,
+    "ack": 218
+   },
+   {
+    "t": 1791184848.96,
+    "pose_hz": 10.0,
+    "sent": 191,
+    "sent_ping": 187,
+    "receive": 188,
+    "enqueued": 0,
+    "ack": 188
+   },
+   {
+    "t": 1791184849.96,
+    "pose_hz": 10.0,
+    "sent": 201,
+    "sent_ping": 196,
+    "receive": 197,
+    "enqueued": 0,
+    "ack": 197
+   },
+   {
+    "t": 1791184850.96,
+    "pose_hz": 10.0,
+    "sent": 188,
+    "sent_ping": 185,
+    "receive": 185,
+    "enqueued": 0,
+    "ack": 185
+   },
+   {
+    "t": 1791184851.96,
+    "pose_hz": 10.0,
+    "sent": 202,
+    "sent_ping": 194,
+    "receive": 196,
+    "enqueued": 0,
+    "ack": 196
+   },
+   {
+    "t": 1791184852.96,
+    "pose_hz": 10.0,
+    "sent": 182,
+    "sent_ping": 180,
+    "receive": 181,
+    "enqueued": 0,
+    "ack": 181
+   },
+   {
+    "t": 1791184853.96,
+    "pose_hz": 10.0,
+    "sent": 166,
+    "sent_ping": 163,
+    "receive": 163,
+    "enqueued": 0,
+    "ack": 163
+   },
+   {
+    "t": 1791184854.96,
+    "pose_hz": 10.0,
+    "sent": 205,
+    "sent_ping": 200,
+    "receive": 202,
+    "enqueued": 0,
+    "ack": 202
+   },
+   {
+    "t": 1791184855.96,
+    "pose_hz": 10.0,
+    "sent": 196,
+    "sent_ping": 192,
+    "receive": 193,
+    "enqueued": 0,
+    "ack": 193
+   },
+   {
+    "t": 1791184856.96,
+    "pose_hz": 10.0,
+    "sent": 205,
+    "sent_ping": 202,
+    "receive": 203,
+    "enqueued": 0,
+    "ack": 203
+   },
+   {
+    "t": 1791184857.96,
+    "pose_hz": 10.0,
+    "sent": 221,
+    "sent_ping": 219,
+    "receive": 219,
+    "enqueued": 0,
+    "ack": 219
+   },
+   {
+    "t": 1791184858.96,
+    "pose_hz": 10.0,
+    "sent": 225,
+    "sent_ping": 220,
+    "receive": 221,
+    "enqueued": 0,
+    "ack": 221
+   },
+   {
+    "t": 1791184859.96,
+    "pose_hz": 9.8,
+    "sent": 193,
+    "sent_ping": 185,
+    "receive": 187,
+    "enqueued": 0,
+    "ack": 187
+   },
+   {
+    "t": 1791184860.96,
+    "pose_hz": 10.0,
+    "sent": 110,
+    "sent_ping": 89,
+    "receive": 89,
+    "enqueued": 0,
+    "ack": 89
+   },
+   {
+    "t": 1791184861.96,
+    "pose_hz": 10.0,
+    "sent": 222,
+    "sent_ping": 217,
+    "receive": 219,
+    "enqueued": 0,
+    "ack": 219
+   },
+   {
+    "t": 1791184862.96,
+    "pose_hz": 10.0,
+    "sent": 224,
+    "sent_ping": 221,
+    "receive": 222,
+    "enqueued": 0,
+    "ack": 222
+   },
+   {
+    "t": 1791184863.96,
+    "pose_hz": 10.0,
+    "sent": 228,
+    "sent_ping": 224,
+    "receive": 225,
+    "enqueued": 0,
+    "ack": 225
+   },
+   {
+    "t": 1791184864.96,
+    "pose_hz": 10.2,
+    "sent": 201,
+    "sent_ping": 193,
+    "receive": 194,
+    "enqueued": 0,
+    "ack": 194
+   },
+   {
+    "t": 1791184865.96,
+    "pose_hz": 10.0,
+    "sent": 215,
+    "sent_ping": 209,
+    "receive": 210,
+    "enqueued": 0,
+    "ack": 210
+   },
+   {
+    "t": 1791184866.96,
+    "pose_hz": 10.0,
+    "sent": 216,
+    "sent_ping": 212,
+    "receive": 213,
+    "enqueued": 0,
+    "ack": 213
+   },
+   {
+    "t": 1791184867.96,
+    "pose_hz": 10.0,
+    "sent": 205,
+    "sent_ping": 203,
+    "receive": 203,
+    "enqueued": 0,
+    "ack": 203
+   },
+   {
+    "t": 1791184868.96,
+    "pose_hz": 10.0,
+    "sent": 183,
+    "sent_ping": 178,
+    "receive": 180,
+    "enqueued": 0,
+    "ack": 180
+   },
+   {
+    "t": 1791184869.96,
+    "pose_hz": 10.0,
+    "sent": 213,
+    "sent_ping": 209,
+    "receive": 210,
+    "enqueued": 0,
+    "ack": 210
+   },
+   {
+    "t": 1791184870.96,
+    "pose_hz": 10.0,
+    "sent": 206,
+    "sent_ping": 204,
+    "receive": 205,
+    "enqueued": 0,
+    "ack": 205
+   },
+   {
+    "t": 1791184871.96,
+    "pose_hz": 10.0,
+    "sent": 182,
+    "sent_ping": 179,
+    "receive": 180,
+    "enqueued": 0,
+    "ack": 180
+   },
+   {
+    "t": 1791184872.96,
+    "pose_hz": 10.0,
+    "sent": 202,
+    "sent_ping": 196,
+    "receive": 197,
+    "enqueued": 0,
+    "ack": 197
+   },
+   {
+    "t": 1791184873.96,
+    "pose_hz": 10.0,
+    "sent": 214,
+    "sent_ping": 213,
+    "receive": 214,
+    "enqueued": 0,
+    "ack": 214
+   },
+   {
+    "t": 1791184874.96,
+    "pose_hz": 10.0,
+    "sent": 164,
+    "sent_ping": 160,
+    "receive": 161,
+    "enqueued": 0,
+    "ack": 161
+   },
+   {
+    "t": 1791184875.96,
+    "pose_hz": 10.0,
+    "sent": 170,
+    "sent_ping": 169,
+    "receive": 170,
+    "enqueued": 0,
+    "ack": 170
+   },
+   {
+    "t": 1791184876.96,
+    "pose_hz": 10.0,
+    "sent": 192,
+    "sent_ping": 187,
+    "receive": 188,
+    "enqueued": 0,
+    "ack": 188
+   },
+   {
+    "t": 1791184877.96,
+    "pose_hz": 10.0,
+    "sent": 172,
+    "sent_ping": 168,
+    "receive": 169,
+    "enqueued": 0,
+    "ack": 169
+   },
+   {
+    "t": 1791184878.96,
+    "pose_hz": 10.0,
+    "sent": 163,
+    "sent_ping": 159,
+    "receive": 160,
+    "enqueued": 0,
+    "ack": 160
+   },
+   {
+    "t": 1791184879.96,
+    "pose_hz": 10.0,
+    "sent": 208,
+    "sent_ping": 206,
+    "receive": 207,
+    "enqueued": 0,
+    "ack": 207
+   },
+   {
+    "t": 1791184880.96,
+    "pose_hz": 10.0,
+    "sent": 188,
+    "sent_ping": 180,
+    "receive": 181,
+    "enqueued": 0,
+    "ack": 181
+   },
+   {
+    "t": 1791184881.96,
+    "pose_hz": 10.0,
+    "sent": 184,
+    "sent_ping": 178,
+    "receive": 179,
+    "enqueued": 0,
+    "ack": 179
+   },
+   {
+    "t": 1791184882.96,
+    "pose_hz": 10.0,
+    "sent": 210,
+    "sent_ping": 207,
+    "receive": 208,
+    "enqueued": 0,
+    "ack": 208
+   },
+   {
+    "t": 1791184883.96,
+    "pose_hz": 10.0,
+    "sent": 200,
+    "sent_ping": 194,
+    "receive": 195,
+    "enqueued": 0,
+    "ack": 195
+   },
+   {
+    "t": 1791184884.96,
+    "pose_hz": 10.0,
+    "sent": 202,
+    "sent_ping": 196,
+    "receive": 197,
+    "enqueued": 0,
+    "ack": 197
+   },
+   {
+    "t": 1791184885.96,
+    "pose_hz": 10.0,
+    "sent": 158,
+    "sent_ping": 149,
+    "receive": 150,
+    "enqueued": 0,
+    "ack": 150
+   },
+   {
+    "t": 1791184886.96,
+    "pose_hz": 10.0,
+    "sent": 145,
+    "sent_ping": 142,
+    "receive": 143,
+    "enqueued": 0,
+    "ack": 143
+   },
+   {
+    "t": 1791184887.96,
+    "pose_hz": 10.0,
+    "sent": 161,
+    "sent_ping": 157,
+    "receive": 158,
+    "enqueued": 0,
+    "ack": 158
+   },
+   {
+    "t": 1791184888.96,
+    "pose_hz": 10.0,
+    "sent": 196,
+    "sent_ping": 192,
+    "receive": 193,
+    "enqueued": 0,
+    "ack": 193
+   },
+   {
+    "t": 1791184889.96,
+    "pose_hz": 10.0,
+    "sent": 195,
+    "sent_ping": 191,
+    "receive": 191,
+    "enqueued": 0,
+    "ack": 191
+   },
+   {
+    "t": 1791184890.96,
+    "pose_hz": 10.0,
+    "sent": 158,
+    "sent_ping": 145,
+    "receive": 147,
+    "enqueued": 0,
+    "ack": 147
+   },
+   {
+    "t": 1791184891.96,
+    "pose_hz": 10.0,
+    "sent": 172,
+    "sent_ping": 166,
+    "receive": 167,
+    "enqueued": 0,
+    "ack": 167
+   },
+   {
+    "t": 1791184892.96,
+    "pose_hz": 9.8,
+    "sent": 180,
+    "sent_ping": 178,
+    "receive": 179,
+    "enqueued": 0,
+    "ack": 179
+   },
+   {
+    "t": 1791184893.96,
+    "pose_hz": 10.0,
+    "sent": 170,
+    "sent_ping": 166,
+    "receive": 167,
+    "enqueued": 0,
+    "ack": 167
+   },
+   {
+    "t": 1791184894.96,
+    "pose_hz": 10.0,
+    "sent": 184,
+    "sent_ping": 181,
+    "receive": 182,
+    "enqueued": 0,
+    "ack": 182
+   }
+  ],
+  "cf3": [
+   {
+    "t": 1791184825.96,
+    "pose_hz": 10.0,
+    "sent": 167,
+    "sent_ping": 165,
+    "receive": 166,
+    "enqueued": 0,
+    "ack": 166
+   },
+   {
+    "t": 1791184826.96,
+    "pose_hz": 10.0,
+    "sent": 182,
+    "sent_ping": 172,
+    "receive": 173,
+    "enqueued": 0,
+    "ack": 173
+   },
+   {
+    "t": 1791184827.96,
+    "pose_hz": 10.0,
+    "sent": 168,
+    "sent_ping": 165,
+    "receive": 166,
+    "enqueued": 0,
+    "ack": 166
+   },
+   {
+    "t": 1791184828.96,
+    "pose_hz": 10.0,
+    "sent": 162,
+    "sent_ping": 157,
+    "receive": 158,
+    "enqueued": 0,
+    "ack": 158
+   },
+   {
+    "t": 1791184829.96,
+    "pose_hz": 10.0,
+    "sent": 193,
+    "sent_ping": 186,
+    "receive": 187,
+    "enqueued": 0,
+    "ack": 187
+   },
+   {
+    "t": 1791184830.96,
+    "pose_hz": 10.0,
+    "sent": 169,
+    "sent_ping": 160,
+    "receive": 161,
+    "enqueued": 0,
+    "ack": 161
+   },
+   {
+    "t": 1791184831.96,
+    "pose_hz": 10.0,
+    "sent": 156,
+    "sent_ping": 148,
+    "receive": 149,
+    "enqueued": 0,
+    "ack": 149
+   },
+   {
+    "t": 1791184832.96,
+    "pose_hz": 10.0,
+    "sent": 172,
+    "sent_ping": 170,
+    "receive": 171,
+    "enqueued": 0,
+    "ack": 171
+   },
+   {
+    "t": 1791184833.96,
+    "pose_hz": 10.0,
+    "sent": 159,
+    "sent_ping": 149,
+    "receive": 150,
+    "enqueued": 0,
+    "ack": 150
+   },
+   {
+    "t": 1791184834.96,
+    "pose_hz": 10.0,
+    "sent": 184,
+    "sent_ping": 181,
+    "receive": 181,
+    "enqueued": 0,
+    "ack": 181
+   },
+   {
+    "t": 1791184835.96,
+    "pose_hz": 10.0,
+    "sent": 158,
+    "sent_ping": 152,
+    "receive": 154,
+    "enqueued": 0,
+    "ack": 154
+   },
+   {
+    "t": 1791184836.96,
+    "pose_hz": 10.0,
+    "sent": 176,
+    "sent_ping": 170,
+    "receive": 171,
+    "enqueued": 0,
+    "ack": 171
+   },
+   {
+    "t": 1791184837.96,
+    "pose_hz": 10.0,
+    "sent": 166,
+    "sent_ping": 160,
+    "receive": 160,
+    "enqueued": 0,
+    "ack": 160
+   },
+   {
+    "t": 1791184838.96,
+    "pose_hz": 10.0,
+    "sent": 183,
+    "sent_ping": 176,
+    "receive": 177,
+    "enqueued": 1,
+    "ack": 177
+   },
+   {
+    "t": 1791184839.96,
+    "pose_hz": 10.0,
+    "sent": 192,
+    "sent_ping": 186,
+    "receive": 188,
+    "enqueued": 18446744073709551615,
+    "ack": 188
+   },
+   {
+    "t": 1791184840.96,
+    "pose_hz": 10.0,
+    "sent": 192,
+    "sent_ping": 185,
+    "receive": 186,
+    "enqueued": 0,
+    "ack": 186
+   },
+   {
+    "t": 1791184841.96,
+    "pose_hz": 10.0,
+    "sent": 193,
+    "sent_ping": 186,
+    "receive": 187,
+    "enqueued": 0,
+    "ack": 187
+   },
+   {
+    "t": 1791184842.96,
+    "pose_hz": 10.0,
+    "sent": 199,
+    "sent_ping": 194,
+    "receive": 195,
+    "enqueued": 0,
+    "ack": 195
+   },
+   {
+    "t": 1791184843.96,
+    "pose_hz": 10.2,
+    "sent": 174,
+    "sent_ping": 170,
+    "receive": 171,
+    "enqueued": 0,
+    "ack": 171
+   },
+   {
+    "t": 1791184844.96,
+    "pose_hz": 10.0,
+    "sent": 171,
+    "sent_ping": 166,
+    "receive": 167,
+    "enqueued": 0,
+    "ack": 167
+   },
+   {
+    "t": 1791184845.96,
+    "pose_hz": 10.0,
+    "sent": 206,
+    "sent_ping": 202,
+    "receive": 203,
+    "enqueued": 0,
+    "ack": 203
+   },
+   {
+    "t": 1791184846.96,
+    "pose_hz": 10.0,
+    "sent": 221,
+    "sent_ping": 215,
+    "receive": 216,
+    "enqueued": 0,
+    "ack": 216
+   },
+   {
+    "t": 1791184847.96,
+    "pose_hz": 10.0,
+    "sent": 209,
+    "sent_ping": 203,
+    "receive": 204,
+    "enqueued": 0,
+    "ack": 204
+   },
+   {
+    "t": 1791184848.96,
+    "pose_hz": 10.0,
+    "sent": 210,
+    "sent_ping": 207,
+    "receive": 208,
+    "enqueued": 0,
+    "ack": 208
+   },
+   {
+    "t": 1791184849.96,
+    "pose_hz": 10.0,
+    "sent": 199,
+    "sent_ping": 195,
+    "receive": 196,
+    "enqueued": 0,
+    "ack": 196
+   },
+   {
+    "t": 1791184850.96,
+    "pose_hz": 10.0,
+    "sent": 182,
+    "sent_ping": 176,
+    "receive": 176,
+    "enqueued": 0,
+    "ack": 176
+   },
+   {
+    "t": 1791184851.96,
+    "pose_hz": 10.2,
+    "sent": 197,
+    "sent_ping": 189,
+    "receive": 191,
+    "enqueued": 0,
+    "ack": 191
+   },
+   {
+    "t": 1791184852.96,
+    "pose_hz": 10.0,
+    "sent": 190,
+    "sent_ping": 188,
+    "receive": 189,
+    "enqueued": 0,
+    "ack": 189
+   },
+   {
+    "t": 1791184853.96,
+    "pose_hz": 10.0,
+    "sent": 185,
+    "sent_ping": 182,
+    "receive": 183,
+    "enqueued": 0,
+    "ack": 183
+   },
+   {
+    "t": 1791184854.96,
+    "pose_hz": 10.0,
+    "sent": 178,
+    "sent_ping": 173,
+    "receive": 174,
+    "enqueued": 0,
+    "ack": 174
+   },
+   {
+    "t": 1791184855.96,
+    "pose_hz": 10.2,
+    "sent": 198,
+    "sent_ping": 189,
+    "receive": 190,
+    "enqueued": 0,
+    "ack": 190
+   },
+   {
+    "t": 1791184856.96,
+    "pose_hz": 10.0,
+    "sent": 197,
+    "sent_ping": 192,
+    "receive": 193,
+    "enqueued": 0,
+    "ack": 193
+   },
+   {
+    "t": 1791184857.96,
+    "pose_hz": 10.2,
+    "sent": 218,
+    "sent_ping": 212,
+    "receive": 212,
+    "enqueued": 0,
+    "ack": 212
+   },
+   {
+    "t": 1791184858.96,
+    "pose_hz": 9.8,
+    "sent": 222,
+    "sent_ping": 217,
+    "receive": 218,
+    "enqueued": 0,
+    "ack": 218
+   },
+   {
+    "t": 1791184859.96,
+    "pose_hz": 10.0,
+    "sent": 218,
+    "sent_ping": 214,
+    "receive": 216,
+    "enqueued": 0,
+    "ack": 216
+   },
+   {
+    "t": 1791184860.96,
+    "pose_hz": 10.0,
+    "sent": 158,
+    "sent_ping": 133,
+    "receive": 133,
+    "enqueued": 0,
+    "ack": 133
+   },
+   {
+    "t": 1791184861.96,
+    "pose_hz": 10.0,
+    "sent": 148,
+    "sent_ping": 120,
+    "receive": 121,
+    "enqueued": 0,
+    "ack": 121
+   },
+   {
+    "t": 1791184862.96,
+    "pose_hz": 10.0,
+    "sent": 218,
+    "sent_ping": 211,
+    "receive": 213,
+    "enqueued": 0,
+    "ack": 213
+   },
+   {
+    "t": 1791184863.96,
+    "pose_hz": 10.2,
+    "sent": 232,
+    "sent_ping": 226,
+    "receive": 227,
+    "enqueued": 0,
+    "ack": 227
+   },
+   {
+    "t": 1791184864.96,
+    "pose_hz": 10.2,
+    "sent": 213,
+    "sent_ping": 204,
+    "receive": 205,
+    "enqueued": 0,
+    "ack": 205
+   },
+   {
+    "t": 1791184865.96,
+    "pose_hz": 10.0,
+    "sent": 215,
+    "sent_ping": 206,
+    "receive": 207,
+    "enqueued": 0,
+    "ack": 207
+   },
+   {
+    "t": 1791184866.96,
+    "pose_hz": 10.0,
+    "sent": 211,
+    "sent_ping": 205,
+    "receive": 206,
+    "enqueued": 0,
+    "ack": 206
+   },
+   {
+    "t": 1791184867.96,
+    "pose_hz": 9.8,
+    "sent": 218,
+    "sent_ping": 213,
+    "receive": 213,
+    "enqueued": 0,
+    "ack": 213
+   },
+   {
+    "t": 1791184868.96,
+    "pose_hz": 10.0,
+    "sent": 193,
+    "sent_ping": 186,
+    "receive": 187,
+    "enqueued": 0,
+    "ack": 187
+   },
+   {
+    "t": 1791184869.96,
+    "pose_hz": 10.0,
+    "sent": 195,
+    "sent_ping": 187,
+    "receive": 189,
+    "enqueued": 0,
+    "ack": 189
+   },
+   {
+    "t": 1791184870.96,
+    "pose_hz": 10.0,
+    "sent": 200,
+    "sent_ping": 193,
+    "receive": 194,
+    "enqueued": 0,
+    "ack": 194
+   },
+   {
+    "t": 1791184871.96,
+    "pose_hz": 9.8,
+    "sent": 211,
+    "sent_ping": 207,
+    "receive": 208,
+    "enqueued": 0,
+    "ack": 208
+   },
+   {
+    "t": 1791184872.96,
+    "pose_hz": 10.2,
+    "sent": 181,
+    "sent_ping": 176,
+    "receive": 177,
+    "enqueued": 0,
+    "ack": 177
+   },
+   {
+    "t": 1791184873.96,
+    "pose_hz": 10.0,
+    "sent": 210,
+    "sent_ping": 202,
+    "receive": 203,
+    "enqueued": 0,
+    "ack": 203
+   },
+   {
+    "t": 1791184874.96,
+    "pose_hz": 10.0,
+    "sent": 200,
+    "sent_ping": 193,
+    "receive": 194,
+    "enqueued": 0,
+    "ack": 194
+   },
+   {
+    "t": 1791184875.96,
+    "pose_hz": 9.8,
+    "sent": 148,
+    "sent_ping": 143,
+    "receive": 144,
+    "enqueued": 0,
+    "ack": 144
+   },
+   {
+    "t": 1791184876.96,
+    "pose_hz": 10.2,
+    "sent": 190,
+    "sent_ping": 184,
+    "receive": 185,
+    "enqueued": 0,
+    "ack": 185
+   },
+   {
+    "t": 1791184877.96,
+    "pose_hz": 10.0,
+    "sent": 187,
+    "sent_ping": 184,
+    "receive": 184,
+    "enqueued": 0,
+    "ack": 184
+   },
+   {
+    "t": 1791184878.96,
+    "pose_hz": 10.0,
+    "sent": 167,
+    "sent_ping": 163,
+    "receive": 165,
+    "enqueued": 0,
+    "ack": 165
+   },
+   {
+    "t": 1791184879.96,
+    "pose_hz": 9.8,
+    "sent": 167,
+    "sent_ping": 162,
+    "receive": 163,
+    "enqueued": 0,
+    "ack": 163
+   },
+   {
+    "t": 1791184880.96,
+    "pose_hz": 10.2,
+    "sent": 219,
+    "sent_ping": 213,
+    "receive": 213,
+    "enqueued": 1,
+    "ack": 213
+   },
+   {
+    "t": 1791184881.96,
+    "pose_hz": 10.0,
+    "sent": 167,
+    "sent_ping": 155,
+    "receive": 157,
+    "enqueued": 18446744073709551615,
+    "ack": 157
+   },
+   {
+    "t": 1791184882.96,
+    "pose_hz": 10.0,
+    "sent": 202,
+    "sent_ping": 197,
+    "receive": 198,
+    "enqueued": 0,
+    "ack": 198
+   },
+   {
+    "t": 1791184883.96,
+    "pose_hz": 10.0,
+    "sent": 214,
+    "sent_ping": 208,
+    "receive": 209,
+    "enqueued": 0,
+    "ack": 209
+   },
+   {
+    "t": 1791184884.96,
+    "pose_hz": 10.2,
+    "sent": 196,
+    "sent_ping": 185,
+    "receive": 186,
+    "enqueued": 0,
+    "ack": 186
+   },
+   {
+    "t": 1791184885.96,
+    "pose_hz": 10.0,
+    "sent": 188,
+    "sent_ping": 181,
+    "receive": 182,
+    "enqueued": 0,
+    "ack": 182
+   },
+   {
+    "t": 1791184886.96,
+    "pose_hz": 10.0,
+    "sent": 156,
+    "sent_ping": 151,
+    "receive": 152,
+    "enqueued": 0,
+    "ack": 152
+   },
+   {
+    "t": 1791184887.96,
+    "pose_hz": 10.0,
+    "sent": 148,
+    "sent_ping": 146,
+    "receive": 147,
+    "enqueued": 0,
+    "ack": 147
+   },
+   {
+    "t": 1791184888.96,
+    "pose_hz": 10.0,
+    "sent": 190,
+    "sent_ping": 185,
+    "receive": 186,
+    "enqueued": 0,
+    "ack": 186
+   },
+   {
+    "t": 1791184889.96,
+    "pose_hz": 10.0,
+    "sent": 184,
+    "sent_ping": 172,
+    "receive": 173,
+    "enqueued": 0,
+    "ack": 173
+   },
+   {
+    "t": 1791184890.96,
+    "pose_hz": 10.0,
+    "sent": 161,
+    "sent_ping": 153,
+    "receive": 153,
+    "enqueued": 0,
+    "ack": 153
+   },
+   {
+    "t": 1791184891.96,
+    "pose_hz": 10.0,
+    "sent": 181,
+    "sent_ping": 175,
+    "receive": 177,
+    "enqueued": 0,
+    "ack": 177
+   },
+   {
+    "t": 1791184892.96,
+    "pose_hz": 9.8,
+    "sent": 175,
+    "sent_ping": 171,
+    "receive": 172,
+    "enqueued": 0,
+    "ack": 172
+   },
+   {
+    "t": 1791184893.96,
+    "pose_hz": 10.0,
+    "sent": 180,
+    "sent_ping": 174,
+    "receive": 175,
+    "enqueued": 0,
+    "ack": 175
+   },
+   {
+    "t": 1791184894.96,
+    "pose_hz": 10.0,
+    "sent": 184,
+    "sent_ping": 177,
+    "receive": 178,
+    "enqueued": 0,
+    "ack": 178
+   }
+  ],
+  "cf5": [
+   {
+    "t": 1791184825.96,
+    "pose_hz": 10.0,
+    "sent": 163,
+    "sent_ping": 155,
+    "receive": 156,
+    "enqueued": 0,
+    "ack": 156
+   },
+   {
+    "t": 1791184826.96,
+    "pose_hz": 10.0,
+    "sent": 181,
+    "sent_ping": 173,
+    "receive": 174,
+    "enqueued": 0,
+    "ack": 174
+   },
+   {
+    "t": 1791184827.96,
+    "pose_hz": 10.0,
+    "sent": 169,
+    "sent_ping": 167,
+    "receive": 168,
+    "enqueued": 0,
+    "ack": 168
+   },
+   {
+    "t": 1791184828.96,
+    "pose_hz": 9.8,
+    "sent": 164,
+    "sent_ping": 152,
+    "receive": 153,
+    "enqueued": 0,
+    "ack": 153
+   },
+   {
+    "t": 1791184829.96,
+    "pose_hz": 10.0,
+    "sent": 187,
+    "sent_ping": 155,
+    "receive": 156,
+    "enqueued": 0,
+    "ack": 156
+   },
+   {
+    "t": 1791184830.96,
+    "pose_hz": 10.0,
+    "sent": 167,
+    "sent_ping": 161,
+    "receive": 162,
+    "enqueued": 0,
+    "ack": 162
+   },
+   {
+    "t": 1791184831.96,
+    "pose_hz": 10.0,
+    "sent": 160,
+    "sent_ping": 157,
+    "receive": 158,
+    "enqueued": 0,
+    "ack": 158
+   },
+   {
+    "t": 1791184832.96,
+    "pose_hz": 10.0,
+    "sent": 175,
+    "sent_ping": 170,
+    "receive": 171,
+    "enqueued": 0,
+    "ack": 171
+   },
+   {
+    "t": 1791184833.96,
+    "pose_hz": 10.2,
+    "sent": 159,
+    "sent_ping": 153,
+    "receive": 154,
+    "enqueued": 0,
+    "ack": 154
+   },
+   {
+    "t": 1791184834.96,
+    "pose_hz": 10.0,
+    "sent": 177,
+    "sent_ping": 174,
+    "receive": 174,
+    "enqueued": 0,
+    "ack": 174
+   },
+   {
+    "t": 1791184835.96,
+    "pose_hz": 10.0,
+    "sent": 163,
+    "sent_ping": 159,
+    "receive": 161,
+    "enqueued": 0,
+    "ack": 161
+   },
+   {
+    "t": 1791184836.96,
+    "pose_hz": 10.0,
+    "sent": 180,
+    "sent_ping": 177,
+    "receive": 178,
+    "enqueued": 0,
+    "ack": 178
+   },
+   {
+    "t": 1791184837.96,
+    "pose_hz": 10.0,
+    "sent": 162,
+    "sent_ping": 158,
+    "receive": 159,
+    "enqueued": 0,
+    "ack": 159
+   },
+   {
+    "t": 1791184838.96,
+    "pose_hz": 10.0,
+    "sent": 183,
+    "sent_ping": 178,
+    "receive": 179,
+    "enqueued": 0,
+    "ack": 179
+   },
+   {
+    "t": 1791184839.96,
+    "pose_hz": 10.0,
+    "sent": 197,
+    "sent_ping": 196,
+    "receive": 197,
+    "enqueued": 0,
+    "ack": 197
+   },
+   {
+    "t": 1791184840.96,
+    "pose_hz": 10.0,
+    "sent": 188,
+    "sent_ping": 181,
+    "receive": 182,
+    "enqueued": 0,
+    "ack": 182
+   },
+   {
+    "t": 1791184841.96,
+    "pose_hz": 10.0,
+    "sent": 193,
+    "sent_ping": 189,
+    "receive": 190,
+    "enqueued": 0,
+    "ack": 190
+   },
+   {
+    "t": 1791184842.96,
+    "pose_hz": 10.0,
+    "sent": 197,
+    "sent_ping": 190,
+    "receive": 191,
+    "enqueued": 0,
+    "ack": 191
+   },
+   {
+    "t": 1791184843.96,
+    "pose_hz": 10.0,
+    "sent": 171,
+    "sent_ping": 165,
+    "receive": 165,
+    "enqueued": 1,
+    "ack": 165
+   },
+   {
+    "t": 1791184844.96,
+    "pose_hz": 10.0,
+    "sent": 174,
+    "sent_ping": 169,
+    "receive": 171,
+    "enqueued": 18446744073709551615,
+    "ack": 171
+   },
+   {
+    "t": 1791184845.96,
+    "pose_hz": 10.0,
+    "sent": 212,
+    "sent_ping": 208,
+    "receive": 208,
+    "enqueued": 0,
+    "ack": 208
+   },
+   {
+    "t": 1791184846.96,
+    "pose_hz": 10.0,
+    "sent": 221,
+    "sent_ping": 217,
+    "receive": 219,
+    "enqueued": 0,
+    "ack": 219
+   },
+   {
+    "t": 1791184847.96,
+    "pose_hz": 10.0,
+    "sent": 209,
+    "sent_ping": 202,
+    "receive": 202,
+    "enqueued": 1,
+    "ack": 202
+   },
+   {
+    "t": 1791184848.96,
+    "pose_hz": 10.0,
+    "sent": 211,
+    "sent_ping": 205,
+    "receive": 207,
+    "enqueued": 18446744073709551615,
+    "ack": 207
+   },
+   {
+    "t": 1791184849.96,
+    "pose_hz": 10.0,
+    "sent": 194,
+    "sent_ping": 178,
+    "receive": 179,
+    "enqueued": 0,
+    "ack": 179
+   },
+   {
+    "t": 1791184850.96,
+    "pose_hz": 10.0,
+    "sent": 183,
+    "sent_ping": 174,
+    "receive": 175,
+    "enqueued": 0,
+    "ack": 175
+   },
+   {
+    "t": 1791184851.96,
+    "pose_hz": 10.0,
+    "sent": 197,
+    "sent_ping": 193,
+    "receive": 194,
+    "enqueued": 0,
+    "ack": 194
+   },
+   {
+    "t": 1791184852.96,
+    "pose_hz": 10.0,
+    "sent": 190,
+    "sent_ping": 179,
+    "receive": 180,
+    "enqueued": 0,
+    "ack": 180
+   },
+   {
+    "t": 1791184853.96,
+    "pose_hz": 10.0,
+    "sent": 180,
+    "sent_ping": 173,
+    "receive": 174,
+    "enqueued": 0,
+    "ack": 174
+   },
+   {
+    "t": 1791184854.96,
+    "pose_hz": 10.0,
+    "sent": 186,
+    "sent_ping": 158,
+    "receive": 159,
+    "enqueued": 0,
+    "ack": 159
+   },
+   {
+    "t": 1791184855.96,
+    "pose_hz": 10.0,
+    "sent": 199,
+    "sent_ping": 187,
+    "receive": 188,
+    "enqueued": 0,
+    "ack": 188
+   },
+   {
+    "t": 1791184856.96,
+    "pose_hz": 10.0,
+    "sent": 194,
+    "sent_ping": 192,
+    "receive": 193,
+    "enqueued": 0,
+    "ack": 193
+   },
+   {
+    "t": 1791184857.96,
+    "pose_hz": 10.0,
+    "sent": 220,
+    "sent_ping": 215,
+    "receive": 216,
+    "enqueued": 0,
+    "ack": 216
+   },
+   {
+    "t": 1791184858.96,
+    "pose_hz": 10.0,
+    "sent": 225,
+    "sent_ping": 220,
+    "receive": 221,
+    "enqueued": 0,
+    "ack": 221
+   },
+   {
+    "t": 1791184859.96,
+    "pose_hz": 9.8,
+    "sent": 214,
+    "sent_ping": 197,
+    "receive": 198,
+    "enqueued": 0,
+    "ack": 198
+   },
+   {
+    "t": 1791184860.96,
+    "pose_hz": 10.0,
+    "sent": 147,
+    "sent_ping": 105,
+    "receive": 105,
+    "enqueued": 1,
+    "ack": 105
+   },
+   {
+    "t": 1791184861.96,
+    "pose_hz": 10.0,
+    "sent": 162,
+    "sent_ping": 132,
+    "receive": 134,
+    "enqueued": 18446744073709551615,
+    "ack": 134
+   },
+   {
+    "t": 1791184862.96,
+    "pose_hz": 10.0,
+    "sent": 219,
+    "sent_ping": 200,
+    "receive": 201,
+    "enqueued": 0,
+    "ack": 201
+   },
+   {
+    "t": 1791184863.96,
+    "pose_hz": 9.6,
+    "sent": 233,
+    "sent_ping": 228,
+    "receive": 229,
+    "enqueued": 0,
+    "ack": 229
+   },
+   {
+    "t": 1791184864.96,
+    "pose_hz": 10.2,
+    "sent": 209,
+    "sent_ping": 172,
+    "receive": 173,
+    "enqueued": 0,
+    "ack": 173
+   },
+   {
+    "t": 1791184865.96,
+    "pose_hz": 10.0,
+    "sent": 214,
+    "sent_ping": 206,
+    "receive": 206,
+    "enqueued": 0,
+    "ack": 206
+   },
+   {
+    "t": 1791184866.96,
+    "pose_hz": 10.0,
+    "sent": 213,
+    "sent_ping": 195,
+    "receive": 196,
+    "enqueued": 0,
+    "ack": 196
+   },
+   {
+    "t": 1791184867.96,
+    "pose_hz": 10.0,
+    "sent": 219,
+    "sent_ping": 198,
+    "receive": 200,
+    "enqueued": 0,
+    "ack": 200
+   },
+   {
+    "t": 1791184868.96,
+    "pose_hz": 10.4,
+    "sent": 188,
+    "sent_ping": 180,
+    "receive": 180,
+    "enqueued": 0,
+    "ack": 180
+   },
+   {
+    "t": 1791184869.96,
+    "pose_hz": 10.0,
+    "sent": 197,
+    "sent_ping": 190,
+    "receive": 191,
+    "enqueued": 0,
+    "ack": 191
+   },
+   {
+    "t": 1791184870.96,
+    "pose_hz": 10.0,
+    "sent": 202,
+    "sent_ping": 195,
+    "receive": 197,
+    "enqueued": 0,
+    "ack": 197
+   },
+   {
+    "t": 1791184871.96,
+    "pose_hz": 10.0,
+    "sent": 206,
+    "sent_ping": 197,
+    "receive": 198,
+    "enqueued": 0,
+    "ack": 198
+   },
+   {
+    "t": 1791184872.96,
+    "pose_hz": 10.0,
+    "sent": 183,
+    "sent_ping": 164,
+    "receive": 165,
+    "enqueued": 0,
+    "ack": 165
+   },
+   {
+    "t": 1791184873.96,
+    "pose_hz": 10.0,
+    "sent": 214,
+    "sent_ping": 210,
+    "receive": 211,
+    "enqueued": 0,
+    "ack": 211
+   },
+   {
+    "t": 1791184874.96,
+    "pose_hz": 10.0,
+    "sent": 195,
+    "sent_ping": 191,
+    "receive": 192,
+    "enqueued": 0,
+    "ack": 192
+   },
+   {
+    "t": 1791184875.96,
+    "pose_hz": 10.0,
+    "sent": 144,
+    "sent_ping": 129,
+    "receive": 130,
+    "enqueued": 0,
+    "ack": 130
+   },
+   {
+    "t": 1791184876.96,
+    "pose_hz": 10.0,
+    "sent": 191,
+    "sent_ping": 186,
+    "receive": 186,
+    "enqueued": 0,
+    "ack": 186
+   },
+   {
+    "t": 1791184877.96,
+    "pose_hz": 10.0,
+    "sent": 186,
+    "sent_ping": 182,
+    "receive": 184,
+    "enqueued": 0,
+    "ack": 184
+   },
+   {
+    "t": 1791184878.96,
+    "pose_hz": 10.0,
+    "sent": 166,
+    "sent_ping": 164,
+    "receive": 165,
+    "enqueued": 0,
+    "ack": 165
+   },
+   {
+    "t": 1791184879.96,
+    "pose_hz": 10.0,
+    "sent": 178,
+    "sent_ping": 176,
+    "receive": 177,
+    "enqueued": 0,
+    "ack": 177
+   },
+   {
+    "t": 1791184880.96,
+    "pose_hz": 10.0,
+    "sent": 211,
+    "sent_ping": 204,
+    "receive": 205,
+    "enqueued": 0,
+    "ack": 205
+   },
+   {
+    "t": 1791184881.96,
+    "pose_hz": 10.0,
+    "sent": 170,
+    "sent_ping": 122,
+    "receive": 123,
+    "enqueued": 0,
+    "ack": 123
+   },
+   {
+    "t": 1791184882.96,
+    "pose_hz": 10.0,
+    "sent": 206,
+    "sent_ping": 196,
+    "receive": 197,
+    "enqueued": 0,
+    "ack": 197
+   },
+   {
+    "t": 1791184883.96,
+    "pose_hz": 10.0,
+    "sent": 213,
+    "sent_ping": 210,
+    "receive": 211,
+    "enqueued": 0,
+    "ack": 211
+   },
+   {
+    "t": 1791184884.96,
+    "pose_hz": 9.4,
+    "sent": 193,
+    "sent_ping": 172,
+    "receive": 173,
+    "enqueued": 0,
+    "ack": 173
+   },
+   {
+    "t": 1791184885.96,
+    "pose_hz": 9.4,
+    "sent": 179,
+    "sent_ping": 113,
+    "receive": 113,
+    "enqueued": 0,
+    "ack": 113
+   },
+   {
+    "t": 1791184886.96,
+    "pose_hz": 7.8,
+    "sent": 157,
+    "sent_ping": 42,
+    "receive": 43,
+    "enqueued": 1,
+    "ack": 43
+   },
+   {
+    "t": 1791184887.96,
+    "pose_hz": 5.8,
+    "sent": 157,
+    "sent_ping": 36,
+    "receive": 38,
+    "enqueued": 18446744073709551615,
+    "ack": 38
+   },
+   {
+    "t": 1791184888.96,
+    "pose_hz": 3.8,
+    "sent": 174,
+    "sent_ping": 96,
+    "receive": 96,
+    "enqueued": 0,
+    "ack": 96
+   },
+   {
+    "t": 1791184889.96,
+    "pose_hz": 2.4,
+    "sent": 196,
+    "sent_ping": 161,
+    "receive": 163,
+    "enqueued": 0,
+    "ack": 163
+   },
+   {
+    "t": 1791184890.96,
+    "pose_hz": 0.4,
+    "sent": 174,
+    "sent_ping": 161,
+    "receive": 162,
+    "enqueued": 0,
+    "ack": 162
+   },
+   {
+    "t": 1791184891.96,
+    "pose_hz": 0.0,
+    "sent": 169,
+    "sent_ping": 166,
+    "receive": 167,
+    "enqueued": 0,
+    "ack": 167
+   },
+   {
+    "t": 1791184892.96,
+    "pose_hz": 0.0,
+    "sent": 177,
+    "sent_ping": 152,
+    "receive": 153,
+    "enqueued": 0,
+    "ack": 153
+   },
+   {
+    "t": 1791184893.96,
+    "pose_hz": 0.0,
+    "sent": 169,
+    "sent_ping": 150,
+    "receive": 151,
+    "enqueued": 0,
+    "ack": 151
+   },
+   {
+    "t": 1791184894.96,
+    "pose_hz": 0.0,
+    "sent": 184,
+    "sent_ping": 181,
+    "receive": 182,
+    "enqueued": 0,
+    "ack": 182
+   }
+  ],
+  "cf4": [
+   {
+    "t": 1791184824.96,
+    "pose_hz": 10.2,
+    "sent": 190,
+    "sent_ping": 182,
+    "receive": 184,
+    "enqueued": 0,
+    "ack": 184
+   },
+   {
+    "t": 1791184825.96,
+    "pose_hz": 10.0,
+    "sent": 166,
+    "sent_ping": 159,
+    "receive": 159,
+    "enqueued": 0,
+    "ack": 159
+   },
+   {
+    "t": 1791184826.96,
+    "pose_hz": 10.0,
+    "sent": 182,
+    "sent_ping": 168,
+    "receive": 170,
+    "enqueued": 0,
+    "ack": 170
+   },
+   {
+    "t": 1791184827.96,
+    "pose_hz": 10.0,
+    "sent": 168,
+    "sent_ping": 149,
+    "receive": 150,
+    "enqueued": 0,
+    "ack": 150
+   },
+   {
+    "t": 1791184828.96,
+    "pose_hz": 10.0,
+    "sent": 161,
+    "sent_ping": 152,
+    "receive": 153,
+    "enqueued": 0,
+    "ack": 153
+   },
+   {
+    "t": 1791184829.96,
+    "pose_hz": 10.0,
+    "sent": 193,
+    "sent_ping": 184,
+    "receive": 185,
+    "enqueued": 0,
+    "ack": 185
+   },
+   {
+    "t": 1791184830.96,
+    "pose_hz": 10.0,
+    "sent": 168,
+    "sent_ping": 163,
+    "receive": 163,
+    "enqueued": 0,
+    "ack": 163
+   },
+   {
+    "t": 1791184831.96,
+    "pose_hz": 10.0,
+    "sent": 158,
+    "sent_ping": 147,
+    "receive": 149,
+    "enqueued": 0,
+    "ack": 149
+   },
+   {
+    "t": 1791184832.96,
+    "pose_hz": 10.0,
+    "sent": 172,
+    "sent_ping": 159,
+    "receive": 159,
+    "enqueued": 0,
+    "ack": 159
+   },
+   {
+    "t": 1791184833.96,
+    "pose_hz": 9.8,
+    "sent": 158,
+    "sent_ping": 133,
+    "receive": 134,
+    "enqueued": 0,
+    "ack": 134
+   },
+   {
+    "t": 1791184834.96,
+    "pose_hz": 10.0,
+    "sent": 183,
+    "sent_ping": 149,
+    "receive": 150,
+    "enqueued": 1,
+    "ack": 150
+   },
+   {
+    "t": 1791184835.96,
+    "pose_hz": 10.0,
+    "sent": 160,
+    "sent_ping": 142,
+    "receive": 144,
+    "enqueued": 18446744073709551615,
+    "ack": 144
+   },
+   {
+    "t": 1791184836.96,
+    "pose_hz": 10.0,
+    "sent": 176,
+    "sent_ping": 164,
+    "receive": 165,
+    "enqueued": 0,
+    "ack": 165
+   },
+   {
+    "t": 1791184837.96,
+    "pose_hz": 10.0,
+    "sent": 166,
+    "sent_ping": 159,
+    "receive": 160,
+    "enqueued": 0,
+    "ack": 160
+   },
+   {
+    "t": 1791184838.96,
+    "pose_hz": 10.2,
+    "sent": 183,
+    "sent_ping": 170,
+    "receive": 171,
+    "enqueued": 0,
+    "ack": 171
+   },
+   {
+    "t": 1791184839.96,
+    "pose_hz": 10.0,
+    "sent": 192,
+    "sent_ping": 171,
+    "receive": 172,
+    "enqueued": 0,
+    "ack": 172
+   },
+   {
+    "t": 1791184840.96,
+    "pose_hz": 10.0,
+    "sent": 191,
+    "sent_ping": 175,
+    "receive": 175,
+    "enqueued": 0,
+    "ack": 175
+   },
+   {
+    "t": 1791184841.96,
+    "pose_hz": 10.0,
+    "sent": 193,
+    "sent_ping": 184,
+    "receive": 185,
+    "enqueued": 0,
+    "ack": 185
+   },
+   {
+    "t": 1791184842.96,
+    "pose_hz": 10.0,
+    "sent": 199,
+    "sent_ping": 190,
+    "receive": 192,
+    "enqueued": 0,
+    "ack": 192
+   },
+   {
+    "t": 1791184843.96,
+    "pose_hz": 10.0,
+    "sent": 174,
+    "sent_ping": 164,
+    "receive": 165,
+    "enqueued": 0,
+    "ack": 165
+   },
+   {
+    "t": 1791184844.96,
+    "pose_hz": 10.0,
+    "sent": 172,
+    "sent_ping": 155,
+    "receive": 155,
+    "enqueued": 0,
+    "ack": 155
+   },
+   {
+    "t": 1791184845.96,
+    "pose_hz": 10.0,
+    "sent": 206,
+    "sent_ping": 184,
+    "receive": 186,
+    "enqueued": 0,
+    "ack": 186
+   },
+   {
+    "t": 1791184846.96,
+    "pose_hz": 10.0,
+    "sent": 221,
+    "sent_ping": 216,
+    "receive": 216,
+    "enqueued": 0,
+    "ack": 216
+   },
+   {
+    "t": 1791184847.96,
+    "pose_hz": 10.0,
+    "sent": 208,
+    "sent_ping": 202,
+    "receive": 204,
+    "enqueued": 0,
+    "ack": 204
+   },
+   {
+    "t": 1791184848.96,
+    "pose_hz": 10.0,
+    "sent": 212,
+    "sent_ping": 204,
+    "receive": 205,
+    "enqueued": 0,
+    "ack": 205
+   },
+   {
+    "t": 1791184849.96,
+    "pose_hz": 10.0,
+    "sent": 198,
+    "sent_ping": 191,
+    "receive": 191,
+    "enqueued": 0,
+    "ack": 191
+   },
+   {
+    "t": 1791184850.96,
+    "pose_hz": 10.0,
+    "sent": 182,
+    "sent_ping": 169,
+    "receive": 171,
+    "enqueued": 0,
+    "ack": 171
+   },
+   {
+    "t": 1791184851.96,
+    "pose_hz": 10.0,
+    "sent": 197,
+    "sent_ping": 174,
+    "receive": 175,
+    "enqueued": 0,
+    "ack": 175
+   },
+   {
+    "t": 1791184852.96,
+    "pose_hz": 10.0,
+    "sent": 190,
+    "sent_ping": 183,
+    "receive": 184,
+    "enqueued": 0,
+    "ack": 184
+   },
+   {
+    "t": 1791184853.96,
+    "pose_hz": 10.0,
+    "sent": 184,
+    "sent_ping": 175,
+    "receive": 176,
+    "enqueued": 0,
+    "ack": 176
+   },
+   {
+    "t": 1791184854.96,
+    "pose_hz": 10.0,
+    "sent": 180,
+    "sent_ping": 165,
+    "receive": 166,
+    "enqueued": 0,
+    "ack": 166
+   },
+   {
+    "t": 1791184855.96,
+    "pose_hz": 10.0,
+    "sent": 197,
+    "sent_ping": 189,
+    "receive": 190,
+    "enqueued": 0,
+    "ack": 190
+   },
+   {
+    "t": 1791184856.96,
+    "pose_hz": 10.0,
+    "sent": 196,
+    "sent_ping": 191,
+    "receive": 191,
+    "enqueued": 0,
+    "ack": 191
+   },
+   {
+    "t": 1791184857.96,
+    "pose_hz": 10.0,
+    "sent": 219,
+    "sent_ping": 210,
+    "receive": 212,
+    "enqueued": 0,
+    "ack": 212
+   },
+   {
+    "t": 1791184858.96,
+    "pose_hz": 10.0,
+    "sent": 223,
+    "sent_ping": 216,
+    "receive": 216,
+    "enqueued": 0,
+    "ack": 216
+   },
+   {
+    "t": 1791184859.96,
+    "pose_hz": 9.8,
+    "sent": 217,
+    "sent_ping": 209,
+    "receive": 211,
+    "enqueued": 0,
+    "ack": 211
+   },
+   {
+    "t": 1791184860.96,
+    "pose_hz": 10.0,
+    "sent": 157,
+    "sent_ping": 138,
+    "receive": 138,
+    "enqueued": 1,
+    "ack": 138
+   },
+   {
+    "t": 1791184861.96,
+    "pose_hz": 10.0,
+    "sent": 150,
+    "sent_ping": 123,
+    "receive": 125,
+    "enqueued": 18446744073709551615,
+    "ack": 125
+   },
+   {
+    "t": 1791184862.96,
+    "pose_hz": 10.0,
+    "sent": 218,
+    "sent_ping": 211,
+    "receive": 212,
+    "enqueued": 0,
+    "ack": 212
+   },
+   {
+    "t": 1791184863.96,
+    "pose_hz": 10.0,
+    "sent": 232,
+    "sent_ping": 229,
+    "receive": 230,
+    "enqueued": 0,
+    "ack": 230
+   },
+   {
+    "t": 1791184864.96,
+    "pose_hz": 10.2,
+    "sent": 211,
+    "sent_ping": 203,
+    "receive": 204,
+    "enqueued": 0,
+    "ack": 204
+   },
+   {
+    "t": 1791184865.96,
+    "pose_hz": 10.0,
+    "sent": 217,
+    "sent_ping": 201,
+    "receive": 202,
+    "enqueued": 0,
+    "ack": 202
+   },
+   {
+    "t": 1791184866.96,
+    "pose_hz": 10.0,
+    "sent": 210,
+    "sent_ping": 200,
+    "receive": 201,
+    "enqueued": 0,
+    "ack": 201
+   },
+   {
+    "t": 1791184867.96,
+    "pose_hz": 10.0,
+    "sent": 219,
+    "sent_ping": 213,
+    "receive": 214,
+    "enqueued": 0,
+    "ack": 214
+   },
+   {
+    "t": 1791184868.96,
+    "pose_hz": 10.0,
+    "sent": 192,
+    "sent_ping": 183,
+    "receive": 184,
+    "enqueued": 0,
+    "ack": 184
+   },
+   {
+    "t": 1791184869.96,
+    "pose_hz": 10.0,
+    "sent": 196,
+    "sent_ping": 191,
+    "receive": 192,
+    "enqueued": 0,
+    "ack": 192
+   },
+   {
+    "t": 1791184870.96,
+    "pose_hz": 10.0,
+    "sent": 199,
+    "sent_ping": 192,
+    "receive": 193,
+    "enqueued": 0,
+    "ack": 193
+   },
+   {
+    "t": 1791184871.96,
+    "pose_hz": 10.0,
+    "sent": 211,
+    "sent_ping": 200,
+    "receive": 201,
+    "enqueued": 0,
+    "ack": 201
+   },
+   {
+    "t": 1791184872.96,
+    "pose_hz": 10.0,
+    "sent": 181,
+    "sent_ping": 175,
+    "receive": 176,
+    "enqueued": 0,
+    "ack": 176
+   },
+   {
+    "t": 1791184873.96,
+    "pose_hz": 10.0,
+    "sent": 210,
+    "sent_ping": 193,
+    "receive": 194,
+    "enqueued": 0,
+    "ack": 194
+   },
+   {
+    "t": 1791184874.96,
+    "pose_hz": 10.0,
+    "sent": 200,
+    "sent_ping": 187,
+    "receive": 188,
+    "enqueued": 0,
+    "ack": 188
+   },
+   {
+    "t": 1791184875.96,
+    "pose_hz": 10.0,
+    "sent": 147,
+    "sent_ping": 138,
+    "receive": 138,
+    "enqueued": 0,
+    "ack": 138
+   },
+   {
+    "t": 1791184876.96,
+    "pose_hz": 10.0,
+    "sent": 190,
+    "sent_ping": 184,
+    "receive": 186,
+    "enqueued": 0,
+    "ack": 186
+   },
+   {
+    "t": 1791184877.96,
+    "pose_hz": 10.0,
+    "sent": 187,
+    "sent_ping": 177,
+    "receive": 178,
+    "enqueued": 0,
+    "ack": 178
+   },
+   {
+    "t": 1791184878.96,
+    "pose_hz": 10.0,
+    "sent": 167,
+    "sent_ping": 161,
+    "receive": 162,
+    "enqueued": 0,
+    "ack": 162
+   },
+   {
+    "t": 1791184879.96,
+    "pose_hz": 10.0,
+    "sent": 168,
+    "sent_ping": 163,
+    "receive": 164,
+    "enqueued": 0,
+    "ack": 164
+   },
+   {
+    "t": 1791184880.96,
+    "pose_hz": 10.0,
+    "sent": 217,
+    "sent_ping": 204,
+    "receive": 204,
+    "enqueued": 1,
+    "ack": 204
+   },
+   {
+    "t": 1791184881.96,
+    "pose_hz": 10.0,
+    "sent": 168,
+    "sent_ping": 158,
+    "receive": 160,
+    "enqueued": 18446744073709551615,
+    "ack": 160
+   },
+   {
+    "t": 1791184882.96,
+    "pose_hz": 10.0,
+    "sent": 204,
+    "sent_ping": 200,
+    "receive": 201,
+    "enqueued": 0,
+    "ack": 201
+   },
+   {
+    "t": 1791184883.96,
+    "pose_hz": 10.0,
+    "sent": 214,
+    "sent_ping": 202,
+    "receive": 203,
+    "enqueued": 0,
+    "ack": 203
+   },
+   {
+    "t": 1791184884.96,
+    "pose_hz": 10.0,
+    "sent": 195,
+    "sent_ping": 191,
+    "receive": 191,
+    "enqueued": 0,
+    "ack": 191
+   },
+   {
+    "t": 1791184885.96,
+    "pose_hz": 10.0,
+    "sent": 187,
+    "sent_ping": 181,
+    "receive": 183,
+    "enqueued": 0,
+    "ack": 183
+   },
+   {
+    "t": 1791184886.96,
+    "pose_hz": 10.0,
+    "sent": 155,
+    "sent_ping": 145,
+    "receive": 145,
+    "enqueued": 1,
+    "ack": 145
+   },
+   {
+    "t": 1791184887.96,
+    "pose_hz": 10.0,
+    "sent": 150,
+    "sent_ping": 140,
+    "receive": 142,
+    "enqueued": 18446744073709551615,
+    "ack": 142
+   },
+   {
+    "t": 1791184888.96,
+    "pose_hz": 10.0,
+    "sent": 177,
+    "sent_ping": 167,
+    "receive": 168,
+    "enqueued": 0,
+    "ack": 168
+   },
+   {
+    "t": 1791184889.96,
+    "pose_hz": 10.0,
+    "sent": 191,
+    "sent_ping": 181,
+    "receive": 182,
+    "enqueued": 0,
+    "ack": 182
+   },
+   {
+    "t": 1791184890.96,
+    "pose_hz": 10.0,
+    "sent": 182,
+    "sent_ping": 169,
+    "receive": 170,
+    "enqueued": 0,
+    "ack": 170
+   },
+   {
+    "t": 1791184891.96,
+    "pose_hz": 10.0,
+    "sent": 162,
+    "sent_ping": 158,
+    "receive": 158,
+    "enqueued": 0,
+    "ack": 158
+   },
+   {
+    "t": 1791184892.96,
+    "pose_hz": 10.0,
+    "sent": 180,
+    "sent_ping": 173,
+    "receive": 175,
+    "enqueued": 0,
+    "ack": 175
+   },
+   {
+    "t": 1791184893.96,
+    "pose_hz": 10.0,
+    "sent": 175,
+    "sent_ping": 172,
+    "receive": 173,
+    "enqueued": 0,
+    "ack": 173
+   }
+  ]
+ },
+ "still_alive": [
+  "cf1",
+  "cf2",
+  "cf3",
+  "cf4"
+ ],
+ "server_log_tail": [
+  "[WARN] [1791184813.996906363] [crazyflie_server]: [cf3] High latency: 27.0 ms\n",
+  "[WARN] [1791184814.095571644] [crazyflie_server]: [cf4] High latency: 108.9 ms\n",
+  "[WARN] [1791184814.139420150] [crazyflie_server]: [cf5] High latency: 47.0 ms\n",
+  "[WARN] [1791184814.418858233] [crazyflie_server]: [cf3] Low unicast receive rate (0.72 < 0.90). Sent: 134. Received: 96\n",
+  "[WARN] [1791184814.430547112] [crazyflie_server]: [cf4] Low unicast receive rate (0.57 < 0.90). Sent: 119. Received: 68\n",
+  "[WARN] [1791184814.656975831] [crazyflie_server]: [cf2] High latency: 42.9 ms\n",
+  "[WARN] [1791184814.704919770] [crazyflie_server]: [cf1] High latency: 277.9 ms\n",
+  "[WARN] [1791184814.917963712] [crazyflie_server]: [cf2] Low unicast receive rate (0.61 < 0.90). Sent: 88. Received: 54\n",
+  "[WARN] [1791184815.014323085] [crazyflie_server]: [cf5] Low unicast receive rate (0.66 < 0.90). Sent: 92. Received: 61\n",
+  "[WARN] [1791184815.047444760] [crazyflie_server]: [cf4] High latency: 60.9 ms\n",
+  "[WARN] [1791184815.050770597] [crazyflie_server]: [cf3] High latency: 81.0 ms\n",
+  "[WARN] [1791184815.104289196] [crazyflie_server]: [cf5] High latency: 12.0 ms\n",
+  "[WARN] [1791184815.301786717] [crazyflie_server]: [cf3] Low unicast receive rate (0.63 < 0.90). Sent: 113. Received: 71\n",
+  "[WARN] [1791184815.444752726] [crazyflie_server]: [cf4] Low unicast receive rate (0.64 < 0.90). Sent: 127. Received: 81\n",
+  "[WARN] [1791184815.454874290] [crazyflie_server]: [cf1] High latency: 27.7 ms\n",
+  "[WARN] [1791184815.630848484] [crazyflie_server]: [cf2] High latency: 16.8 ms\n",
+  "[WARN] [1791184815.985640741] [crazyflie_server]: [cf3] High latency: 16.0 ms\n",
+  "[WARN] [1791184816.001323386] [crazyflie_server]: [cf4] High latency: 14.9 ms\n",
+  "[WARN] [1791184816.106156202] [crazyflie_server]: [cf5] High latency: 13.8 ms\n",
+  "[WARN] [1791184816.594727372] [crazyflie_server]: [cf1] High latency: 168.0 ms\n",
+  "[WARN] [1791184816.630725527] [crazyflie_server]: [cf2] High latency: 16.8 ms\n",
+  "[INFO] [1791184816.648565505] [crazyflie_server]: [cf3] ESTKALMAN: State out of bounds, resetting\n",
+  "[WARN] [1791184816.994515000] [crazyflie_server]: [cf3] High latency: 25.0 ms\n",
+  "[WARN] [1791184816.999198335] [crazyflie_server]: [cf4] High latency: 12.9 ms\n",
+  "[WARN] [1791184817.105028896] [crazyflie_server]: [cf5] High latency: 13.0 ms\n",
+  "[WARN] [1791184817.473616546] [crazyflie_server]: [cf1] High latency: 46.9 ms\n",
+  "[WARN] [1791184817.624606820] [crazyflie_server]: [cf2] High latency: 10.9 ms\n",
+  "[WARN] [1791184817.988398250] [crazyflie_server]: [cf3] High latency: 19.0 ms\n",
+  "[WARN] [1791184818.001078258] [crazyflie_server]: [cf4] High latency: 14.8 ms\n",
+  "[WARN] [1791184818.113902592] [crazyflie_server]: [cf5] High latency: 22.0 ms\n",
+  "[WARN] [1791184818.439503796] [crazyflie_server]: [cf1] High latency: 13.0 ms\n",
+  "[WARN] [1791184818.634473535] [crazyflie_server]: [cf2] High latency: 20.9 ms\n",
+  "[WARN] [1791184818.985275429] [crazyflie_server]: [cf3] High latency: 16.0 ms\n",
+  "[WARN] [1791184819.003922957] [crazyflie_server]: [cf4] High latency: 17.9 ms\n",
+  "[WARN] [1791184819.103787823] [crazyflie_server]: [cf5] High latency: 12.0 ms\n",
+  "[WARN] [1791184819.449370643] [crazyflie_server]: [cf1] High latency: 22.5 ms\n",
+  "[WARN] [1791184819.627358133] [crazyflie_server]: [cf2] High latency: 13.9 ms\n",
+  "[WARN] [1791184820.006140761] [crazyflie_server]: [cf3] High latency: 37.0 ms\n",
+  "[WARN] [1791184820.023825566] [crazyflie_server]: [cf4] High latency: 37.9 ms\n",
+  "[WARN] [1791184820.106663017] [crazyflie_server]: [cf5] High latency: 14.9 ms\n",
+  "[WARN] [1791184820.502242383] [crazyflie_server]: [cf1] High latency: 76.0 ms\n",
+  "[WARN] [1791184820.634227283] [crazyflie_server]: [cf2] High latency: 20.9 ms\n",
+  "[WARN] [1791184820.997020170] [crazyflie_server]: [cf3] High latency: 28.0 ms\n",
+  "[WARN] [1791184821.003701271] [crazyflie_server]: [cf4] High latency: 17.9 ms\n",
+  "[WARN] [1791184821.106536277] [crazyflie_server]: [cf5] High latency: 15.0 ms\n",
+  "[INFO] [1791184821.362653246] [crazyflie_server]: [cf4] ESTKALMAN: State out of bounds, resetting\n",
+  "[WARN] [1791184821.438130345] [crazyflie_server]: [cf1] High latency: 12.0 ms\n",
+  "[WARN] [1791184821.631107991] [crazyflie_server]: [cf2] High latency: 17.9 ms\n",
+  "[WARN] [1791184821.981903781] [crazyflie_server]: [cf3] High latency: 13.0 ms\n",
+  "[WARN] [1791184821.996594771] [crazyflie_server]: [cf4] High latency: 10.9 ms\n",
+  "[WARN] [1791184822.106424278] [crazyflie_server]: [cf5] High latency: 15.0 ms\n",
+  "[WARN] [1791184822.523289878] [crazyflie_server]: [cf1] High latency: 97.3 ms\n",
+  "[WARN] [1791184822.631989613] [crazyflie_server]: [cf2] High latency: 18.9 ms\n",
+  "[WARN] [1791184822.980788139] [crazyflie_server]: [cf3] High latency: 11.9 ms\n",
+  "[WARN] [1791184822.997464029] [crazyflie_server]: [cf4] High latency: 11.9 ms\n",
+  "[WARN] [1791184823.111298371] [crazyflie_server]: [cf5] High latency: 20.0 ms\n",
+  "[WARN] [1791184823.462891040] [crazyflie_server]: [cf1] High latency: 37.0 ms\n",
+  "[WARN] [1791184823.628878798] [crazyflie_server]: [cf2] High latency: 16.0 ms\n",
+  "[WARN] [1791184823.980680064] [crazyflie_server]: [cf3] High latency: 12.0 ms\n",
+  "[WARN] [1791184824.001347143] [crazyflie_server]: [cf4] High latency: 15.9 ms\n",
+  "[WARN] [1791184824.109215318] [crazyflie_server]: [cf5] High latency: 18.0 ms\n",
+  "[WARN] [1791184824.462771721] [crazyflie_server]: [cf1] High latency: 37.0 ms\n",
+  "[WARN] [1791184824.629755496] [crazyflie_server]: [cf2] High latency: 16.9 ms\n",
+  "[WARN] [1791184824.980549763] [crazyflie_server]: [cf3] High latency: 11.9 ms\n",
+  "[WARN] [1791184825.001231475] [crazyflie_server]: [cf4] High latency: 15.9 ms\n",
+  "[WARN] [1791184825.107064640] [crazyflie_server]: [cf5] High latency: 16.0 ms\n",
+  "[WARN] [1791184825.442658615] [crazyflie_server]: [cf1] High latency: 17.0 ms\n",
+  "[WARN] [1791184825.628771222] [crazyflie_server]: [cf2] High latency: 16.0 ms\n",
+  "[WARN] [1791184826.001116440] [crazyflie_server]: [cf4] High latency: 15.9 ms\n",
+  "[WARN] [1791184826.118411370] [crazyflie_server]: [cf5] High latency: 27.4 ms\n",
+  "[WARN] [1791184826.380122498] [crazyflie_server]: [cf4] Low unicast receive rate (0.89 < 0.90). Sent: 174. Received: 155\n",
+  "[WARN] [1791184826.444552490] [crazyflie_server]: [cf1] High latency: 19.0 ms\n",
+  "[WARN] [1791184826.632533451] [crazyflie_server]: [cf2] High latency: 19.9 ms\n",
+  "[WARN] [1791184826.982319529] [crazyflie_server]: [cf3] High latency: 14.0 ms\n",
+  "[WARN] [1791184827.013000959] [crazyflie_server]: [cf4] High latency: 27.9 ms\n",
+  "[WARN] [1791184827.108844088] [crazyflie_server]: [cf5] High latency: 18.0 ms\n",
+  "[WARN] [1791184827.447438803] [crazyflie_server]: [cf1] High latency: 20.9 ms\n",
+  "[WARN] [1791184827.627412257] [crazyflie_server]: [cf2] High latency: 14.9 ms\n",
+  "[WARN] [1791184827.985206214] [crazyflie_server]: [cf3] High latency: 17.0 ms\n",
+  "[WARN] [1791184828.001888765] [crazyflie_server]: [cf4] High latency: 16.9 ms\n",
+  "[INFO] [1791184828.035545059] [crazyflie_server]: [cf1] ESTKALMAN: State out of bounds, resetting\n",
+  "[WARN] [1791184828.111729636] [crazyflie_server]: [cf5] High latency: 21.0 ms\n",
+  "[WARN] [1791184828.446318502] [crazyflie_server]: [cf1] High latency: 21.0 ms\n",
+  "[WARN] [1791184828.626427178] [crazyflie_server]: [cf2] High latency: 14.0 ms\n",
+  "[WARN] [1791184828.983095500] [crazyflie_server]: [cf3] High latency: 14.7 ms\n",
+  "[WARN] [1791184828.998777221] [crazyflie_server]: [cf4] High latency: 13.9 ms\n",
+  "[WARN] [1791184829.100636233] [crazyflie_server]: [cf5] Low unicast receive rate (0.85 < 0.90). Sent: 214. Received: 182\n",
+  "[WARN] [1791184829.115627098] [crazyflie_server]: [cf5] High latency: 25.0 ms\n",
+  "[WARN] [1791184829.459207633] [crazyflie_server]: [cf1] High latency: 34.0 ms\n",
+  "[WARN] [1791184829.628176208] [crazyflie_server]: [cf2] High latency: 15.9 ms\n",
+  "[WARN] [1791184829.999983163] [crazyflie_server]: [cf3] High latency: 32.0 ms\n",
+  "[WARN] [1791184830.009665558] [crazyflie_server]: [cf4] High latency: 24.9 ms\n",
+  "[WARN] [1791184830.107846768] [crazyflie_server]: [cf5] High latency: 17.3 ms\n",
+  "[WARN] [1791184830.475103889] [crazyflie_server]: [cf1] High latency: 50.0 ms\n",
+  "[WARN] [1791184830.632079978] [crazyflie_server]: [cf2] High latency: 19.9 ms\n",
+  "[WARN] [1791184830.981876724] [crazyflie_server]: [cf3] High latency: 14.0 ms\n",
+  "[WARN] [1791184831.001556981] [crazyflie_server]: [cf4] High latency: 16.9 ms\n",
+  "[WARN] [1791184831.104392696] [crazyflie_server]: [cf5] High latency: 14.0 ms\n",
+  "[INFO] [1791184831.440366551] [crazyflie_server]: [cf5] ESTKALMAN: State out of bounds, resetting\n",
+  "[WARN] [1791184831.587974809] [crazyflie_server]: [cf1] High latency: 163.0 ms\n",
+  "[WARN] [1791184831.630021166] [crazyflie_server]: [cf2] High latency: 17.9 ms\n",
+  "[WARN] [1791184831.979787334] [crazyflie_server]: [cf3] High latency: 12.0 ms\n",
+  "[WARN] [1791184831.997452131] [crazyflie_server]: [cf4] High latency: 12.9 ms\n",
+  "[WARN] [1791184832.113284041] [crazyflie_server]: [cf5] High latency: 23.0 ms\n",
+  "[WARN] [1791184832.406421293] [crazyflie_server]: [cf4] Low unicast receive rate (0.88 < 0.90). Sent: 169. Received: 149\n",
+  "[WARN] [1791184832.571027331] [crazyflie_server]: [cf1] High latency: 146.1 ms\n",
+  "[WARN] [1791184832.625871796] [crazyflie_server]: [cf2] High latency: 13.9 ms\n",
+  "[WARN] [1791184832.982660380] [crazyflie_server]: [cf3] High latency: 15.0 ms\n",
+  "[WARN] [1791184833.004343229] [crazyflie_server]: [cf4] High latency: 19.9 ms\n",
+  "[WARN] [1791184833.101369162] [crazyflie_server]: [cf5] High latency: 11.2 ms\n",
+  "[WARN] [1791184833.442775816] [crazyflie_server]: [cf1] High latency: 17.3 ms\n",
+  "[WARN] [1791184833.632811791] [crazyflie_server]: [cf2] High latency: 20.9 ms\n",
+  "[WARN] [1791184834.009236704] [crazyflie_server]: [cf4] High latency: 24.9 ms\n",
+  "[WARN] [1791184834.014552717] [crazyflie_server]: [cf3] High latency: 47.0 ms\n",
+  "[WARN] [1791184834.109093407] [crazyflie_server]: [cf5] High latency: 19.0 ms\n",
+  "[WARN] [1791184834.374242868] [crazyflie_server]: [cf4] Low unicast receive rate (0.78 < 0.90). Sent: 165. Received: 129\n",
+  "[WARN] [1791184834.483665828] [crazyflie_server]: [cf1] High latency: 59.0 ms\n",
+  "[WARN] [1791184834.625652758] [crazyflie_server]: [cf2] High latency: 13.9 ms\n",
+  "[WARN] [1791184834.980451802] [crazyflie_server]: [cf3] High latency: 13.0 ms\n",
+  "[WARN] [1791184835.002132468] [crazyflie_server]: [cf4] High latency: 17.9 ms\n",
+  "[WARN] [1791184835.109930438] [crazyflie_server]: [cf5] High latency: 19.9 ms\n",
+  "[WARN] [1791184835.547556669] [crazyflie_server]: [cf1] High latency: 123.0 ms\n",
+  "[WARN] [1791184835.630548690] [crazyflie_server]: [cf2] High latency: 18.3 ms\n",
+  "[WARN] [1791184835.981348123] [crazyflie_server]: [cf3] High latency: 14.0 ms\n",
+  "[WARN] [1791184835.996580907] [crazyflie_server]: [cf4] High latency: 12.4 ms\n",
+  "[WARN] [1791184836.108864485] [crazyflie_server]: [cf5] High latency: 19.0 ms\n",
+  "[WARN] [1791184836.544454374] [crazyflie_server]: [cf1] High latency: 120.0 ms\n",
+  "[WARN] [1791184836.625448272] [crazyflie_server]: [cf2] High latency: 13.9 ms\n",
+  "[WARN] [1791184836.986500775] [crazyflie_server]: [cf3] High latency: 19.2 ms\n",
+  "[WARN] [1791184837.000921041] [crazyflie_server]: [cf4] High latency: 16.9 ms\n",
+  "[WARN] [1791184837.112763996] [crazyflie_server]: [cf5] High latency: 23.0 ms\n",
+  "[WARN] [1791184837.443363997] [crazyflie_server]: [cf1] High latency: 18.7 ms\n",
+  "[WARN] [1791184837.631345177] [crazyflie_server]: [cf2] High latency: 19.9 ms\n",
+  "[WARN] [1791184837.986144808] [crazyflie_server]: [cf3] High latency: 19.0 ms\n",
+  "[INFO] [1791184837.988309660] [crazyflie_server]: [cf2] ESTKALMAN: State out of bounds, resetting\n",
+  "[WARN] [1791184837.998826581] [crazyflie_server]: [cf4] High latency: 14.9 ms\n",
+  "[WARN] [1791184838.106666231] [crazyflie_server]: [cf5] High latency: 17.0 ms\n",
+  "[INFO] [1791184838.414785717] [crazyflie_server]: [cf4] ESTKALMAN: State out of bounds, resetting\n",
+  "[WARN] [1791184838.456260496] [crazyflie_server]: [cf1] High latency: 32.0 ms\n",
+  "[WARN] [1791184838.632247303] [crazyflie_server]: [cf2] High latency: 20.9 ms\n",
+  "[WARN] [1791184838.980046346] [crazyflie_server]: [cf3] High latency: 13.0 ms\n",
+  "[WARN] [1791184839.009726433] [crazyflie_server]: [cf4] High latency: 25.9 ms\n",
+  "[WARN] [1791184839.105561889] [crazyflie_server]: [cf5] High latency: 16.0 ms\n",
+  "[WARN] [1791184839.456162375] [crazyflie_server]: [cf1] High latency: 32.0 ms\n",
+  "[WARN] [1791184839.627147620] [crazyflie_server]: [cf2] High latency: 15.9 ms\n",
+  "[WARN] [1791184839.982929386] [crazyflie_server]: [cf3] High latency: 16.0 ms\n",
+  "[WARN] [1791184839.997893104] [crazyflie_server]: [cf4] High latency: 14.2 ms\n",
+  "[WARN] [1791184840.104463415] [crazyflie_server]: [cf5] High latency: 15.0 ms\n",
+  "[WARN] [1791184840.454064006] [crazyflie_server]: [cf1] High latency: 30.0 ms\n",
+  "[WARN] [1791184840.625049270] [crazyflie_server]: [cf2] High latency: 13.9 ms\n",
+  "[WARN] [1791184840.982847992] [crazyflie_server]: [cf3] High latency: 15.7 ms\n",
+  "[WARN] [1791184840.996530531] [crazyflie_server]: [cf4] High latency: 12.9 ms\n",
+  "[WARN] [1791184841.101371411] [crazyflie_server]: [cf5] High latency: 12.0 ms\n",
+  "[WARN] [1791184841.465919880] [crazyflie_server]: [cf1] High latency: 41.9 ms\n",
+  "[WARN] [1791184841.626946326] [crazyflie_server]: [cf2] High latency: 15.9 ms\n",
+  "[WARN] [1791184841.984752591] [crazyflie_server]: [cf3] High latency: 18.0 ms\n",
+  "[WARN] [1791184841.998442412] [crazyflie_server]: [cf4] High latency: 14.9 ms\n",
+  "[WARN] [1791184842.101274621] [crazyflie_server]: [cf5] High latency: 12.0 ms\n",
+  "[WARN] [1791184842.490870528] [crazyflie_server]: [cf1] High latency: 67.0 ms\n",
+  "[WARN] [1791184842.628855295] [crazyflie_server]: [cf2] High latency: 17.9 ms\n",
+  "[WARN] [1791184842.985669170] [crazyflie_server]: [cf3] High latency: 19.0 ms\n",
+  "[WARN] [1791184843.001337596] [crazyflie_server]: [cf4] High latency: 17.9 ms\n",
+  "[WARN] [1791184843.120319829] [crazyflie_server]: [cf5] High latency: 31.1 ms\n",
+  "[WARN] [1791184843.390327813] [crazyflie_server]: [cf4] Low unicast receive rate (0.88 < 0.90). Sent: 156. Received: 137\n",
+  "[WARN] [1791184843.507769918] [crazyflie_server]: [cf1] High latency: 84.0 ms\n",
+  "[WARN] [1791184843.630759037] [crazyflie_server]: [cf2] High latency: 19.9 ms\n",
+  "[WARN] [1791184843.977567510] [crazyflie_server]: [cf3] High latency: 11.0 ms\n",
+  "[WARN] [1791184843.998393609] [crazyflie_server]: [cf4] High latency: 15.0 ms\n",
+  "[WARN] [1791184844.108080266] [crazyflie_server]: [cf5] High latency: 19.0 ms\n",
+  "[WARN] [1791184844.437684227] [crazyflie_server]: [cf1] High latency: 14.0 ms\n",
+  "[WARN] [1791184844.627666064] [crazyflie_server]: [cf2] High latency: 16.9 ms\n",
+  "[WARN] [1791184844.978468061] [crazyflie_server]: [cf3] High latency: 12.0 ms\n",
+  "[WARN] [1791184845.102987938] [crazyflie_server]: [cf5] High latency: 14.0 ms\n",
+  "[WARN] [1791184845.444598130] [crazyflie_server]: [cf1] High latency: 21.0 ms\n",
+  "[WARN] [1791184845.978376704] [crazyflie_server]: [cf3] High latency: 11.9 ms\n",
+  "[WARN] [1791184845.995059008] [crazyflie_server]: [cf4] High latency: 11.9 ms\n",
+  "[WARN] [1791184846.101894869] [crazyflie_server]: [cf5] High latency: 13.0 ms\n",
+  "[WARN] [1791184846.441505935] [crazyflie_server]: [cf1] High latency: 18.0 ms\n",
+  "[WARN] [1791184846.621542907] [crazyflie_server]: [cf2] High latency: 10.9 ms\n",
+  "[WARN] [1791184846.989284688] [crazyflie_server]: [cf3] High latency: 23.0 ms\n",
+  "[WARN] [1791184846.994919907] [crazyflie_server]: [cf4] High latency: 11.8 ms\n",
+  "[WARN] [1791184847.106811339] [crazyflie_server]: [cf5] High latency: 18.0 ms\n",
+  "[WARN] [1791184847.436406714] [crazyflie_server]: [cf1] High latency: 13.0 ms\n",
+  "[WARN] [1791184847.625399148] [crazyflie_server]: [cf2] High latency: 14.9 ms\n",
+  "[WARN] [1791184847.978219132] [crazyflie_server]: [cf3] High latency: 12.0 ms\n",
+  "[WARN] [1791184848.000936622] [crazyflie_server]: [cf4] High latency: 17.9 ms\n",
+  "[WARN] [1791184848.101718126] [crazyflie_server]: [cf5] High latency: 13.0 ms\n",
+  "[WARN] [1791184848.442317049] [crazyflie_server]: [cf1] High latency: 19.0 ms\n",
+  "[WARN] [1791184848.621301576] [crazyflie_server]: [cf2] High latency: 10.9 ms\n",
+  "[WARN] [1791184848.977107807] [crazyflie_server]: [cf3] High latency: 11.0 ms\n",
+  "[WARN] [1791184848.997789079] [crazyflie_server]: [cf4] High latency: 14.9 ms\n",
+  "[WARN] [1791184849.099624735] [crazyflie_server]: [cf5] High latency: 11.0 ms\n",
+  "[WARN] [1791184849.445228220] [crazyflie_server]: [cf1] High latency: 22.0 ms\n",
+  "[WARN] [1791184849.623212400] [crazyflie_server]: [cf2] High latency: 12.9 ms\n",
+  "[WARN] [1791184849.984022020] [crazyflie_server]: [cf3] High latency: 18.0 ms\n",
+  "[WARN] [1791184849.993701053] [crazyflie_server]: [cf4] High latency: 10.9 ms\n",
+  "[WARN] [1791184850.439142483] [crazyflie_server]: [cf1] High latency: 16.0 ms\n",
+  "[WARN] [1791184850.638132176] [crazyflie_server]: [cf2] High latency: 27.9 ms\n",
+  "[WARN] [1791184850.980922905] [crazyflie_server]: [cf3] High latency: 15.0 ms\n",
+  "[WARN] [1791184850.995620101] [crazyflie_server]: [cf4] High latency: 12.9 ms\n",
+  "[INFO] [1791184851.011922586] [crazyflie_server]: [cf3] ESTKALMAN: State out of bounds, resetting\n",
+  "[WARN] [1791184851.100453772] [crazyflie_server]: [cf5] High latency: 12.0 ms\n",
+  "[WARN] [1791184851.363614913] [crazyflie_server]: [cf4] Low unicast receive rate (0.89 < 0.90). Sent: 195. Received: 174\n",
+  "[WARN] [1791184851.436055897] [crazyflie_server]: [cf1] High latency: 13.0 ms\n",
+  "[WARN] [1791184851.636043734] [crazyflie_server]: [cf2] High latency: 25.9 ms\n",
+  "[WARN] [1791184851.980854990] [crazyflie_server]: [cf3] High latency: 15.0 ms\n",
+  "[WARN] [1791184852.006535080] [crazyflie_server]: [cf4] High latency: 23.9 ms\n",
+  "[WARN] [1791184852.103362187] [crazyflie_server]: [cf5] High latency: 15.0 ms\n",
+  "[WARN] [1791184852.444920076] [crazyflie_server]: [cf1] High latency: 21.9 ms\n",
+  "[WARN] [1791184852.626943482] [crazyflie_server]: [cf2] High latency: 16.9 ms\n",
+  "[WARN] [1791184852.982769490] [crazyflie_server]: [cf3] High latency: 16.9 ms\n",
+  "[WARN] [1791184852.998442065] [crazyflie_server]: [cf4] High latency: 15.9 ms\n",
+  "[WARN] [1791184853.249281758] [crazyflie_server]: [cf5] High latency: 161.0 ms\n",
+  "[WARN] [1791184853.464914861] [crazyflie_server]: [cf1] High latency: 42.0 ms\n",
+  "[WARN] [1791184853.631867389] [crazyflie_server]: [cf2] High latency: 21.9 ms\n",
+  "[WARN] [1791184853.950260427] [crazyflie_server]: [cf5] Low unicast receive rate (0.85 < 0.90). Sent: 178. Received: 151\n",
+  "[WARN] [1791184853.978677828] [crazyflie_server]: [cf3] High latency: 13.0 ms\n",
+  "[WARN] [1791184853.994356821] [crazyflie_server]: [cf4] High latency: 11.8 ms\n",
+  "[WARN] [1791184854.100194162] [crazyflie_server]: [cf5] High latency: 12.0 ms\n",
+  "[WARN] [1791184854.470797239] [crazyflie_server]: [cf1] High latency: 48.0 ms\n",
+  "[WARN] [1791184854.624787994] [crazyflie_server]: [cf2] High latency: 14.9 ms\n",
+  "[WARN] [1791184854.980593156] [crazyflie_server]: [cf3] High latency: 15.0 ms\n",
+  "[WARN] [1791184854.993278666] [crazyflie_server]: [cf4] High latency: 10.9 ms\n",
+  "[WARN] [1791184855.100112221] [crazyflie_server]: [cf5] High latency: 12.0 ms\n",
+  "[INFO] [1791184855.423238669] [crazyflie_server]: [cf4] ESTKALMAN: State out of bounds, resetting\n",
+  "[WARN] [1791184855.437716887] [crazyflie_server]: [cf1] High latency: 15.0 ms\n",
+  "[WARN] [1791184855.626701799] [crazyflie_server]: [cf2] High latency: 16.9 ms\n",
+  "[WARN] [1791184855.987508671] [crazyflie_server]: [cf3] High latency: 21.9 ms\n",
+  "[WARN] [1791184856.005202344] [crazyflie_server]: [cf4] High latency: 22.9 ms\n",
+  "[WARN] [1791184856.103030810] [crazyflie_server]: [cf5] High latency: 15.0 ms\n",
+  "[WARN] [1791184856.437635960] [crazyflie_server]: [cf1] High latency: 15.0 ms\n",
+  "[WARN] [1791184856.985426756] [crazyflie_server]: [cf3] High latency: 20.0 ms\n",
+  "[WARN] [1791184856.995118904] [crazyflie_server]: [cf4] High latency: 12.9 ms\n",
+  "[WARN] [1791184857.098928883] [crazyflie_server]: [cf5] High latency: 11.0 ms\n",
+  "[WARN] [1791184857.443555925] [crazyflie_server]: [cf1] High latency: 21.0 ms\n",
+  "[WARN] [1791184857.625548380] [crazyflie_server]: [cf2] High latency: 15.9 ms\n",
+  "[WARN] [1791184857.978351145] [crazyflie_server]: [cf3] High latency: 13.0 ms\n",
+  "[WARN] [1791184857.995029394] [crazyflie_server]: [cf4] High latency: 12.9 ms\n",
+  "[WARN] [1791184858.098875321] [crazyflie_server]: [cf5] High latency: 11.0 ms\n",
+  "[WARN] [1791184858.443474093] [crazyflie_server]: [cf1] High latency: 21.0 ms\n",
+  "[WARN] [1791184858.627465356] [crazyflie_server]: [cf2] High latency: 17.9 ms\n",
+  "[WARN] [1791184858.979277301] [crazyflie_server]: [cf3] High latency: 14.0 ms\n",
+  "[WARN] [1791184858.996928423] [crazyflie_server]: [cf4] High latency: 14.9 ms\n",
+  "[WARN] [1791184859.100273291] [crazyflie_server]: [cf5] High latency: 12.5 ms\n",
+  "[WARN] [1791184859.443402724] [crazyflie_server]: [cf1] High latency: 21.0 ms\n",
+  "[WARN] [1791184859.677844075] [crazyflie_server]: [cf2] High latency: 68.3 ms\n",
+  "[WARN] [1791184860.009193286] [crazyflie_server]: [cf3] High latency: 44.0 ms\n",
+  "[WARN] [1791184860.024870068] [crazyflie_server]: [cf4] High latency: 42.9 ms\n",
+  "[WARN] [1791184860.151730490] [crazyflie_server]: [cf5] Low unicast receive rate (0.73 < 0.90). Sent: 180. Received: 132\n",
+  "[WARN] [1791184860.168713798] [crazyflie_server]: [cf5] High latency: 81.0 ms\n",
+  "[WARN] [1791184860.481874871] [crazyflie_server]: [cf4] Low unicast receive rate (0.72 < 0.90). Sent: 134. Received: 97\n",
+  "[WARN] [1791184860.504181510] [crazyflie_server]: [cf3] Low unicast receive rate (0.68 < 0.90). Sent: 152. Received: 104\n",
+  "[WARN] [1791184860.591305417] [crazyflie_server]: [cf1] High latency: 169.0 ms\n",
+  "[WARN] [1791184860.624303561] [crazyflie_server]: [cf2] High latency: 14.9 ms\n",
+  "[WARN] [1791184860.944657974] [crazyflie_server]: [cf5] Low unicast receive rate (0.82 < 0.90). Sent: 125. Received: 102\n",
+  "[WARN] [1791184860.979113450] [crazyflie_server]: [cf3] High latency: 14.0 ms\n",
+  "[WARN] [1791184860.994795769] [crazyflie_server]: [cf4] High latency: 12.9 ms\n",
+  "[WARN] [1791184861.436347442] [crazyflie_server]: [cf1] High latency: 14.1 ms\n",
+  "[WARN] [1791184861.624234225] [crazyflie_server]: [cf2] High latency: 14.9 ms\n",
+  "[WARN] [1791184861.977035765] [crazyflie_server]: [cf3] High latency: 12.0 ms\n",
+  "[WARN] [1791184861.993719008] [crazyflie_server]: [cf4] High latency: 11.9 ms\n",
+  "[WARN] [1791184862.102555710] [crazyflie_server]: [cf5] High latency: 15.0 ms\n",
+  "[WARN] [1791184862.443164468] [crazyflie_server]: [cf1] High latency: 21.0 ms\n",
+  "[WARN] [1791184862.992642424] [crazyflie_server]: [cf4] High latency: 10.9 ms\n",
+  "[WARN] [1791184863.098485388] [crazyflie_server]: [cf5] High latency: 11.0 ms\n",
+  "[WARN] [1791184863.435097857] [crazyflie_server]: [cf1] High latency: 13.0 ms\n",
+  "[WARN] [1791184863.620077695] [crazyflie_server]: [cf2] High latency: 10.9 ms\n",
+  "[WARN] [1791184863.979885744] [crazyflie_server]: [cf3] High latency: 15.0 ms\n",
+  "[WARN] [1791184863.992568684] [crazyflie_server]: [cf4] High latency: 10.9 ms\n",
+  "[WARN] [1791184863.996562019] [crazyflie_server]: [cf5] Low unicast receive rate (0.83 < 0.90). Sent: 222. Received: 184\n",
+  "[WARN] [1791184864.100414958] [crazyflie_server]: [cf5] High latency: 13.0 ms\n",
+  "[WARN] [1791184864.433019621] [crazyflie_server]: [cf1] High latency: 11.0 ms\n",
+  "[WARN] [1791184864.622003346] [crazyflie_server]: [cf2] High latency: 12.9 ms\n",
+  "[WARN] [1791184864.975821343] [crazyflie_server]: [cf3] High latency: 11.0 ms\n",
+  "[WARN] [1791184865.008585886] [crazyflie_server]: [cf4] High latency: 27.0 ms\n",
+  "[WARN] [1791184865.123335292] [crazyflie_server]: [cf5] High latency: 36.0 ms\n",
+  "[WARN] [1791184865.442447748] [crazyflie_server]: [cf1] High latency: 20.5 ms\n",
+  "[WARN] [1791184865.625921849] [crazyflie_server]: [cf2] High latency: 16.9 ms\n",
+  "[INFO] [1791184865.769290088] [crazyflie_server]: [cf5] ESTKALMAN: State out of bounds, resetting\n",
+  "[WARN] [1791184865.977738292] [crazyflie_server]: [cf3] High latency: 13.0 ms\n",
+  "[WARN] [1791184866.101259009] [crazyflie_server]: [cf5] High latency: 14.0 ms\n",
+  "[WARN] [1791184866.440878362] [crazyflie_server]: [cf1] High latency: 19.0 ms\n",
+  "[WARN] [1791184866.620857021] [crazyflie_server]: [cf2] High latency: 11.9 ms\n",
+  "[WARN] [1791184866.977667638] [crazyflie_server]: [cf3] High latency: 13.0 ms\n",
+  "[WARN] [1791184866.996353320] [crazyflie_server]: [cf4] High latency: 14.9 ms\n",
+  "[WARN] [1791184867.120185967] [crazyflie_server]: [cf5] High latency: 33.0 ms\n",
+  "[WARN] [1791184867.436802705] [crazyflie_server]: [cf1] High latency: 15.0 ms\n",
+  "[WARN] [1791184867.629783911] [crazyflie_server]: [cf2] High latency: 20.9 ms\n",
+  "[INFO] [1791184867.952767492] [crazyflie_server]: [cf2] ESTKALMAN: State out of bounds, resetting\n",
+  "[WARN] [1791184867.987594449] [crazyflie_server]: [cf3] High latency: 23.0 ms\n",
+  "[WARN] [1791184867.995278633] [crazyflie_server]: [cf4] High latency: 13.9 ms\n",
+  "[WARN] [1791184868.100117045] [crazyflie_server]: [cf5] High latency: 13.0 ms\n",
+  "[INFO] [1791184868.357734496] [crazyflie_server]: [cf1] ESTKALMAN: State out of bounds, resetting\n",
+  "[WARN] [1791184868.528721047] [crazyflie_server]: [cf1] High latency: 107.0 ms\n",
+  "[WARN] [1791184868.627713280] [crazyflie_server]: [cf2] High latency: 18.9 ms\n",
+  "[WARN] [1791184868.996209168] [crazyflie_server]: [cf4] High latency: 14.9 ms\n",
+  "[WARN] [1791184869.104052664] [crazyflie_server]: [cf5] High latency: 17.0 ms\n",
+  "[WARN] [1791184869.621646158] [crazyflie_server]: [cf2] High latency: 12.9 ms\n",
+  "[WARN] [1791184869.976456831] [crazyflie_server]: [cf3] High latency: 11.9 ms\n",
+  "[WARN] [1791184870.098982127] [crazyflie_server]: [cf5] High latency: 12.0 ms\n",
+  "[WARN] [1791184870.436595105] [crazyflie_server]: [cf1] High latency: 15.0 ms\n",
+  "[WARN] [1791184870.626594508] [crazyflie_server]: [cf2] High latency: 17.9 ms\n",
+  "[WARN] [1791184870.980388349] [crazyflie_server]: [cf3] High latency: 16.0 ms\n",
+  "[WARN] [1791184870.994074203] [crazyflie_server]: [cf4] High latency: 12.9 ms\n",
+  "[WARN] [1791184871.102910615] [crazyflie_server]: [cf5] High latency: 16.0 ms\n",
+  "[WARN] [1791184871.454519602] [crazyflie_server]: [cf1] High latency: 33.0 ms\n",
+  "[WARN] [1791184871.622507917] [crazyflie_server]: [cf2] High latency: 13.9 ms\n",
+  "[WARN] [1791184871.941882187] [crazyflie_server]: [cf5] Low unicast receive rate (0.90 < 0.90). Sent: 182. Received: 163\n",
+  "[WARN] [1791184871.981320425] [crazyflie_server]: [cf3] High latency: 17.0 ms\n",
+  "[WARN] [1791184871.992001972] [crazyflie_server]: [cf4] High latency: 10.9 ms\n",
+  "[WARN] [1791184872.097842233] [crazyflie_server]: [cf5] High latency: 11.0 ms\n",
+  "[WARN] [1791184872.433452344] [crazyflie_server]: [cf1] High latency: 12.0 ms\n",
+  "[WARN] [1791184872.619441027] [crazyflie_server]: [cf2] High latency: 10.9 ms\n",
+  "[INFO] [1791184872.653920473] [crazyflie_server]: [cf4] ESTKALMAN: State out of bounds, resetting\n",
+  "[WARN] [1791184872.995930717] [crazyflie_server]: [cf4] High latency: 14.9 ms\n",
+  "[WARN] [1791184873.100773236] [crazyflie_server]: [cf5] High latency: 14.0 ms\n",
+  "[WARN] [1791184873.455392794] [crazyflie_server]: [cf1] High latency: 33.9 ms\n",
+  "[WARN] [1791184873.978200414] [crazyflie_server]: [cf3] High latency: 14.0 ms\n",
+  "[WARN] [1791184873.994878988] [crazyflie_server]: [cf4] High latency: 13.9 ms\n",
+  "[WARN] [1791184874.106707668] [crazyflie_server]: [cf5] High latency: 20.0 ms\n",
+  "[WARN] [1791184874.633309595] [crazyflie_server]: [cf2] High latency: 24.9 ms\n",
+  "[WARN] [1791184874.783299787] [crazyflie_server]: [cf1] High latency: 362.0 ms\n",
+  "[WARN] [1791184874.980122843] [crazyflie_server]: [cf3] High latency: 16.0 ms\n",
+  "[WARN] [1791184874.999804971] [crazyflie_server]: [cf4] High latency: 18.9 ms\n",
+  "[WARN] [1791184875.106645110] [crazyflie_server]: [cf5] High latency: 20.0 ms\n",
+  "[WARN] [1791184875.621246522] [crazyflie_server]: [cf2] High latency: 12.9 ms\n",
+  "[WARN] [1791184875.982057935] [crazyflie_server]: [cf3] High latency: 18.0 ms\n",
+  "[WARN] [1791184875.996740752] [crazyflie_server]: [cf4] High latency: 15.9 ms\n",
+  "[WARN] [1791184876.104580610] [crazyflie_server]: [cf5] High latency: 18.0 ms\n",
+  "[WARN] [1791184876.433196546] [crazyflie_server]: [cf1] High latency: 12.0 ms\n",
+  "[WARN] [1791184876.988250072] [crazyflie_server]: [cf3] High latency: 24.2 ms\n",
+  "[WARN] [1791184876.996676974] [crazyflie_server]: [cf4] High latency: 15.9 ms\n",
+  "[WARN] [1791184877.103528164] [crazyflie_server]: [cf5] High latency: 17.0 ms\n",
+  "[WARN] [1791184877.441129190] [crazyflie_server]: [cf1] High latency: 20.0 ms\n",
+  "[WARN] [1791184877.623117990] [crazyflie_server]: [cf2] High latency: 14.9 ms\n",
+  "[WARN] [1791184877.984930553] [crazyflie_server]: [cf3] High latency: 20.9 ms\n",
+  "[WARN] [1791184878.012613458] [crazyflie_server]: [cf4] High latency: 31.9 ms\n",
+  "[WARN] [1791184878.106453283] [crazyflie_server]: [cf5] High latency: 20.0 ms\n",
+  "[WARN] [1791184878.469065012] [crazyflie_server]: [cf1] High latency: 48.0 ms\n",
+  "[WARN] [1791184878.633055158] [crazyflie_server]: [cf2] High latency: 24.9 ms\n",
+  "[WARN] [1791184879.437004779] [crazyflie_server]: [cf1] High latency: 16.0 ms\n",
+  "[WARN] [1791184880.013818483] [crazyflie_server]: [cf3] High latency: 49.4 ms\n",
+  "[WARN] [1791184880.017492220] [crazyflie_server]: [cf4] High latency: 36.9 ms\n",
+  "[WARN] [1791184880.100330894] [crazyflie_server]: [cf5] High latency: 14.0 ms\n",
+  "[WARN] [1791184880.433015372] [crazyflie_server]: [cf1] High latency: 12.1 ms\n",
+  "[WARN] [1791184880.621920920] [crazyflie_server]: [cf2] High latency: 13.9 ms\n",
+  "[WARN] [1791184880.940328414] [crazyflie_server]: [cf5] Low unicast receive rate (0.70 < 0.90). Sent: 164. Received: 115\n",
+  "[WARN] [1791184880.983748351] [crazyflie_server]: [cf3] High latency: 20.0 ms\n",
+  "[WARN] [1791184880.995440139] [crazyflie_server]: [cf4] High latency: 14.9 ms\n",
+  "[WARN] [1791184881.100279100] [crazyflie_server]: [cf5] High latency: 13.2 ms\n",
+  "[WARN] [1791184881.434894373] [crazyflie_server]: [cf1] High latency: 14.0 ms\n",
+  "[WARN] [1791184881.621884107] [crazyflie_server]: [cf2] High latency: 13.9 ms\n",
+  "[WARN] [1791184881.973700293] [crazyflie_server]: [cf3] High latency: 10.0 ms\n",
+  "[WARN] [1791184881.997373793] [crazyflie_server]: [cf4] High latency: 16.9 ms\n",
+  "[WARN] [1791184882.099213137] [crazyflie_server]: [cf5] High latency: 13.0 ms\n",
+  "[WARN] [1791184882.620816751] [crazyflie_server]: [cf2] High latency: 12.9 ms\n",
+  "[WARN] [1791184882.974687302] [crazyflie_server]: [cf3] High latency: 11.1 ms\n",
+  "[WARN] [1791184883.098153546] [crazyflie_server]: [cf5] High latency: 12.0 ms\n",
+  "[WARN] [1791184883.434767740] [crazyflie_server]: [cf1] High latency: 13.1 ms\n",
+  "[WARN] [1791184883.622758951] [crazyflie_server]: [cf2] High latency: 14.9 ms\n",
+  "[WARN] [1791184883.974573810] [crazyflie_server]: [cf3] High latency: 11.0 ms\n",
+  "[WARN] [1791184883.996691247] [crazyflie_server]: [cf4] High latency: 16.3 ms\n",
+  "[WARN] [1791184884.102095758] [crazyflie_server]: [cf5] High latency: 16.0 ms\n",
+  "[WARN] [1791184884.433710629] [crazyflie_server]: [cf1] High latency: 13.0 ms\n",
+  "[WARN] [1791184884.620700553] [crazyflie_server]: [cf2] High latency: 12.9 ms\n",
+  "[WARN] [1791184884.983516902] [crazyflie_server]: [cf3] High latency: 19.8 ms\n",
+  "[WARN] [1791184885.022198175] [crazyflie_server]: [cf4] High latency: 41.9 ms\n",
+  "[WARN] [1791184885.277051728] [crazyflie_server]: [cf5] Low unicast receive rate (0.59 < 0.90). Sent: 238. Received: 141\n",
+  "[WARN] [1791184885.303027088] [crazyflie_server]: [cf5] High latency: 217.0 ms\n",
+  "[WARN] [1791184885.439655071] [crazyflie_server]: [cf1] High latency: 19.0 ms\n",
+  "[WARN] [1791184885.625644822] [crazyflie_server]: [cf2] High latency: 17.9 ms\n",
+  "[INFO] [1791184885.646476978] [crazyflie_server]: [cf3] ESTKALMAN: State out of bounds, resetting\n",
+  "[WARN] [1791184885.990460820] [crazyflie_server]: [cf3] High latency: 27.0 ms\n",
+  "[WARN] [1791184886.010141683] [crazyflie_server]: [cf4] High latency: 29.8 ms\n",
+  "[WARN] [1791184886.437607872] [crazyflie_server]: [cf1] High latency: 17.0 ms\n",
+  "[WARN] [1791184886.629588409] [crazyflie_server]: [cf2] High latency: 21.9 ms\n",
+  "[WARN] [1791184886.879922766] [crazyflie_server]: [cf5] High latency: 793.9 ms\n",
+  "[WARN] [1791184886.976405179] [crazyflie_server]: [cf3] High latency: 13.0 ms\n",
+  "[WARN] [1791184886.992087031] [crazyflie_server]: [cf4] High latency: 11.9 ms\n",
+  "[WARN] [1791184887.097920924] [crazyflie_server]: [cf5] High latency: 12.0 ms\n",
+  "[WARN] [1791184887.444550429] [crazyflie_server]: [cf1] High latency: 24.0 ms\n",
+  "[WARN] [1791184887.637532357] [crazyflie_server]: [cf2] High latency: 29.9 ms\n",
+  "[WARN] [1791184887.976368839] [crazyflie_server]: [cf3] High latency: 11.3 ms\n",
+  "[WARN] [1791184887.998085013] [crazyflie_server]: [cf4] High latency: 17.9 ms\n",
+  "[WARN] [1791184888.103880913] [crazyflie_server]: [cf5] High latency: 18.0 ms\n",
+  "[WARN] [1791184888.441488929] [crazyflie_server]: [cf1] High latency: 21.0 ms\n",
+  "[WARN] [1791184888.975301121] [crazyflie_server]: [cf3] High latency: 12.0 ms\n",
+  "[WARN] [1791184888.991984672] [crazyflie_server]: [cf4] High latency: 11.9 ms\n",
+  "[WARN] [1791184889.097819649] [crazyflie_server]: [cf5] High latency: 11.6 ms\n",
+  "[WARN] [1791184889.433435326] [crazyflie_server]: [cf1] High latency: 13.0 ms\n",
+  "[WARN] [1791184889.622429944] [crazyflie_server]: [cf2] High latency: 14.9 ms\n",
+  "[INFO] [1791184889.665931025] [crazyflie_server]: [cf4] ESTKALMAN: State out of bounds, resetting\n",
+  "[WARN] [1791184889.993243162] [crazyflie_server]: [cf3] High latency: 30.0 ms\n",
+  "[WARN] [1791184890.004920079] [crazyflie_server]: [cf4] High latency: 24.9 ms\n",
+  "[WARN] [1791184890.105765407] [crazyflie_server]: [cf5] High latency: 20.0 ms\n",
+  "[WARN] [1791184890.447380309] [crazyflie_server]: [cf1] High latency: 27.0 ms\n",
+  "[WARN] [1791184890.623372419] [crazyflie_server]: [cf2] High latency: 15.9 ms\n",
+  "[WARN] [1791184890.980192520] [crazyflie_server]: [cf3] High latency: 17.0 ms\n",
+  "[WARN] [1791184890.992872466] [crazyflie_server]: [cf4] High latency: 12.9 ms\n",
+  "[WARN] [1791184891.097721109] [crazyflie_server]: [cf5] High latency: 12.0 ms\n"
+ ]
+}

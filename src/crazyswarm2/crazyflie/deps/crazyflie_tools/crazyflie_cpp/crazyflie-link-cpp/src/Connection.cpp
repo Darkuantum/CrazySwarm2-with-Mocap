@@ -313,6 +313,11 @@ const Connection::Statistics Connection::statistics() const
   return impl_->statistics_;
 }
 
+void Connection::setTrace(bool enable)
+{
+  impl_->trace_.store(enable, std::memory_order_relaxed);
+}
+
 const Connection::Statistics Connection::statisticsDelta()
 {
   if (!impl_->runtime_error_.empty()) {

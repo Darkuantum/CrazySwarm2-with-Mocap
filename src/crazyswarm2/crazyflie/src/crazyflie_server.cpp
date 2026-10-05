@@ -230,6 +230,56 @@ public:
       publisher_connection_stats_ = node->create_publisher<crazyflie_interfaces::msg::ConnectionStatisticsArray>(name + "/connection_statistics", 10);
     }
 
+    // Packet tracing for ONE drone, OFF unless asked for:
+    //   ros2 launch crazyflie launch.py --ros-args -p debug.trace_cf:=cf1
+    // Prints, to stderr, every non-null ack at the link layer and the dispatch
+    // decision for every packet in Crazyflie::processPacket -- which is how we
+    // tell apart the three remaining explanations of the "link alive, log data
+    // dead" stall (CLAUDE.md): log packets never arriving, arriving but failing
+    // crtpLogDataResponse::valid(), or arriving on the wrong connection.
+    //
+    // Read at CONNECT only, deliberately: this rig's same-process
+    // /parameter_events never loop back (see the DDS gotcha in CLAUDE.md), so a
+    // runtime toggle would silently do nothing. The default is spelled out to
+    // avoid the declare_parameter(name, {}) overload trap, also in CLAUDE.md.
+    if (!node->has_parameter("telemetry_watchdog_s")) {
+      node->declare_parameter<double>("telemetry_watchdog_s", 0.0);
+    }
+    telemetry_watchdog_s_ = node->get_parameter("telemetry_watchdog_s").as_double();
+    if (telemetry_watchdog_s_ > 0.0) {
+      RCLCPP_INFO(logger_, "[%s] telemetry watchdog armed at %.1f s", name_.c_str(),
+                  telemetry_watchdog_s_);
+    }
+
+    if (!node->has_parameter("debug.trace_cf")) {
+      node->declare_parameter<std::string>("debug.trace_cf", std::string(""));
+    }
+    // Accepts "all", or a comma-separated list: debug.trace_cf:=cf1,cf3,cf5.
+    // WHICH drone stalls is random per session, so tracing a single guess is a
+    // bet; tracing every drone costs one summary line per second each, which is
+    // why the trace is summary-based rather than per-packet.
+    {
+      const std::string want = node->get_parameter("debug.trace_cf").as_string();
+      bool on = (want == "all" || want == "*");
+      if (!on && !want.empty()) {
+        size_t pos = 0;
+        while (!on && pos <= want.size()) {
+          size_t comma = want.find(',', pos);
+          if (comma == std::string::npos) comma = want.size();
+          std::string one = want.substr(pos, comma - pos);
+          // trim spaces so "cf1, cf3" works as well as "cf1,cf3"
+          while (!one.empty() && isspace((unsigned char)one.front())) one.erase(one.begin());
+          while (!one.empty() && isspace((unsigned char)one.back())) one.pop_back();
+          if (one == name_) on = true;
+          pos = comma + 1;
+        }
+      }
+      if (on) {
+        RCLCPP_WARN(logger_, "[%s] PACKET TRACE ENABLED (1 Hz summaries on stderr)", name_.c_str());
+        cf_.setTrace(true);
+      }
+    }
+
     if (warning_freq_ >= 0.0) {
       cf_.setLatencyCallback(std::bind(&CrazyflieROS::on_latency, this, std::placeholders::_1));
       link_statistics_timer_ =
@@ -616,6 +666,18 @@ public:
   std::string broadcastUri() const
   {
     return cf_.broadcastUri();
+  }
+
+  //: Feed the telemetry watchdog's airborne guard from the server's /poses
+  //: handler - the only place that sees altitude for every drone however it was
+  //: commanded, broadcast /all/takeoff included.
+  void note_mocap_z(float z)
+  {
+    last_mocap_z_ = z;
+    last_mocap_z_valid_ = true;
+    if (z <= 0.10f) {
+      commanded_flight_ = false;        // provably on the floor again
+    }
   }
 
   uint8_t id() const
@@ -1064,8 +1126,73 @@ private:
     (*pub)->publish(msg);
   }
 
+  //: Telemetry watchdog. MEASURED 2026-10-05 with packet tracing: a drone can stop
+  //: sending log data on its connection while the link stays perfectly alive -- the
+  //: link trace reads log=0 with ~200 nulls/s, i.e. the drone answers every poll
+  //: with "nothing to send". Commands, flight and a FRESH connection to the same
+  //: drone all keep working, and only recreating the log blocks (which a server
+  //: restart does) brings telemetry back. See CLAUDE.md, "link alive, log data dead".
+  //: Deliberately fail-safe: anything other than "mocap positively says this drone
+  //: is on the floor" counts as maybe-airborne. Telemetry is dead exactly when we
+  //: would want to ask the drone, so /cfX/status cannot be trusted here, and the
+  //: shows take off with BROADCAST /all/takeoff, which no per-drone command handler
+  //: ever observes - mocap altitude is the only signal that sees both cases.
+  bool may_be_airborne() const
+  {
+    if (!last_mocap_z_valid_) return true;
+    if (last_mocap_z_ > 0.10f) return true;
+    if (commanded_flight_) return true;
+    return false;
+  }
+
+  void restart_log_blocks()
+  {
+    if (log_block_pose_   && period_pose_)   { log_block_pose_->stop();   log_block_pose_->start(period_pose_); }
+    if (log_block_scan_   && period_scan_)   { log_block_scan_->stop();   log_block_scan_->start(period_scan_); }
+    if (log_block_odom_   && period_odom_)   { log_block_odom_->stop();   log_block_odom_->start(period_odom_); }
+    if (log_block_status_ && period_status_) { log_block_status_->stop(); log_block_status_->start(period_status_); }
+    size_t i = 0;
+    for (auto& b : log_blocks_generic_) {
+      if (b && i < periods_generic_.size() && periods_generic_[i]) { b->stop(); b->start(periods_generic_[i]); }
+      ++i;
+    }
+  }
+
+  void check_telemetry_watchdog()
+  {
+    if (telemetry_watchdog_s_ <= 0.0 || recovering_) return;
+    const auto now = std::chrono::steady_clock::now();
+    const double quiet = std::chrono::duration<double>(now - last_log_rx_).count();
+    if (quiet < telemetry_watchdog_s_) return;
+    const double since_latency = std::chrono::duration<double>(now - last_latency_rx_).count();
+    if (since_latency > 2.0) return;    // an ordinary dead link: not ours to fix
+    if (may_be_airborne()) {
+      RCLCPP_ERROR(logger_, "[%s] NO TELEMETRY for %.1f s though the link is alive, and "
+                   "this drone may be AIRBORNE (mocap z %s%.2f m) - NOT touching its "
+                   "connection. Land it; recovery runs once it is down.", name_.c_str(),
+                   quiet, last_mocap_z_valid_ ? "" : "unknown, last ", last_mocap_z_);
+      last_log_rx_ = now;               // once per window, not once per second
+      return;
+    }
+    RCLCPP_WARN(logger_, "[%s] NO TELEMETRY for %.1f s though the link is alive "
+                "(latency %.1f s ago) - restarting its log blocks in place",
+                name_.c_str(), quiet, since_latency);
+    recovering_ = true;
+    try {
+      restart_log_blocks();
+      RCLCPP_WARN(logger_, "[%s] log blocks restarted; watching for data", name_.c_str());
+    } catch (const std::exception& e) {
+      RCLCPP_ERROR(logger_, "[%s] log-block restart FAILED (%s) - the drone may have "
+                   "dropped the blocks entirely; a server restart remains the fallback",
+                   name_.c_str(), e.what());
+    }
+    last_log_rx_ = std::chrono::steady_clock::now();
+    recovering_ = false;
+  }
+
   void on_link_statistics_timer()
   {
+    check_telemetry_watchdog();
     cf_.triggerLatencyMeasurement();
 
     auto now = std::chrono::steady_clock::now();
@@ -1163,6 +1290,16 @@ private:
   const CrazyflieBroadcaster* cfbc_;
 
   std::list<std::unique_ptr<LogBlockGeneric>> log_blocks_generic_;
+  //: Telemetry watchdog state - see check_telemetry_watchdog().
+  double telemetry_watchdog_s_{0.0};
+  bool recovering_{false};
+  bool commanded_flight_{false};
+  bool last_mocap_z_valid_{false};
+  float last_mocap_z_{0.0f};
+  uint8_t period_pose_{0}, period_scan_{0}, period_odom_{0}, period_status_{0};
+  std::vector<uint8_t> periods_generic_;
+  std::chrono::steady_clock::time_point last_log_rx_{std::chrono::steady_clock::now()};
+  std::chrono::steady_clock::time_point last_latency_rx_{std::chrono::steady_clock::now()};
   std::list<rclcpp::Publisher<crazyflie_interfaces::msg::LogDataGeneric>::SharedPtr> publishers_generic_;
 
   // multithreading
@@ -1496,6 +1633,15 @@ private:
     std::vector<CrazyflieBroadcaster::externalPose> data_pose;
 
     for (const auto& pose : msg->poses) {
+      {
+        // Feed the per-drone telemetry watchdog its airborne guard. This is the
+        // only place that sees altitude for every drone regardless of how it was
+        // commanded (broadcast /all/takeoff included).
+        const auto cfit = crazyflies_.find(pose.name);
+        if (cfit != crazyflies_.end() && cfit->second) {
+          cfit->second->note_mocap_z((float)pose.pose.position.z);
+        }
+      }
       const auto iter = name_to_id_.find(pose.name);
       if (iter != name_to_id_.end()) {
         uint8_t id = iter->second;

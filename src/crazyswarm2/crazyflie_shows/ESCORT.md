@@ -85,34 +85,57 @@ code's. `plan_escort` prints the consequences of whatever is chosen.
 1. **Speed cap vs walking speed.** `v_max = 0.6 m/s` is inherited from the
    follow-drone prototype. Turning the ring costs `R * phase_rate` of it, so
    the worst-case budget left for following the VIP is
-   `max_vip_speed = 0.6 - 1.5*0.3 = 0.15 m/s` — that is the number to quote
+   `max_vip_speed = 0.6 - 1.0*0.3 = 0.30 m/s` — that is the number to quote
    when the ring is turning and the VIP is walking the same way at once.
-   `plan_escort --sweep` measures the looser, average case: **the ring still
-   holds its shape (worst slot error under 0.5 m) up to a 0.90 m/s walk**, but
-   by 0.3 m/s the separation guard is already firing on a third of the steps,
-   i.e. the geometry has stopped doing the work and the clamps have started.
-   Treat 0.15 m/s as designed-for, 0.3 m/s as demonstrated-with-clamping, and
-   0.9 m/s as the edge of the cliff. A normal walk is 1.0–1.4 m/s. Options,
+   (It was 0.15 m/s at `R = 1.5`; shrinking the ring to 1.0 m doubled it, which
+   is the one place the smaller ring pays rather than costs.)
+   `plan_escort --sweep` measures the stricter, end-to-end case — every
+   separation held for a whole run, not just the ring's shape — and with the
+   shipped numbers it **clears up to a 0.20 m/s walk** (2026-10-01). The
+   binding constraint is that `min_vip_dist` equals `ring_radius`, so any
+   inward lag at all is a violation: at 0.30 m/s the defenders sit 0.94 m from
+   a 1.00 m floor. Brief the pilot at **~0.2 m/s** — a hover with small
+   drifts. A normal walk is 1.0–1.4 m/s. Options,
    in order of how much they cost elsewhere: have the VIP walk deliberately
    slowly; slow the ring (a lazier block); shrink `R` (less room between the
    drones and the person); raise `v_max` (a real safety decision about flying
    faster next to a human, and the one that needs a written justification).
-2. **Where the VIP stands.** `vip_offset = (-1.0, 0)` from room centre, so the
-   adversary has the far half of the room to approach through. Centring the
-   VIP does not work: `arena_radius - (ring_radius + min_adv_sep) = 0.2 m` of
-   stand-off, so the arena clamp drags the adversary inside the alert radius
-   immediately and the demo begins already blocked (that is exactly what the
-   first sim run did). The offset also constrains the adversary's approach
-   bearings to the open side — `AdversaryScript.check` verifies every leg
-   against the arena and refuses the ones that would end up in a wall.
-3. **Ring radius and altitude.** `R = 1.5 m` equals the minimum VIP standoff,
-   so the guard sits exactly on its boundary with no margin, and `h = 1.2 m`
-   is chest height on a standing adult. Neither has been measured against
-   this room or agreed with whoever is going to stand inside the ring.
-4. **The arena.** `arena_radius = 2.5 m`, `ceiling = 2.0 m` are inherited from
-   `crazyflie_shows.safety` and have never been checked against the volume
-   Motive actually covers (the same gap HANDOVER.md section 8 flags for the
-   shows).
+2. **Where the VIP stands.** `vip_offset = (+0.60, 0)` from room centre —
+   the **+x** side, nearest the operator, who stands on +x looking down −x. The
+   adversary therefore runs at the VIP from −x, across the far half of the
+   room, so the encounter happens facing the audience instead of behind the
+   VIP. Centring the VIP does not work: it leaves
+   `arena_radius - (ring_radius + min_adv_sep) = 0.20 m` of stand-off, so the
+   arena clamp drags the adversary inside the alert radius immediately and the
+   demo begins already blocked (that is exactly what the first sim run did).
+   The offset also constrains the adversary's approach bearings to the open
+   side — `AdversaryScript.check` verifies every leg against the arena and
+   refuses the ones that would end up in a wall. The cost of the offset is the
+   pilot box: the geofence measures the VIP's stray from **room centre**, so
+   the DJI gets `arena - ring - offset = 0.40 m` further toward the operator
+   and `arena - ring + offset = 1.60 m` away from them.
+3. **Ring radius and altitude.** `R = 1.0 m`, down from 1.5 via 1.2. Each step
+   was paid for by the measured volume (see *The arena* below) and the last one
+   was asked for on sight: a 1.2 m ring reads as a loose circle rather than an
+   escort, and the 0.2 m it frees went into `vip_offset`, which moved the
+   encounter toward the audience and took the adversary's mark off the arena
+   edge (2.00 m from room centre at `R = 1.2`, 1.50 m at `R = 1.0`).
+   `min_vip_dist` tracks `R` exactly, so the guard sits on its own boundary
+   with no margin — that is what caps the walk at 0.20 m/s. `h = 1.2 m` is
+   chest height on a standing adult, and the altitude the DJI is flown at.
+   **If a HUMAN ever stands in as the VIP, put `R` back to 1.5 m** and accept
+   that the demo then does not fit this room.
+4. **The arena — MEASURED 2026-10-01, no longer open.**
+   `arena_radius = 2.0 m`, `ceiling = 2.0 m`, centred on
+   `room_center = (0.033, 0.255)` — the centroid of the tracked space, not the
+   room's middle. Walking cf1 through the volume
+   (`scripts/measure_arena.py`, 8067 samples) then flying it
+   (`scripts/arena_flight_sweep.py`) put the first sustained dropout at 2.24 m
+   and verified 72 waypoints inside 2.00 m with zero stale poses at both
+   1.20 m and 1.95 m altitude. Tracking is not isotropic: by 45° sector the
+   first dropout sits at 2.15 m (270–315°), 2.25 m (0–45°), 2.31 m (225–270°)
+   and never in 180–225°, which held to 2.46 m. The worst sector binds. The
+   numbers live in `crazyflie_shows.safety` so the other shows can use them.
 5. **Which drones.** Defaults are now chosen by GEOMETRY, not name order: the
    three drones nearest the VIP mark defend, the farthest one attacks
    (`escort.pick_roles`). Override with
@@ -160,34 +183,68 @@ script's banner:
   longer fits in the arena and the far slots get clamped.
 * **VIP speed** = `max_vip_speed` = `v_max - ring_radius * phase_rate`.
 
-With the shipped config that is **1.00 m of room centre and 0.15 m/s** — a
-hover with small drifts, not a flight. That is the honest state of it, and the
-knobs trade against each other:
+With the shipped config that is **1.00 m of room centre and 0.30 m/s** in the
+worst case, and `--sweep` clears the whole run only to **0.20 m/s** — a hover
+with small drifts, not a flight. That is the honest state of it, and the knobs
+trade against each other (keep-in = `arena - R`, VIP max = `v_max - R*rate`):
 
 | arena | ring R | phase_rate | v_max | keep-in | VIP max |
 |---|---|---|---|---|---|
-| 2.5 m | 1.5 m | 0.30 | 0.6 | 1.00 m | 0.15 m/s |
-| 2.5 m | 1.5 m | 0.15 | 0.6 | 1.00 m | 0.38 m/s |
-| 2.5 m | 1.5 m | 0.15 | 1.0 | 1.00 m | 0.78 m/s |
-| 3.5 m | 1.5 m | 0.15 | 1.0 | 2.00 m | 0.78 m/s |
-| 3.5 m | 2.0 m | 0.15 | 1.0 | 1.50 m | 0.70 m/s |
+| 2.0 m | 1.0 m | 0.30 | 0.6 | 1.00 m | 0.30 m/s | ← shipped
+| 2.0 m | 1.0 m | 0.15 | 0.6 | 1.00 m | 0.45 m/s |
+| 2.0 m | 1.2 m | 0.30 | 0.6 | 0.80 m | 0.24 m/s |
+| 2.0 m | 1.5 m | 0.30 | 0.6 | 0.50 m | 0.15 m/s |
+| 2.0 m | 1.0 m | 0.15 | 1.0 | 1.00 m | 0.85 m/s |
 
 Halving `phase_rate` buys the most for the least: the wall then closes in
 about 8 s instead of 4 s, which is slower to watch but costs no separation.
 Raising `v_max` is the one that needs a written safety argument, because it is
 the speed the defenders fly at next to whatever they are escorting.
 
-**The arena number is the lever nobody has pulled yet.** `arena_radius = 2.5 m`
-has never been measured against the volume Motive actually covers. If the real
-volume is 3.5 m the DJI gets 2.00 m of keep-in and the demo becomes flyable at
-a sensible speed; if it is smaller than 2.5 m, some of the current marks are
-outside it. Measure it before choosing anything else here.
+**The arena lever has now been pulled, and it went the wrong way.** The volume
+measures 2.24 m to first dropout, not the 3.5 m that would have made this
+comfortable, so `arena_radius = 2.0 m` and every other number was fitted down
+to it rather than up. There is no more room to find by measuring; the next
+0.1 m would have to come from a verification sweep out to ~2.15 m.
 
-**A DJI standoff is still unset.** `min_vip_dist` is 1.5 m, inherited from a
-person-following prototype. Nothing has verified what a DJI's prop wash does
-to a 30 g Crazyflie at that range, and raising it forces `ring_radius` up,
-which eats the keep-in radius one-for-one. This is the decision that most
-wants a measurement rather than a guess.
+**`ring_radius` is also the chord the wall closes to.** The lead and each wing
+stand `2*R*sin(wall_half_angle/2)` apart, so the angle cannot be set without
+knowing the radius: 50° held 1.01 m at `R = 1.2` and only 0.85 m at `R = 1.0`,
+under the 0.90 m plan budget, which is why `wall_half_angle` opened to 58°
+(0.97 m) when the ring shrank. **Change one and re-run `plan_escort`.**
+
+**A DJI standoff is still unset.** `min_vip_dist` is 1.0 m, and it is now a
+number chosen to fit a room rather than measured against a DJI. Nothing has
+verified what a DJI's prop wash does to a 30 g Crazyflie at that range. The
+mitigation in place is vertical, not horizontal — see `vip_airborne` and
+`vip_height_offset` in `escort.py` — and the horizontal figure still wants a
+measurement rather than a guess.
+
+## Operator-paced: the show waits for you
+
+The encounter involves three defenders, a scripted attacker and a human flying
+a DJI. Pacing that on a wall clock asks every party to be ready at a time none
+of them chose, which is how coordination accidents happen.
+
+```bash
+ros2 run crazyflie_shows escort_show --ros-args -p paced:=true
+```
+
+The adversary then holds its current leg until you press Enter, and arming
+waits for you as well. Each press announces what the attacker is about to do
+(`leg 2/6: PROBE 1 - run at the VIP`), so you commit to the next move knowing
+what it is. `q` lands.
+
+**What pacing does NOT slow down.** Show time still runs. The ring still turns
+at `phase_rate`, every `SetpointGuard` clamp is still enforced per setpoint,
+and the mocap staleness watchdogs (0.4 s hold, 2.0 s land) are real-time. Only
+the attacker's place in its script is yours. The defence stays automatic
+because it is the thing being demonstrated and the thing that must not wait
+for a human.
+
+Input is read as a LINE, not a keypress, so it works from a plain terminal and
+from the mission console's stdin box -- no termios, and nothing that breaks if
+stdout is not a tty.
 
 ## Manual control: testing with nobody in the room
 
@@ -241,27 +298,31 @@ mark, not the other way round.
 `plan_escort --marks` prints the marks and then checks the yaml against them:
 
 ```
-defender 1   [+0.55, -0.10]      on the ring, 1.50 m from the VIP mark
-defender 2   [-1.70, +1.20]
-defender 3   [-1.70, -1.40]
-adversary    [+1.65, -0.10]      2.60 m out, on the far side of the VIP
+VIP mark        [+0.63, +0.26]   room centre + vip_offset -- NOT inferred
+defender 1      [+1.13, +1.12]   on the ring, 1.00 m from the VIP mark
+defender 2      [-0.37, +0.26]
+defender 3      [+1.13, -0.61]
+adversary       [-1.47, +0.26]   2.10 m out, on the far side of the VIP
 ```
+
+(Shipped config, 2026-10-01. These move whenever `ring_radius` or `vip_offset`
+does — print them, do not copy them from here.)
 
 Three rules behind those numbers:
 
-1. **Defenders stand on the ring they will hold** (1.50 m from the mark, 120°
+1. **Defenders stand on the ring they will hold** (1.00 m from the mark, 120°
    apart). The gather is then a lift rather than a march, and the slot
    assignment — which goes by bearing from the mark — is unambiguous. Three
    drones bunched in one corner share almost the same bearing, which makes the
    assignment arbitrary and the legs long.
-2. **The adversary starts outside `ring_radius + min_adv_sep`** (2.30 m). Any
+2. **The adversary starts outside `ring_radius + min_adv_sep`** (1.80 m, and
+   the mark is placed 0.3 m further out still). Any
    closer and it begins the demo already inside the ring, and its first leg out
    crosses the defenders.
 3. **Everything stays inside the arena and at least 1 m apart** — the sync tool
    refuses to write marks closer than 1 m, and the phase `--marks` picks is the
-   one that keeps the ring furthest from the walls (2.18 m of the 2.50 m arena
-   with the shipped config, against 2.50 m — i.e. touching — at the worst
-   phase).
+   one that keeps the ring furthest from the walls (1.40 m of the 2.00 m arena
+   with the shipped config).
 
 ## The gather is checked, as of 2026-09-24
 

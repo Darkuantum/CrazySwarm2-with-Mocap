@@ -1,5 +1,8 @@
 #pragma once
 
+#include <atomic>
+#include <chrono>
+
 #include <string>
 #include <queue>
 #include <mutex>
@@ -30,6 +33,19 @@ public:
     bool useSafelink_;
     bool useAutoPing_;
     bool useAckFilter_;
+    //: Packet tracing for ONE connection, default off. Added 2026-10-05 to find
+    //: the "link alive, log data dead" stall: a drone stops delivering every log
+    //: block while still answering polls and accepting commands. Off = one
+    //: relaxed atomic load per ack, which changes no behaviour and no timing.
+    std::atomic<bool> trace_{false};
+    //: Trace accounting, printed once a second rather than per packet: a healthy
+    //: drone returns ~165 acks/s, so per-packet printing from the radio thread
+    //: would be ~825 lines/s across five drones and would perturb the timing we
+    //: are trying to measure.
+    uint32_t trace_null_{0};
+    uint32_t trace_log_{0};
+    uint32_t trace_other_{0};
+    std::chrono::steady_clock::time_point trace_tick_{};
     bool safelinkInitialized_;
     bool safelinkDown_;
     bool safelinkUp_;

@@ -32,7 +32,8 @@ flight loop, and reuses its preflight checks unchanged:
 Parameters (``--ros-args -p name:=value``)
 ------------------------------------------
 ======================  =======  =====================================
-``dry_run``             false    plan and report, then exit. Never arms.
+``dry_run``             false    plan + preflight checks, then exit. Never arms,
+                                 never uploads. The rehearsal.
 ``lights``              true*    light cues (*false under use_sim_time)
 ``bpm``                 120.0    tempo of the beat grid (re-plans)
 ``check_placement``     true     compare live pose to initial_position
@@ -45,9 +46,13 @@ Parameters (``--ros-args -p name:=value``)
 
 import signal
 import sys
+import time
 
 import numpy as np
+import rclpy
+from crazyflie_interfaces.msg import Status
 from crazyflie_py import Crazyswarm
+from rclpy.qos import qos_profile_sensor_data
 
 from crazyflie_shows import constellation, plan_show
 from crazyflie_shows.swarm_show import _param, check_placement
@@ -78,6 +83,61 @@ def take_signals():
         raise ShowAborted('Ctrl-C' if signum == signal.SIGINT else f'signal {signum}')
     signal.signal(signal.SIGINT, handler)
     signal.signal(signal.SIGTERM, handler)
+
+
+def check_supervisor(node, names, timeout=6.0):
+    """Refuse to fly drones the firmware will not arm. Runs BEFORE the upload.
+
+    MEASURED 2026-10-02: five drones sat in the supervisor's LOCKED state, which
+    an emergency stop latches and which **only a power cycle clears** -- the
+    firmware's state machine has exactly one transition out of locked, back to
+    locked, blocked always. Nothing in the flight path noticed: the show checked
+    placement, spent 55 s uploading trajectories, and only then would it have
+    failed at arm(). The operator read the silent upload as a hang and killed it,
+    which looked like a bug in the show.
+
+    So: ask every drone what the supervisor thinks, before anything is uploaded.
+    Battery thresholds match the console's health page.
+    """
+    latest = {}
+
+    def mk(nm):
+        def cb(msg):
+            latest[nm] = msg
+        return cb
+
+    subs = [node.create_subscription(Status, f'/{nm}/status', mk(nm),
+                                     qos_profile_sensor_data) for nm in names]
+    deadline = time.time() + timeout            # /status is published at 1 Hz
+    while time.time() < deadline and len(latest) < len(names):
+        rclpy.spin_once(node, timeout_sec=0.1)
+    for sub in subs:
+        node.destroy_subscription(sub)
+
+    problems, notes = [], []
+    for nm in names:
+        st = latest.get(nm)
+        if st is None:
+            notes.append(f'{nm}: no /{nm}/status in {timeout:g} s - cannot check '
+                         'the supervisor (old firmware, or a dead link)')
+            continue
+        info, v = st.supervisor_info, st.battery_voltage
+        if info & Status.SUPERVISOR_INFO_IS_LOCKED:
+            problems.append(f'{nm}: supervisor LOCKED (0x{info:04x}) - where an '
+                            'E-STOP leaves a drone. Battery out and in; nothing '
+                            'else clears it')
+        elif not info & Status.SUPERVISOR_INFO_CAN_BE_ARMED:
+            problems.append(f'{nm}: the firmware says it cannot be armed '
+                            f'(0x{info:04x}) - preflight checks have not passed')
+        if info & Status.SUPERVISOR_INFO_IS_TUMBLED:
+            problems.append(f'{nm}: tumbled - stand it back on its feet')
+        if v and v < 3.7:
+            problems.append(f'{nm}: battery {v:.2f} V, below 3.7 V - swap it')
+        elif v and v < 3.8:
+            notes.append(f'{nm}: battery {v:.2f} V - low for a 76 s show')
+        elif st is not None:
+            notes.append(f'{nm}: ready, battery {v:.2f} V, rssi {st.rssi}')
+    return problems, notes
 
 
 def cue(allcfs, cfs, lights):
@@ -156,10 +216,6 @@ def main():
     plan_show.report(plan, cfg, names)
     constellation.report_extras(plan, cfg, names)
 
-    if dry_run:
-        print('  dry_run - nothing armed, nothing uploaded.\n')
-        return 0
-
     # ------------------------------------------------------------ preflight
     if want_placement and not sim:
         print('  PLACEMENT CHECK (live pose vs initial_position)')
@@ -171,16 +227,58 @@ def main():
     else:
         print('  *** placement check DISABLED by parameter ***\n')
 
+    # ------------------------------------------------- supervisor go/no-go
+    if not sim:
+        print('  SUPERVISOR CHECK (what the firmware will let us do)')
+        problems, notes = check_supervisor(node, names)
+        for line in notes:
+            print(f'    {line}')
+        if problems:
+            print('\n  REFUSING TO FLY - the drones cannot be armed:', flush=True)
+            for p in problems:
+                print(f'    - {p}')
+            print('\n  Nothing was uploaded. Fix the above and re-run; '
+                  '`dry_run:=true` re-checks without uploading.\n')
+            return 1
+        print('    all drones armable\n')
+
     print(f'  lights: {"ON" if lights_on else "off"}'
           f'{" (sim has no LED deck)" if sim and not lights_on else ""}')
 
+    # The rehearsal stops HERE, not before the checks above: a rehearsal whose
+    # answer is only "the geometry is fine" tells you nothing about the rig, and
+    # the checks are all read-only. Everything past this point touches a drone.
+    if dry_run:
+        print('\n  dry_run - plan and preflight checks done; nothing uploaded, '
+              'nothing armed.\n')
+        return 0
+
     # -------------------------------------------------------------- upload
+    #
+    # This is the slow part and it LOOKS like a hang: every piece of every
+    # figure goes to every drone as unicast packets over one radio, with no
+    # progress from the library. MEASURED on this rig 2026-10-02: 55 s for
+    # 4 figures x 5 drones, and one weak link (cf1) took 5 s of that on a
+    # single figure. An operator who reads silence as a crash kills the show
+    # here -- which happened -- so print a drone at a time and say how long it
+    # should take, and say plainly that nothing is armed yet.
+    n_t = len(plan.figs) * len(cfs)
     print(f'  uploading {len(plan.figs)} figures to {len(cfs)} drones '
-          f'({plan.report["pieces"]} pieces each)')
-    for f in plan.figs:
+          f'({plan.report["pieces"]} pieces each) - {n_t} transfers over ONE radio')
+    print(f'  this takes ~{max(10, int(round(n_t * 2.7))):d} s and prints as it goes. '
+          'NOTHING IS ARMED until "SHOW START";')
+    print('  do not interrupt - a part-uploaded fleet has to be re-uploaded from '
+          'the start.', flush=True)
+    t_up = time.time()
+    for i, f in enumerate(plan.figs, 1):
+        t_f = time.time()
+        print(f'    [{i}/{len(plan.figs)}] id {f.traj_id} @ offset '
+              f'{f.piece_offset:>2}  {f.name:12} ', end='', flush=True)
         for j, cf in enumerate(cfs):
             cf.uploadTrajectory(f.traj_id, f.piece_offset, f.trajs[j])
-        print(f'    id {f.traj_id} @ offset {f.piece_offset:>2}  {f.name}')
+            print(f'{names[j]} ', end='', flush=True)
+        print(f' {time.time() - t_f:4.1f}s', flush=True)
+    print(f'  uploads done in {time.time() - t_up:.0f}s', flush=True)
 
     # ----------------------------------------------------------------- fly
     armed = False

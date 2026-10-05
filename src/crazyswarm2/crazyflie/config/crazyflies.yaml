@@ -4,32 +4,52 @@ fileversion: 3
 robots:
   cf1:
     enabled: true
-    uri: radio://*/80/2M/E7E7E7E701
-    initial_position: [-0.9986, 0.6547, 0.0]
+    # radio://0/, not radio://*/: the wildcard dongle works with backend:=cpp
+    # (crazyflie-link-cpp resolves it) but CRASHES backend:=cflib, whose
+    # radiodriver does get_serials().index('*') -> ValueError "Cannot find radio
+    # with serial *". cf1 then fails, and the python server exits with "one or
+    # more Crazyflies can not be found", so NOTHING comes up (2026-10-02).
+    # This rig has one dongle, so the wildcard bought nothing.
+    uri: radio://0/80/2M/E7E7E7E701
+    initial_position: [0.8356, -0.9873, 0.0]
     type: cf21  # see robot_types
 
   cf2:
     enabled: true
     uri: radio://0/80/2M/E7E7E7E702
-    initial_position: [0.0479, -0.1129, 0.0]
+    initial_position: [-1.1581, -1.0394, 0.0]
     type: cf21  # see robot_types
 
   cf3:
     enabled: true
     uri: radio://0/80/2M/E7E7E7E703
-    initial_position: [1.2105, -1.1178, 0.0]
+    initial_position: [0.8311, 0.9646, 0.0]
     type: cf21  # see robot_types
 
   cf5:
     enabled: true
     uri: radio://0/80/2M/E7E7E7E705
-    initial_position: [-0.8898, -1.3021, 0.0]
+    initial_position: [-0.1549, -0.01, 0.0]
     type: cf21  # see robot_types
 
   cf8:
-    enabled: true
+    enabled: false
     uri: radio://0/80/2M/E7E7E7E708
+    # Silent on 0 of 6 scan passes 2026-10-02 (cf1-cf5 all answered) -- not
+    # powered or not in the room. Do not enable without a scan that answers:
+    # one unreachable enabled drone blocks the server's connect loop silently.
+    # Its old mark [0.9584, 0.8613] also sat 0.36 m from where cf3 now stands.
     initial_position: [0.9584, 0.8613, 0.0]
+    type: cf21  # see robot_types
+
+  cf4:
+    enabled: true
+    uri: radio://0/80/2M/E7E7E7E704
+    # Answered at 2M on 2026-10-02 (1 of 3 passes -- the scan is intermittent,
+    # see HANDOVER; it IS alive). STALE MARK: this spot is 0.89 m from cf5's,
+    # under the 1 m rig rule, so every planner will refuse until the drones are
+    # re-measured -- run scripts/sync_initial_positions.py with mocap up.
+    initial_position: [-1.1371, 1.0309, 0.0]
     type: cf21  # see robot_types
 
 robot_types:
@@ -90,6 +110,12 @@ all:
     default_topics:
      # remove to disable default topic
       pose:
+        # 10 Hz, as upstream AI-DA-STC ships it. MEASURED 2026-10-02: lowering
+        # this to 2 Hz to save radio airtime was a mistake twice over -- the
+        # link warnings it was meant to cure are chronic on this rig (every run
+        # since June, including the 09-17 show that flew with 22% bad seconds on
+        # cf3), and a slower pose rate gives the preflight placement gate fewer
+        # chances to see a drone before it gives up.
         frequency: 10 # Hz
       status:
         frequency: 1 # Hz

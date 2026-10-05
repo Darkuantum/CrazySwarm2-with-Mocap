@@ -10,8 +10,10 @@ ament_python_install_package(${PROJECT_NAME} SCRIPTS_DESTINATION lib/${PROJECT_N
 
 # Everything the show needs at runtime, resolved via
 # get_package_share_directory('crazyflie_shows') -- never an absolute path.
+# No `config` here on purpose: the fleet and mocap config are the `crazyflie`
+# package's, read directly (see launch/show_launch.py). A copy in this package
+# is a second fleet to keep in sync, and it drifted (2026-10-02: no cf8).
 install(DIRECTORY
-  config
   launch
   data
   DESTINATION share/${PROJECT_NAME}/

@@ -51,11 +51,15 @@ src/                # VENDORED source (committed)
     crazyflie_shows/  # TWO five-drone shows + ONE reactive demo, all verified
                       #   before anything arms:
                       #   * carousel, ~63 s (swarm_show / demo_show / plan_show) - SHOW_GUIDE.md
-                      #   * constellation, 78 s (constellation_show / plan_constellation)
-                      #     - CONSTELLATION.md. Shape changes (pentagon/arrow/pyramid/
-                      #     staircase) on a 120 BPM beat grid, light cues, staged abort.
-                      #     Clearance is enforced in PLAN VIEW: no drone over another.
-                      #     Slots are assigned by bottleneck distance, NOT tied to names.
+                      #   * constellation, 76 s (constellation_show / plan_constellation)
+                      #     - CONSTELLATION.md. Shape changes (n-gon/arrow/pyramid/
+                      #     switchback staircase) on a 120 BPM beat grid, light cues,
+                      #     staged abort. Clearance is enforced in PLAN VIEW: no drone
+                      #     over another. Slots are assigned by bottleneck distance, NOT
+                      #     tied to names. Refitted 2026-10-02 to the MEASURED arena
+                      #     (safety.ARENA_RADIUS_TESTED): figures are built at the centre
+                      #     of the tracked volume and the envelope is checked from there,
+                      #     1.53 m used of 1.90 m. 6+ drones does not fit this room.
                       #   * ESCORT demo, reactive, NOT choreographed (escort_show /
                       #     plan_escort) - ESCORT.md. 3 defenders hold a ring around a
                       #     VIP (static point, then a person in a mocap hat) and ROTATE
@@ -107,7 +111,11 @@ Key customized files inside `src/`:
   firmware log TOC or the cpp server aborts at connect).
 - `src/crazyswarm2/crazyflie/launch/launch.py` — adds the **foxglove_bridge** and
   **preflight GUI** nodes; defaults: `rviz` `True`, `preflight` `True`,
-  `foxglove` `True`, `gui` `False` (upstream lacks the extra nodes).
+  `foxglove` `True`, `gui` `False`, `server` `True` (upstream lacks the extra
+  nodes and the toggle). **`server:=False`** brings up mocap + RViz + preflight
+  GUI and NO server — no radio owner, nothing armable. That is the state
+  `sync_initial_positions.py` wants ("mocap up, server not yet started"), which
+  before 2026-10-02 took a launch-sync-relaunch cycle.
 - `src/crazyswarm2/crazyflie/scripts/preflight_kalman_plotter.py` — preflight GUI.
   Constants at the top: `ORIENT_WARN_DEG` 10°, `ERR_STALE_S` 3 s, takeoff/land
   setpoints (0.5 m/3 s, 0.03 m/3 s), `LOG_DIR` = `~/crazyswarm_ws/preflight_logs`
@@ -275,12 +283,83 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   NOT forward a signal sent to it alone; a terminal Ctrl-C reaches the child
   because it goes to the whole foreground process group, so test an abort with
   `kill -INT <the script's own PID>`, not the wrapper's.
+- **"Link alive, log data dead": a drone stops publishing ALL telemetry while
+  still answering.** Seen repeatedly 2026-10-02, five drones on one Crazyradio
+  2.0. `/cfX/pose`, `/cfX/status` AND `/cfX/kalman_preflight` all read **exactly
+  0.00 Hz** (not degraded) for one or more drones, picked at random per session
+  and frozen for it; the victim set changes every launch. The link is NOT down:
+  the server keeps completing latency ping round trips (`on_latency`, 10-35 ms,
+  ~0.84/s) and `ros2 param set` still reaches the drone (an LED write works).
+  The DRONE is not at fault either: a second Crazyradio in a separate process
+  connects and streams its log at 10 Hz, with hours of drone uptime (no reboot).
+  **Recovery: restart the server** (its connect sequence does `logReset()` and
+  recreates the blocks). Power-cycling drones is NOT needed -- that is the
+  supervisor-LOCKED case below, a different failure.
+  Diagnose with `warnings.communication.publish_stats: true` (already on) ->
+  `/cfX/connection_statistics`, plus `scripts/link_stall_recorder.py`, which
+  dumps the 60 s precursor for EVERY drone the moment one stalls.
+  **Counter semantics (verified 2026-10-05, an earlier note here was wrong):**
+  `sent_count` ~175/s on a live drone; `ack_count` counts VALID acks (the
+  safelink discard invalidates the ack first, so a high ack_count RULES OUT
+  safelink); `receive_count` counts acks pushed to the app queue but ALSO the
+  drone's 1-byte "nothing to send" nulls, because the null filter is commented
+  out, so `receive == ack` is normal and is NOT proof of payloads; and
+  `enqueued_count` is the OUTGOING queue depth, a gauge (0 is healthy, and it
+  underflows to 2^64-1 during a stall -- a library accounting bug).
+  **MEASURED at a real stall (data/linkstalls/stall_cf5_20261005-152134.json):**
+  while cf5 published nothing, the server was still sending ~175/s and getting
+  ~167 valid acks/s. So the drone answers every poll and has nothing to send, on
+  that link only -- which rules out airtime starvation AND the safelink discard.
+  **Ruled out by measurement, do not re-chase:** telemetry rates (ours are
+  byte-identical to upstream AI-DA-STC and flew for weeks); the console
+  (dashboard open vs closed changed nothing -- 12 connections and continuous
+  probing, all five drones still 10.0 Hz; argv, env values, cgroup and limits
+  identical to a shell launch); CPU/graphics load (24 cores, load 3.6, server
+  2.5%); pty back-pressure (nothing ever blocked in a tty write); apt overlay
+  shadowing; DDS config; the dongle (reproduced on the same stick); drone
+  firmware (all five identical, rev0 2570053570); leftover log blocks
+  (`logReset`, create and `start` are all acked); and the radio loop skipping
+  connections (it services every connection every iteration,
+  `CrazyradioThread.cpp:195`).
+  **Leading suspect, inferred not proven:** Crazyradio 2.0 "inline mode" ack
+  read desync -- `sendPacketInline` reads the reply with a 10 ms timeout and
+  returns an empty ack on timeout (`Crazyradio.cpp:285-296`), so a late reply
+  can become the NEXT read's result and be attributed to the wrong connection.
+  Inline mode is enabled only for CR2.0 firmware >= 5.1
+  (`CrazyradioThread.cpp` ~148); a Crazyradio PA never takes that path.
+- **A second Crazyradio is the best diagnostic probe on this rig.** With the
+  server holding one dongle, a second one lets another process talk to the same
+  drone: the link library **skips any radio whose serial it cannot query**
+  (`USBManager.cpp:188-207`), so the server's claimed stick is invisible to
+  other processes and the free one is `devId 0` to them -- address it as
+  `radio://0/80/2M/E7E7E7E70X`, not `radio://1/...`. That is how the drone was
+  exonerated above (`ros2 run crazyflie log --uri ... --var kalman.stateX`).
+  Both dongles on one channel do collide briefly: fine for a read-only probe,
+  not for flight.
+- **Two logging traps that waste hours.** (1) `"[cfX] Logging to /pose at N Hz"`
+  is printed on INTENT, before the block is created -- a block that never
+  delivers leaves no trace. (2) The link warnings (`Low unicast receive rate`,
+  `High latency`) only fire while a rate is BAD, so **absence of warnings is not
+  evidence of health**; a "when did each drone die" timeline built from the last
+  warning per drone is an artifact (it produced a convincing but entirely false
+  reverse-connection-order pattern on 2026-10-02). Measure topics directly, all
+  drones simultaneously -- sequential `ros2 topic hz` misses a drone that drops
+  while you are sampling another.
+- **Supervisor LOCKED latches after an e-stop; only a power cycle clears it.**
+  `/cfX/status` `supervisor_info` with bit `0x40` set and `CAN_BE_ARMED` (0x01)
+  clear means the firmware will refuse to arm, and the state machine has exactly
+  one transition out of locked -- back to locked, blocker `supervisorAlways`
+  (`supervisor_state_machine.c`). Battery out and in, per drone. Verified
+  2026-10-02: all five sat locked with healthy batteries (4.10-4.22 V) after an
+  e-stop, and the only symptom was that nothing flew. `constellation_show` now
+  checks this BEFORE uploading (`check_supervisor`), because the upload is ~55 s
+  and the arming failure used to come after it.
 - **Server BLOCKS FOREVER on the first unreachable enabled drone.** The cpp
   server connects drones in lexicographic `std::map` order and hangs
   **silently** on the first enabled drone that doesn't answer radio — one
   unreachable drone kills the whole launch (no error, no `/all/*` services,
   needs SIGKILL). Go/no-go rule: **scan every enabled address before every
-  launch** (currently `0xE7E7E7E701/02/04/05/08` — confirm against the yaml).
+  launch** (currently `0xE7E7E7E701/02/03/05/08` — confirm against the yaml).
   cf6 died this way 2026-08-04 (silent on full channel/datarate
   sweeps at its own AND factory address — physical check needed).
 - **Two Crazyradios (when running two dongles — current rig is single-dongle):
@@ -294,12 +373,30 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   drone that never answers — no error, and the `/all/*` services are never
   created. Verify with a scan on the drone's address
   (`scan --address 0xE7E7E7E711` → `radio://*/90/1M/...`).
+- **ONE `crazyflies.yaml`: `crazyflie/config/`.** It is what the server reads,
+  what every planner reads, and what `sync_initial_positions.py` writes.
+  `crazyflie_shows` shipped a second copy until 2026-10-02 — that is gone, and
+  do not reintroduce one: the copies drifted (the show's had no cf8 while the
+  workspace's did, so the planner verified one fleet and the server flew
+  another). `launch.py`/`show_launch.py` still accept
+  `crazyflies_yaml_file:=<path>` for a one-off fleet; `show_launch.py` prints a
+  **FLEET YAML OVERRIDE** banner naming the file and the `--yaml` sync command,
+  because an override silently decouples the file the server seeds from the
+  file the sync writes. Per-show fleet changes should be an `enabled:` edit in
+  the one file, not a second file.
 - **`initial_position` comes from `/poses`, never `/cfX/pose`.** The onboard
   estimate is seeded by the yaml — copying it back is circular. **Use
   `scripts/sync_initial_positions.py`** (mocap up, server not yet started): it
-  samples `/poses`, matches each ENABLED drone to the rigid body of the same
-  name, and rewrites only the `initial_position` triples in place (comments
-  preserved). It REFUSES to write when a drone is not streamed, is moving
+  samples `/poses`, matches each drone to the rigid body of the same name, and
+  rewrites only the `initial_position` triples in place (comments preserved).
+  **Scope is the ROOM, not the fleet** (changed 2026-10-02): it writes a mark
+  for every drone mocap is streaming, `enabled` or not, so switching fleets
+  between shows never carries a stale mark — place once, sync once, then enable
+  whichever subset the show needs (`--enabled-only` for the old behaviour). An
+  enabled drone that is not streamed is still a refusal; a parked one is
+  skipped, and a parked drone standing <1 m from a flying one is reported as a
+  mark that cannot be used until it moves. It REFUSES to write when an enabled
+  drone is not streamed, is moving
   (>10 mm spread over the window), sits above 0.5 m, or when two drones are
   <1 m apart — `--dry-run` to preview, `--force` to override, `--with-z` to
   write the measured z instead of keeping the yaml's. Manual equivalent: read

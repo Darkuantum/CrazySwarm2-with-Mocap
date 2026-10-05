@@ -11,10 +11,35 @@ behaviour at takeoff. Keeping the yaml in step with reality is therefore a
 go/no-go item, and doing it by hand (echo /poses, read numbers, retype them) is
 slow and easy to get wrong.
 
-This script reads the live `/poses` stream, matches each ENABLED drone in
+This script reads the live `/poses` stream, matches each drone in
 crazyflies.yaml to the rigid body of the same name, and rewrites just the
 `initial_position` numbers in place. Comments, ordering and formatting in the
 yaml are preserved -- only the bracketed triples change.
+
+Scope: the ROOM, not the current fleet (changed 2026-10-02)
+----------------------------------------------------------
+It writes a position for **every drone the mocap is streaming**, whether or not
+it is `enabled` -- because a mark is a fact about where a drone is standing, and
+it does not stop being true when that drone is left out of a show. The rig runs
+different fleets for different shows (the escort uses four, the constellation
+five), and under the old enabled-only rule every switch silently carried a
+stale mark: enable cf8 and the server seeds it from wherever it last stood,
+which is the exact darting-at-takeoff failure above. Now: place the drones
+once, sync once, enable whichever subset the show needs.
+
+An enabled drone that is NOT streamed is still a refusal -- it is about to fly.
+A parked drone that is not streamed is just skipped. `--enabled-only` restores
+the old scope.
+
+One file
+--------
+There is one crazyflies.yaml -- `src/crazyswarm2/crazyflie/config/` -- and it
+is what the server reads, what the planners read, and what this writes. (Until
+2026-10-02 `crazyflie_shows` shipped a second copy and this script wrote both;
+the copy is gone.) `crazyflie_shows/show_launch.py` and `crazyflie/launch.py`
+can still be pointed at another file with `crazyflies_yaml_file:=`, and nothing
+here can know that you did: pass the same path as `--yaml`, or accept that a
+hand-written override owns its own numbers.
 
 IMPORTANT
   * `initial_position` MUST come from /poses (the mocap's own view), never from
@@ -25,10 +50,13 @@ IMPORTANT
 
 Usage
 -----
-  # mocap running (e.g. `ros2 launch crazyflie launch.py`, or just the mocap node)
+  # mocap up, no server (so nothing owns the radio and nothing can be armed):
+  #   ros2 launch crazyflie launch.py server:=False
   python3 scripts/sync_initial_positions.py            # show the diff, ask, apply
   python3 scripts/sync_initial_positions.py --dry-run  # show the diff only
   python3 scripts/sync_initial_positions.py --yes      # no prompt (scripted use)
+  python3 scripts/sync_initial_positions.py --enabled-only      # old scope
+  python3 scripts/sync_initial_positions.py --yaml /path/to/other.yaml
 
 Exit codes: 0 ok / nothing to do, 1 refused (failed a safety check), 2 no data.
 """
@@ -53,36 +81,9 @@ DEFAULT_YAML = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..", "src", "crazyswarm2", "crazyflie", "config", "crazyflies.yaml")
 
-#: The OTHER copies of crazyflies.yaml that must not be left behind.
-#:
-#: There are two in this workspace and they are not a mistake: show_launch.py
-#: passes the crazyflie_shows copy as `crazyflies_yaml_file`, so it is what the
-#: SERVER reads for a show launch, and it is what plan_show / plan_constellation
-#: / plan_escort read always. Syncing one alone leaves the planner verifying
-#: against the old marks while the server seeds the new ones -- which is
-#: exactly the state this rig was found in on 2026-09-24, the two copies
-#: 1-2 cm apart. Writing every copy that has the same enabled fleet is safer
-#: than remembering; --only sticks to --yaml when a copy is deliberately
-#: different.
-EXTRA_YAMLS = [os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..", "src", "crazyswarm2", "crazyflie_shows", "config", "crazyflies.yaml")]
-
-
-def sibling_yamls(primary):
-    """Other crazyflies.yaml copies to keep in step with ``primary``."""
-    out = []
-    primary = os.path.realpath(primary)
-    for path in EXTRA_YAMLS:
-        path = os.path.normpath(path)
-        if os.path.exists(path) and os.path.realpath(path) != primary:
-            out.append(path)
-    return out
-
-
 # --- yaml I/O ---------------------------------------------------------------
-def read_enabled(yaml_path):
-    """Return {name: [x, y, z]} for robots with `enabled: true`.
+def read_robots(yaml_path):
+    """Return ({name: [x, y, z]}, {enabled names}) for every robot in the file.
 
     Parsed with PyYAML (read only). Writing goes through rewrite_positions(),
     which edits text in place -- a yaml.dump() round-trip would strip every
@@ -97,13 +98,15 @@ def read_enabled(yaml_path):
         doc = yaml.safe_load(f)
 
     robots = (doc or {}).get("robots") or {}
-    out = {}
+    out, enabled = {}, set()
     for name, cfg in robots.items():
-        if not isinstance(cfg, dict) or not cfg.get("enabled", False):
+        if not isinstance(cfg, dict):
             continue
         pos = cfg.get("initial_position", [0.0, 0.0, 0.0])
         out[name] = [float(v) for v in pos]
-    return out
+        if cfg.get("enabled", False):
+            enabled.add(name)
+    return out, enabled
 
 
 def rewrite_positions(yaml_path, updates, keep_z=True):
@@ -237,9 +240,17 @@ def resolve_topic_type(node, topic):
 
 
 # --- checks -----------------------------------------------------------------
-def run_checks(enabled, means, jitter, args):
-    """Return a list of refusal strings (empty == safe to write)."""
+def run_checks(enabled, means, jitter, args, writing=None, known=None):
+    """Return a list of refusal strings (empty == safe to write).
+
+    ``enabled`` are the drones about to fly -- they get the hard rules.
+    ``writing`` is every drone a position will be written for, which by default
+    includes parked ones; a parked drone gets the sanity rules (is this really
+    its marker, is it at rest) but not the ones that only matter in flight.
+    """
     problems = []
+    writing = set(writing if writing is not None else enabled)
+    known = set(known if known is not None else writing) | writing | set(enabled)
 
     missing = [n for n in enabled if n not in means]
     if missing:
@@ -249,7 +260,7 @@ def run_checks(enabled, means, jitter, args):
             "(case-sensitive).\n    Streaming now: " +
             (", ".join(sorted(means)) or "<nothing>"))
 
-    for name in sorted(set(enabled) & set(means)):
+    for name in sorted(writing & set(means)):
         x, y, z = means[name]
         if any(math.isnan(v) or math.isinf(v) for v in (x, y, z)):
             problems.append(f"{name}: non-finite position {means[name]} (occluded?)")
@@ -274,9 +285,25 @@ def run_checks(enabled, means, jitter, args):
                     f">= {MIN_SEPARATION_M:.1f} m). Same-trajectory flight preserves "
                     "start separation, so this spacing carries into the air.")
 
-    extra = sorted(set(means) - set(enabled))
-    if extra:
-        print("note: streamed but not enabled in the yaml: " + ", ".join(extra))
+    # A parked drone too close to a flying one is not a refusal -- it is not in
+    # the air -- but it IS a mark that cannot be used, so say so now rather than
+    # when a planner rejects the fleet you just enabled.
+    parked = sorted((writing & set(means)) - set(enabled))
+    for p in parked:
+        near = [(n, math.dist(means[p][:2], means[n][:2]))
+                for n in present if math.dist(means[p][:2], means[n][:2]) < MIN_SEPARATION_M]
+        for n, d in near:
+            print(f"note: {p} (parked) is {d:.2f} m from {n} -- its mark is recorded, "
+                  f"but enabling it would be refused until it is moved")
+
+    unknown = sorted(set(means) - known)
+    if unknown:
+        print("note: streamed but not in the yaml at all: " + ", ".join(unknown)
+              + " -- add a block for it if it is meant to fly")
+    skipped = sorted((known & set(means)) - writing)
+    if skipped:
+        print("note: streamed and in the yaml but out of this sync's scope: "
+              + ", ".join(skipped) + " (--enabled-only)")
 
     return problems
 
@@ -286,9 +313,10 @@ def main():
     ap = argparse.ArgumentParser(
         description="Update initial_position in crazyflies.yaml from live /poses.")
     ap.add_argument("--yaml", default=os.path.normpath(DEFAULT_YAML))
-    ap.add_argument("--only", action="store_true",
-                    help="write only --yaml, not the other copies of "
-                         "crazyflies.yaml in this workspace")
+    ap.add_argument("--enabled-only", action="store_true",
+                    help="sync only the drones that are `enabled: true` "
+                         "(default: every drone the mocap is streaming, so a "
+                         "later fleet change needs no re-sync)")
     ap.add_argument("--topic", default="/poses")
     ap.add_argument("--samples", type=int, default=DEFAULT_SAMPLES)
     ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
@@ -304,10 +332,15 @@ def main():
     if not os.path.exists(args.yaml):
         sys.exit(f"no such file: {args.yaml}")
 
-    enabled = read_enabled(args.yaml)
+    known, enabled = read_robots(args.yaml)
     if not enabled:
         sys.exit("no robots with `enabled: true` in " + args.yaml)
-    print(f"enabled in yaml ({len(enabled)}): {', '.join(sorted(enabled))}")
+    scope = set(enabled) if args.enabled_only else set(known)
+    parked = sorted(scope - set(enabled))
+    print(f"yaml: {args.yaml}")
+    print(f"  enabled ({len(enabled)}): {', '.join(sorted(enabled))}")
+    if parked:
+        print(f"  also syncing if streamed ({len(parked)}): {', '.join(parked)}")
     print(f"sampling {args.topic} for {args.samples} frames "
           f"(timeout {args.timeout:g} s) ...")
 
@@ -324,9 +357,9 @@ def main():
     if got < args.samples:
         print(f"warning: only {got}/{args.samples} frames arrived -- mocap rate low?")
 
-    problems = run_checks(enabled, means, jitter, args)
-
-    updates = {n: means[n] for n in enabled if n in means}
+    updates = {n: means[n] for n in scope if n in means}
+    problems = run_checks(enabled, means, jitter, args,
+                          writing=set(updates), known=set(known))
     if not updates:
         print("\nREFUSED: none of the enabled drones are being streamed.", file=sys.stderr)
         for p in problems:
@@ -342,9 +375,10 @@ def main():
         old, new = changed[name]
         d = math.dist(old[:2], new[:2])
         any_move = any_move or d > 0.0005
+        tag = '' if name in enabled else '  (parked)'
         print(f"  {name:<10} [{old[0]:>7.3f},{old[1]:>7.3f}]      "
               f"[{new[0]:>7.3f},{new[1]:>7.3f}]      {d * 100:6.1f} cm"
-              f"{'  <-- CHECK PLACEMENT' if d > 0.5 else ''}")
+              f"{'  <-- CHECK PLACEMENT' if d > 0.5 else ''}{tag}")
     print(f"\n  (jitter over window: max "
           f"{max(jitter[n] for n in changed) * 1000:.1f} mm)")
 
@@ -379,22 +413,10 @@ def main():
         f.write(new_text)
     print(f"\nwrote {args.yaml}")
 
-    for other in ([] if args.only else sibling_yamls(args.yaml)):
-        try:
-            other_enabled = read_enabled(other)
-        except Exception as e:                                  # noqa: BLE001
-            print(f"  ! could not read {other} ({e}); left alone")
-            continue
-        if set(other_enabled) != set(enabled):
-            print(f"  ! {other} has a different enabled fleet "
-                  f"({sorted(other_enabled)}); left alone deliberately")
-            continue
-        other_text, _ = rewrite_positions(other, updates, keep_z=not args.with_z)
-        with open(other, "w") as f:
-            f.write(other_text)
-        print(f"wrote {other}")
     print("The crazyflie server reads this file only at launch -- (re)start it now "
           "for the new positions to take effect.")
+    print("Then re-run the planners: plan_show / plan_constellation / plan_escort "
+          "-- they verify against these marks.")
     return 0
 
 

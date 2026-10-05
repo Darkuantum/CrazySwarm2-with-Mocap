@@ -44,11 +44,77 @@ MIN_SEPARATION = 0.8   # m, the hard floor - two drones closer than this is a
 #: clear of MIN_SEPARATION instead of 0.007 m under it.
 TRACKING_MARGIN = 0.10  # m
 
+# ---------------------------------------------------------------------------
+# The volume Motive can actually see -- MEASURED, not inherited
+# ---------------------------------------------------------------------------
+#: Every show inherited arena_radius 2.5 m and ceiling 2.0 m from the
+#: follow-drone prototype. Neither had ever been checked against this room.
+#: They are now, by three methods on 2026-10-01, and the room is SMALLER than
+#: the inherited numbers in radius and a different shape than assumed.
+#:
+#: 1. Carried surveys (scripts/measure_arena.py, cf1 walked by hand, 2 runs,
+#:    15k samples). Tracking is NOT isotropic -- by 45 deg sector the first
+#:    sustained dropout sits at 2.15 m (270-315), 2.25 m (0-45), 2.31 m
+#:    (225-270), and never in 180-225, which held past 2.46 m.
+#: 2. Flown radius (scripts/arena_flight_sweep.py --mode spiral, cf1 at
+#:    1.20 m): lost tracking at 2.24 m.
+#: 3. Flown climb (--mode climb, cf5 near centre): clean to the 2.42 m cap,
+#:    pose age never above 0.02 s. The ceiling is ABOVE that and unmeasured.
+#:
+#: The volume is a truncated cone: wide through the flight band, pinching in
+#: near the ceiling. A carried body was lost at z 2.33 m but only out at
+#: r 1.97 m, while a drone at r 0.55 m flew to 2.42 m untroubled -- so a
+#: single "ceiling" number is meaningless without saying at what radius.
+#:
+#: VERIFIED CLEAN (scripts/arena_flight_sweep.py --mode spiral --levels
+#: 1.20,1.95 --r-max 2.00, cf3, 72 waypoints, 3477 samples): zero stale poses
+#: and zero follow failures anywhere inside it, worst pose age 0.02 s in every
+#: radius band. That run also covers the high-and-far corner (1.95 m altitude
+#: at 1.96 m radius) that neither carried survey reached.
+#:
+#: USE THESE. A show that plans outside ARENA_RADIUS_TESTED is planning
+#: somewhere nothing has flown; re-measure before raising it rather than
+#: assuming the old 2.5 m.
+ARENA_CENTRE = (0.033, 0.255)   # m, centroid of the tracked volume, NOT the
+                                # room centre the configs used to assume
+ARENA_RADIUS_TESTED = 2.00      # m, flown clean at 1.20 m AND 1.95 m altitude
+ARENA_RADIUS_LOST = 2.24        # m, where a flying drone actually lost tracking
+CEILING_TESTED = 1.95           # m, flown clean at full radius
+CEILING_CENTRE_TESTED = 2.42    # m, flown clean within ~0.6 m of the centre
+#: Above this the cone pinches: a carried body held only to ~2.09 m radius in
+#: the 2.0-2.5 m band, against 3.1 m lower down.
+CEILING_PINCH = 2.00            # m
+
+
 #: What a *plan* must clear, so that the flown show still clears
 #: MIN_SEPARATION. This is the number check_show enforces.
 PLAN_SEPARATION = MIN_SEPARATION + TRACKING_MARGIN
-ARENA_RADIUS = 2.5     # m, horizontal half-extent of the usable mocap volume
-CEILING = 2.0          # m
+
+#: The inherited numbers. **Kept only so an explicit caller can still ask for
+#: them**; nothing defaults to them any more, because 2026-10-01 measured the
+#: room and ARENA_RADIUS is 0.5 m larger than anywhere a drone has been
+#: tracked. A show checked against 2.5 m is not checked.
+ARENA_RADIUS = 2.5     # m, INHERITED, disproven - see ARENA_RADIUS_TESTED
+CEILING = 2.0          # m, INHERITED - see CEILING_TESTED
+
+#: What a *plan* must stay inside, for the same reason PLAN_SEPARATION exists:
+#: the drones fly the plan with up to TRACKING_MARGIN of error, and
+#: ARENA_RADIUS_TESTED is where tracking was observed to *hold*, not where it
+#: is comfortable. Planning to the tested edge means flying past it.
+ARENA_RADIUS_PLAN = ARENA_RADIUS_TESTED - TRACKING_MARGIN      # 1.90 m
+
+
+def ceiling_at(r):
+    """The height that has been flown clean at plan-view radius ``r``.
+
+    The volume is a truncated cone, not a box (see ARENA_RADIUS_TESTED): a
+    drone near the centre flew to 2.42 m, while out at full radius only 1.95 m
+    has been demonstrated. Returning one number for the whole room would
+    either forbid the centre climb or bless an untested corner.
+    """
+    r = np.asarray(r, float)
+    high = np.where(r <= 0.60, CEILING_CENTRE_TESTED, CEILING_TESTED)
+    return high - TRACKING_MARGIN
 
 
 def transition_min_sep(src, dst):
@@ -334,9 +400,9 @@ def _locate(ts, mask, phase_bounds):
 
 
 def check_show(sample_fn, total_time, n_drones, rate=CHECK_RATE,
-               min_sep=PLAN_SEPARATION, radius=ARENA_RADIUS, ceiling=CEILING,
+               min_sep=PLAN_SEPARATION, radius=ARENA_RADIUS_PLAN, ceiling=None,
                center=(0.0, 0.0), floor=0.15, floor_window=None,
-               phase_bounds=None):
+               phase_bounds=None, arena_center=ARENA_CENTRE):
     """Sample an entire choreography and check separation, envelope and volume.
 
     ``sample_fn(t)`` returns an ``(n_drones, 3)`` array of positions at show
@@ -352,6 +418,16 @@ def check_show(sample_fn, total_time, n_drones, rate=CHECK_RATE,
     ``phase_bounds`` is ``[(name, t0, t1), ...]``. It changes nothing about
     the verdict; it just lets a failure say *which figure* is over budget,
     which is the difference between a two-minute fix and an afternoon.
+
+    **The envelope is measured from ``arena_center``, not from ``center``.**
+    They are different questions: ``center`` is where the formation is built,
+    and a formation can be built anywhere, while the mocap volume is where it
+    is and does not move when the drones are parked somewhere else. Measuring
+    the radius from the formation's own centroid -- which is what this did
+    until 2026-10-02 -- hides exactly the dangerous case: a show whose figures
+    all fit a 2 m circle, sitting 0.5 m off-centre, with one arm reaching into
+    the untracked corner. ``ceiling`` defaults to the cone of ``ceiling_at``,
+    so the limit falls off with radius as the measured volume does.
     """
     n_t = max(3, int(round(total_time * rate)) + 1)
     ts = np.linspace(0.0, total_time, n_t)
@@ -366,14 +442,21 @@ def check_show(sample_fn, total_time, n_drones, rate=CHECK_RATE,
     speed = np.linalg.norm(vel, axis=2)     # (n_drones, n_times)
     accel = np.linalg.norm(acc, axis=2)
 
-    xy = samples[:, :, :2] - np.asarray(center, float)
+    xy = samples[:, :, :2] - np.asarray(arena_center, float)[:2]
     r = np.linalg.norm(xy, axis=2)
     z = samples[:, :, 2]
+    #: Per-sample height limit: the measured cone, and a caller's flat ceiling
+    #: too if it named one. Both apply -- a flat number cannot describe a cone,
+    #: and a cone should not silently raise a limit a caller asked to lower.
+    z_lim = ceiling_at(r)
+    if ceiling is not None:
+        z_lim = np.minimum(z_lim, float(ceiling))
 
     report = {
         'min_sep': sep, 'min_sep_time': float(ts[k]), 'min_sep_pair': (a, b),
         'max_speed': v_max, 'max_accel': a_max,
         'max_radius': float(np.max(r)), 'max_z': float(np.max(z)),
+        'arena_center': tuple(float(v) for v in np.asarray(arena_center, float)[:2]),
         'min_z': float(np.min(z)),
         'duration': float(total_time), 'samples': samples, 'times': ts,
         'speed': speed, 'accel': accel,
@@ -397,10 +480,13 @@ def check_show(sample_fn, total_time, n_drones, rate=CHECK_RATE,
         problems.append(
             f'max radius {report["max_radius"]:.2f} m > arena {radius:.2f} m at '
             f'{_locate(ts, r.max(axis=0) > radius, phase_bounds)}')
-    if report['max_z'] > ceiling:
+    over_z = z > z_lim
+    if over_z.any():
+        j, i = np.unravel_index(np.argmax(z - z_lim), z.shape)
         problems.append(
-            f'max height {report["max_z"]:.2f} m > ceiling {ceiling:.2f} m at '
-            f'{_locate(ts, z.max(axis=0) > ceiling, phase_bounds)}')
+            f'height {z[j, i]:.2f} m exceeds the {z_lim[j, i]:.2f} m flown '
+            f'clean at r={r[j, i]:.2f} m (drone {j}) at '
+            f'{_locate(ts, over_z.any(axis=0), phase_bounds)}')
 
     lo, hi = floor_window if floor_window else (0.0, total_time)
     win = (ts >= lo) & (ts <= hi)

@@ -99,12 +99,24 @@ class ShowConfig:
     room_center: tuple = None
 
     #: Usable horizontal half-extent and ceiling, metres, measured from
-    #: ``room_center``. The show is checked against these and refuses to run
-    #: if any figure leaves the box. MEASURE THESE IN YOUR ROOM -- the
-    #: defaults are inherited from ``safety.py`` and have never been verified
-    #: against the actual mocap volume.
-    arena_radius: float = safety.ARENA_RADIUS
-    ceiling: float = safety.CEILING
+    #: ``safety.ARENA_CENTRE`` -- the centre of the tracked volume, NOT
+    #: ``room_center``, which is only where this show's figures are built.
+    #: The show is checked against these and refuses to run if any figure
+    #: leaves them.
+    #:
+    #: These are now MEASURED on this rig (three methods, 2026-10-01; see
+    #: ``safety.ARENA_RADIUS_TESTED``) and are 0.6 m tighter in radius than
+    #: the inherited 2.5 m they replaced. In a different room, re-measure with
+    #: ``scripts/measure_arena.py`` and ``scripts/arena_flight_sweep.py``;
+    #: do not raise them back because a figure does not fit.
+    arena_radius: float = safety.ARENA_RADIUS_PLAN
+    #: ``ceiling`` is the limit for the CENTRE COLUMN; ``safety.ceiling_at``
+    #: narrows it with radius, and check_show applies whichever is lower. So
+    #: the default is the centre figure (2.42 m flown clean within ~0.6 m of
+    #: the centre, less the tracking margin) and a drone out at full radius is
+    #: still held to the 1.95 m demonstrated there. Lower this to cap the whole
+    #: room; raising it cannot widen the cone.
+    ceiling: float = safety.CEILING_CENTRE_TESTED - safety.TRACKING_MARGIN
 
     #: Uniform scale on every horizontal dimension of the choreography.
     #: Shrinks every radius and every speed; the timing is untouched.

@@ -122,6 +122,9 @@ public:
 
   const Connection::Statistics statisticsDelta();
 
+  // Packet tracing for this connection (default off) -- see ConnectionImpl.h.
+  void setTrace(bool enable);
+
   friend std::ostream& operator<<(std::ostream& out, const Connection& p);
 
 private:

@@ -151,6 +151,13 @@ def parse_yaml(context):
 
     server_params[1]['robot_description'] = robot_desc
 
+    # Packet tracing, off unless asked for:  trace_cf:=all   or  trace_cf:=cf1,cf3
+    # `ros2 launch` has no --ros-args, so this has to be a launch argument that is
+    # folded into the server's parameters here. Read at connect by design (this
+    # rig's same-process /parameter_events never loop back -- see CLAUDE.md).
+    server_params[1]['debug.trace_cf'] = \
+        LaunchConfiguration('trace_cf').perform(context)
+
     # construct motion_capture_configuration
     motion_capture_yaml = LaunchConfiguration('motion_capture_yaml_file').perform(context)
     with open(motion_capture_yaml, 'r') as ymlfile:
@@ -192,10 +199,18 @@ def parse_yaml(context):
             respawn_delay=3.0,
             parameters= [motion_capture_params],
         ),
+        # `server:=False` brings up the mocap, RViz and the preflight GUI and
+        # starts NO server, so nothing opens the radio and nothing can be
+        # armed. That is the state scripts/sync_initial_positions.py documents
+        # as its requirement ("mocap up, server not yet started"), and until
+        # 2026-10-02 the launch had no way to produce it -- you launched
+        # everything, synced, then restarted to make the yaml take effect.
         Node(
             package='crazyflie_server_py',
             executable='crazyflie_server',
-            condition=LaunchConfigurationEquals('backend','cflib'),
+            condition=IfCondition(PythonExpression(
+                ["'", LaunchConfiguration('backend'), "' == 'cflib' and '",
+                 LaunchConfiguration('server'), "'.lower() in ('true', '1')"])),
             name='crazyflie_server',
             output='screen',
             parameters= server_params,
@@ -203,7 +218,9 @@ def parse_yaml(context):
         Node(
             package='crazyflie',
             executable='crazyflie_server',
-            condition=LaunchConfigurationEquals('backend','cpp'),
+            condition=IfCondition(PythonExpression(
+                ["'", LaunchConfiguration('backend'), "' == 'cpp' and '",
+                 LaunchConfiguration('server'), "'.lower() in ('true', '1')"])),
             name='crazyflie_server',
             output='screen',
             parameters= server_params,
@@ -212,7 +229,9 @@ def parse_yaml(context):
         Node(
             package='crazyflie_sim',
             executable='crazyflie_server',
-            condition=LaunchConfigurationEquals('backend','sim'),
+            condition=IfCondition(PythonExpression(
+                ["'", LaunchConfiguration('backend'), "' == 'sim' and '",
+                 LaunchConfiguration('server'), "'.lower() in ('true', '1')"])),
             name='crazyflie_server',
             output='screen',
             emulate_tty=True,
@@ -255,6 +274,10 @@ def generate_launch_description():
         DeclareLaunchArgument('foxglove', default_value='True'),
         DeclareLaunchArgument('teleop', default_value='True'),
         DeclareLaunchArgument('mocap', default_value='True'),
+        # False = mocap/GUIs only, no server, no radio, nothing armable.
+        DeclareLaunchArgument('server', default_value='True'),
+        # '' = off, 'all' = every drone, or a comma-separated list (cf1,cf3).
+        DeclareLaunchArgument('trace_cf', default_value=''),
         DeclareLaunchArgument('mocap_hostname', default_value=EnvironmentVariable('CRAZYSWARM_MOCAP_HOST', default_value=''),
                               description='Motive PC IPv4; overrides motion_capture.yaml hostname. Empty = use yaml; yaml "auto" = NatNet discovery'),
         DeclareLaunchArgument('teleop_yaml_file', default_value=''),

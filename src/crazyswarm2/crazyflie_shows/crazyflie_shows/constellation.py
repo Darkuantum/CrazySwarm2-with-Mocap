@@ -2,7 +2,7 @@
 
 Built from the research dossier in ``reference/complex-shows-report.html``
 ("Beyond the Carousel"). ``swarm_show`` is rings: every figure is a variation
-on a regular n-gon. This show is **shapes** -- a pentagon, a pyramid, an arrow,
+on a regular n-gon. This show is **shapes** -- the ring, a pyramid, an arrow,
 a spiral staircase -- joined by morphs, with the vertical axis finally in use.
 Like :mod:`choreography` it is **pure**: no rclpy, no radio, so ``plan_show
 --show constellation`` verifies the exact object ``constellation_show`` flies.
@@ -49,7 +49,7 @@ The show
  #  phase                what you see
 ==  ===================  ======================================================
  1  takeoff, settle      rise over the start marks
- 2  gather               into a pentagon, radius 1.10 m
+ 2  gather               into a regular n-gon, radius 1.10 m
  3  **swashplate**       the ring spins through a fixed tilted plane: each drone
                          rises and dips once per turn
  4  morph -> pyramid     one drone to the centre, raised; four arms around it
@@ -58,7 +58,7 @@ The show
  7  dart / recoil        the whole arrow thrusts forward and draws back (rigid)
  8  morph -> staircase   a line, stepping up from 0.60 m to 1.40 m
  9  **spiral staircase** the line turns a full circle -- a staircase spinning
-10  morph -> pentagon    back to the ring (chosen so the flight home is safe)
+10  morph -> n-gon       back to the ring (chosen so the flight home is safe)
 11  **starburst**        finale: flings out, alternately up and down, spinning
 12  home, land
 ==  ===================  ======================================================
@@ -131,6 +131,16 @@ class ConstellationConfig(choreography.ShowConfig):
     """Tunables. Inherits the rig fields (room centre, arena, scale, takeoff,
     landing, floor, transition speed) from :class:`choreography.ShowConfig`."""
 
+    #: Build the figures at the centre of the TRACKED VOLUME, not at the
+    #: centroid of wherever the drones happen to be parked (which is what
+    #: ``room_center = None`` means and what this show used until 2026-10-02).
+    #: The volume does not move when someone shifts the drones; if the marks
+    #: drift to one side, a show centred on them carries every figure that way
+    #: too, and the far arm of the widest figure is the part that leaves
+    #: tracking. Centred here, the marks only have to be reachable -- which
+    #: ``build_plan`` checks -- and the figures stay where the cameras are.
+    room_center: tuple = safety.ARENA_CENTRE
+
     #: Tempo. Every phase boundary lands on a beat; 120 BPM is 0.5 s a beat,
     #: 2 s a 4/4 bar. Changing it re-times every phase and re-runs every check.
     bpm: float = 120.0
@@ -162,9 +172,12 @@ class ConstellationConfig(choreography.ShowConfig):
     arrow_spacing: float = 1.05
     arrow_half_angle: float = 35.0
     arrow_step: float = 0.20
-    arrow_dart: float = 0.60
+    arrow_dart: float = 0.50
     #: Staircase: spacing along the line, and the bottom / top step heights.
-    stair_spacing: float = 1.05
+    stair_spacing: float = 0.72
+    #: Sideways offset between alternate steps, peak to peak. Carries the
+    #: separation so ``stair_spacing`` can be short -- see :func:`staircase`.
+    stair_stagger: float = 0.70
     stair_low: float = 0.60
     stair_high: float = 1.40
     #: Starburst: radial overshoot and the alternating up/down excursion.
@@ -229,9 +242,22 @@ def arrow(center, n, spacing, half_angle_deg, height, step, heading_deg):
     return _place(center, xy, z, heading_deg)
 
 
-def staircase(center, n, spacing, low, high, heading_deg):
-    """A straight line through the centre, stepping up evenly from low to high."""
-    offs = [((i - (n - 1) / 2.0) * spacing, 0.0) for i in range(n)]
+def staircase(center, n, spacing, low, high, heading_deg, stagger=0.0):
+    """Steps rising from ``low`` to ``high``, switching back as they climb.
+
+    ``stagger`` offsets alternate steps sideways (peak to peak), which is what
+    lets this shape fit the room. A straight line of ``n`` drones must be
+    ``(n-1) x PLAN_SEPARATION`` long -- 3.6 m at five drones, so +-1.8 m of
+    radius spent on one figure, and it grows with every drone added. Offsetting
+    alternate steps puts the clearance on the diagonal instead: adjacent steps
+    are ``hypot(spacing, stagger)`` apart, so ``spacing`` can be well under the
+    separation floor and the footprint shrinks with it. MEASURED, 2026-10-02:
+    worst footprint over n=4..6 falls from 2.62 m to 1.43 m.
+
+    It also reads better -- a switchback stair instead of a ramp seen edge-on.
+    """
+    offs = [((i - (n - 1) / 2.0) * spacing,
+             (stagger / 2.0) * (1.0 if i % 2 else -1.0)) for i in range(n)]
     zs = list(np.linspace(low, high, n))
     return _place(center, offs, zs, heading_deg)
 
@@ -301,9 +327,33 @@ def build_plan(names, initial_positions, cfg=None):
     n = len(starts)
     if not 4 <= n <= 8:
         raise ValueError(f'the constellation show needs 4-8 drones, got {n}')
+    if n > 5:
+        # Not a hard refusal -- check_show below is the authority -- but say it
+        # here, because the failure it raises names a phase, not the cause.
+        # MEASURED 2026-10-02 in this room: the arrow at 6 drones is 1.98 m
+        # wide against a 1.90 m budget, and shrinking arrow_spacing far enough
+        # to fit breaks the morph into it. 6+ needs a bigger tracked volume or
+        # a narrower figure, not a smaller arrow.
+        print(f'  NOTE: {n} drones has never fitted this room -- the arrow and '
+              'the staircase grow with the fleet. Expect a rejection below.')
 
     center = (np.asarray(cfg.room_center, float) if cfg.room_center is not None
               else np.mean([p[:2] for p in starts], axis=0))
+
+    # The marks are not negotiable geometry: the drones sit, take off and land
+    # on them, so a mark outside the tracked volume is a chalk line to move,
+    # not a figure to shrink. check_show would catch it as "takeoff over
+    # radius", which reads like the show's fault.
+    far = [(nm, float(np.hypot(*(np.asarray(s[:2], float)
+                                 - np.asarray(safety.ARENA_CENTRE, float)))))
+           for nm, s in zip(names, starts)]
+    far = [(nm, d) for nm, d in far if d > safety.ARENA_RADIUS_PLAN]
+    if far:
+        raise ValueError(
+            'these drones are parked outside the tracked volume ('
+            f'{safety.ARENA_RADIUS_PLAN:.2f} m around {safety.ARENA_CENTRE}): '
+            + ', '.join(f'{nm} at {d:.2f} m' for nm, d in far)
+            + ' -- move the drone, then re-sync initial_position')
     H = cfg.form_height
     R = cfg.scaled(cfg.ring_radius)
     step = cfg.heading_step
@@ -428,7 +478,8 @@ def build_plan(names, initial_positions, cfg=None):
 
     # ----------------------------------------------- morph -> staircase
     ss = cfg.scaled(cfg.stair_spacing)
-    m = _morph(pos, ((h, staircase(center, n, ss, cfg.stair_low, cfg.stair_high, h))
+    m = _morph(pos, ((h, staircase(center, n, ss, cfg.stair_low, cfg.stair_high, h,
+                                 cfg.scaled(cfg.stair_stagger)))
                      for h in np.arange(0.0, 360.0, step)),
                'morph to staircase')
     stair = m['targets']
@@ -486,7 +537,7 @@ def build_plan(names, initial_positions, cfg=None):
         m = _morph(pos, pentagons(), 'morph back to the pentagon',
                    accept=home_clears(safety.PLAN_SEPARATION))
     ring2 = m['targets']
-    add('morph -> pentagon', 'goto', leg_time(pos, ring2), ring2, goals=ring2,
+    add(f'morph -> {n}-gon', 'goto', leg_time(pos, ring2), ring2, goals=ring2,
         lights=LIGHT['indigo'],
         note=f'chosen so the flight home is safe too; plan-view sep {m["sep_xy"]:.2f} m')
 

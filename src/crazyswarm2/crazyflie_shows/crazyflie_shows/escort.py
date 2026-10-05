@@ -69,7 +69,23 @@ class EscortConfig:
 
     # -- the ring ---------------------------------------------------------
     n_defenders: int = 3
-    ring_radius: float = 1.5       # m, horizontal distance from the VIP
+    #: 1.00 m, down from 1.50 m (inherited from the follow-drone prototype and
+    #: flagged in ESCORT.md as "not measured on this rig") via 1.20 m. Every
+    #: step was paid for by the measured volume: flying cf1 a slow spiral on
+    #: 2026-10-01 lost mocap at 2.24 m radius, and the arena a ring needs for a
+    #: working approach/retreat cycle is ring + min_adv_sep + 0.3 m of run-up
+    #: minus the VIP offset -- 2.14 m at 1.50, 1.84 m at 1.20, 1.50 m at 1.00.
+    #: The last step was asked for on sight (2026-10-01, marks chalked on the
+    #: floor): a 1.20 m ring reads as a big loose circle rather than an escort,
+    #: and the 0.30 m it frees goes into vip_offset, moving the whole encounter
+    #: toward the audience AND taking the adversary mark off the arena edge
+    #: (2.00 m from room centre at 1.20, 1.50 m at 1.00).
+    #: The standoff this gives up is to a DJI, not a person; if a HUMAN ever
+    #: stands in as the VIP, put this back to 1.50 and accept that the demo
+    #: then does not fit this room. min_vip_dist tracks this value -- the ring
+    #: IS the separation, so changing one without the other means the guard
+    #: either fights the ring or stops enforcing anything.
+    ring_radius: float = 1.0       # m, horizontal distance from the VIP
     #: Defender altitude when the VIP is on the floor (a person, or the
     #: fixed point). Ignored when vip_airborne -- see ring_height.
     height: float = 1.2
@@ -103,12 +119,15 @@ class EscortConfig:
     #:
     #: It is bounded from below by the drones themselves. The tight pair is
     #: LEAD-to-wing, an angular gap of wall_half_angle, so they stand
-    #: 2*R*sin(wall_half_angle/2) apart: 0.90 m at 35 deg (on the floor, and
-    #: it flew there), 1.27 m at 50 deg. MEASURED (plan_escort, 2026-09-24):
-    #: 50 deg holds 1.13 m in the closed wall against a 0.90 m budget, while
-    #: still gathering the three of them into a 100 deg arc from the 360 deg
-    #: they rest on -- the change reads clearly from outside.
-    wall_half_angle: float = np.radians(50.0)
+    #: 2*R*sin(wall_half_angle/2) apart -- a CHORD, so it shrinks with the ring
+    #: and this angle cannot be set without knowing ring_radius. At the old
+    #: 1.20 m ring, 50 deg held 1.01 m against the 0.90 m plan budget; at
+    #: 1.00 m the same 50 deg holds only 0.85 m and plan_escort refuses.
+    #: The floor is 2*R*sin(t/2) >= 0.90, i.e. 53.5 deg at R = 1.00; 58 deg
+    #: holds 0.97 m, which is the 0.07 m of margin the 1.20 m ring had.
+    #: It still reads as a wall: the three gather from the 240 deg arc they
+    #: rest on into 116 deg, facing the threat.
+    wall_half_angle: float = np.radians(58.0)
 
     #: Seconds to close the wall, and to open back out. A wing travels
     #: R*(120-50) deg = 1.8 m to take its post; 4 s asks 0.46 m/s of a
@@ -126,23 +145,52 @@ class EscortConfig:
     # 2.6 also keeps the ring at REST for the first 30% of the run, so the
     # demo shows a clear->blocking transition instead of starting blocked --
     # which is the whole thing an audience is there to see.
-    alert_radius: float = 2.6      # m, adversary-to-VIP distance that engages
-    release_radius: float = 2.9    # m, and the larger one that disengages
+    #: RE-FITTED 2026-10-01 to the measured volume. These were 2.6/2.9 m, set
+    #: against a 2.5 m arena. The real volume cannot hold a 2.9 m retreat: the
+    #: adversary ends up outside tracking, so the retreat legs were cut -- and
+    #: that put the adversary permanently INSIDE a 2.6 m alert radius, which is
+    #: the "engaged at t+0.0 s and never disengaged" failure this file already
+    #: warns about for a centred VIP. Verified in sim: 1 BLOCKING event, zero
+    #: clears, the whole demo spent blocked.
+    #:
+    #: The chain that has to hold is
+    #:     probe 1.80 < alert 1.88 < release 2.00 < retreat 2.30
+    #: with 1.80 fixed (ring_radius + min_adv_sep -- the guard will not let the
+    #: adversary closer) and 2.46 m the furthest it can retreat on the 145/215
+    #: deg bearings while staying inside the 2.00 m arena, given the VIP's
+    #: 0.60 m offset. The whole chain shifted down 0.20 m with ring_radius, and
+    #: the hysteresis widened with the room the smaller ring freed: 0.12 m of
+    #: gap between release and retreat where it used to be 0.07 m.
+    alert_radius: float = 1.88     # m, adversary-to-VIP distance that engages
+    release_radius: float = 2.0    # m, and the larger one that disengages
 
     # -- speed / acceleration ---------------------------------------------
     v_max: float = 0.6             # m/s, hard cap on a defender setpoint
     a_max: float = 1.0             # m/s^2
 
     # -- separations, all enforced AFTER the slew (see SetpointGuard) ------
-    min_vip_dist: float = 1.5      # m, horizontal, defender to VIP
+    min_vip_dist: float = 1.0      # m, horizontal, defender to VIP
+                                   #   (= ring_radius; move them together)
     min_pair_sep: float = 0.8      # m, defender to defender
     min_adv_sep: float = 0.8       # m, defender to adversary
 
     # -- the room ----------------------------------------------------------
-    arena_radius: float = 2.5      # m, from room centre (crazyflie_shows.safety)
+    #: MEASURED 2026-10-01, and then FLOWN: cf1 lost tracking at 2.24 m on a
+    #: slow spiral at ring height, so 2.0 m leaves 0.24 m to a demonstrated
+    #: failure rather than to a hand-carried estimate. Tracking is also NOT
+    #: isotropic:
+    #: by 45 deg sector the first sustained dropout sits at 2.15 m (270-315),
+    #: 2.25 m (0-45), 2.31 m (225-270) and never in 180-225, which held to
+    #: 2.46 m. 2.1 is the worst sector, so it is the one that binds.
+    arena_radius: float = 2.0      # m, from room centre (crazyflie_shows.safety)
     ceiling: float = 2.0           # m
     floor: float = 0.3             # m
-    room_center: tuple = (0.0467, -0.1037)
+    #: MEASURED 2026-10-01 by walking cf1 through the volume (scripts/
+    #: measure_arena.py, 8067 samples): the centroid of the tracked space is
+    #: (0.033, 0.255), not the room centre the other shows use. The escort is
+    #: the only show that puts a drone near the edge on purpose, so it is
+    #: centred on what Motive can SEE rather than on the room.
+    room_center: tuple = (0.033, 0.255)
 
     #: Where the VIP stands for the static stages, and the centre the walking
     #: stages start from. NOT the room centre, deliberately: a VIP in the
@@ -152,7 +200,42 @@ class EscortConfig:
     #: 2026-09-23 -- the demo engaged at t+0.0 s and never disengaged).
     #: Offsetting the VIP 1.0 m gives the adversary the far half of the room
     #: to run at, and still leaves ring_radius + 1.0 = 2.5 m for the ring.
-    vip_offset: tuple = (-1.0, 0.0)
+    #: Chosen against the measured volume (walks of 2026-10-01), not symmetry.
+    #: +0.30 m along 0 deg: the VIP sits on the +x side, NEAREST the operator,
+    #: who stands on +x looking down -x. The adversary therefore runs at it
+    #: from -x, across the far half of the room, so the encounter happens
+    #: facing the audience rather than behind the VIP.
+    #:
+    #: 0.60 m, restored once ring_radius came down to 1.00 m. The geofence
+    #: measures the VIP's stray from ROOM CENTRE and keep-in is
+    #: arena - ring, so the pilot box is arena - ring - offset: at ring 1.20
+    #: an 0.60 m offset left a hand-flown DJI just 0.20 m before the ring
+    #: stopped following it, which is why this sat at 0.30 m. At ring 1.00 the
+    #: same 0.60 m offset gives 0.40 m, and the box is a CIRCLE of radius
+    #: 1.00 m about room centre -- so the DJI has 0.40 m further toward the
+    #: operator and 1.60 m away from them, which is the asymmetry you want
+    #: when the far side is the only place it should be flown.
+    #:
+    #: (Previously 0.60 m along 180 deg, keeping the direction the first offset
+    #: used.)
+    #: That matters: AdversaryScript's legs are absolute +-35 deg bearings, so
+    #: they are only symmetric about the open floor while the VIP sits on the
+    #: 180 deg side. Offsetting the VIP anywhere else silently makes one half
+    #: of the probe reach further from the volume centre than the other -- at
+    #: 200 deg the -35 deg retreat came out at 2.31 m against a 2.10 m arena
+    #: while the +35 deg one fitted, which is how the demo ended up refusing
+    #: on only half its own script. Distance (0.60 m) is set by the volume:
+    #: the ring reached vip_offset + ring_radius = 2.10 m toward 180 deg,
+    #: inside the 2.46/2.70 m both walks measured there -- and with ring 1.00
+    #: it reaches only vip_offset + ring_radius = 1.60 m that way. The offset
+    #: is also retreat room: the adversary has to get back past
+    #: release_radius for the demo to show a clear->blocking transition at
+    #: all, and every centimetre the VIP moves toward the operator is a
+    #: centimetre more room on the far side for it to do that in.
+    #: Symmetric placement does not fit at all: with the VIP at the centre the
+    #: adversary mark lands at ring + min_adv_sep + 0.3 = 2.10 m from room
+    #: centre, outside the 2.00 m arena and in the weakest sector (2.15 m).
+    vip_offset: tuple = (0.60, 0.0)
 
     # -- loop / estimation -------------------------------------------------
     rate_hz: float = 20.0          # setpoint stream rate per drone
@@ -467,7 +550,18 @@ class SetpointGuard:
         self.v = np.zeros(3)
         self.reasons = []
 
-    def step(self, target, dt, p_vip=None, p_adv=None, p_others=()):
+    def step(self, target, dt, p_vip=None, p_adv=None, p_others=(),
+             vip_dist=None):
+        """``vip_dist`` overrides ``cfg.min_vip_dist`` for THIS drone.
+
+        It exists for the adversary. A defender's floor to the VIP is the
+        ring it holds; the attacker's job is to get inside that ring, so it
+        needs a smaller floor -- but it does need one, because under
+        ``adversary:=manual`` nothing else bounds it. Measured in sim
+        (2026-10-02) before this existed: holding one direction key flew the
+        commanded adversary from -1.47 m straight THROUGH the VIP point,
+        passing 0.036 m from it, and stopped only at the arena wall.
+        """
         cfg = self.cfg
         self.reasons = []
         target = np.asarray(target, float)
@@ -502,7 +596,9 @@ class SetpointGuard:
             for q in p_others:
                 sp = _push_out(sp, q, cfg.min_pair_sep, self.reasons, 'defender')
             if p_vip is not None:
-                sp = _push_out(sp, p_vip, cfg.min_vip_dist, self.reasons, 'vip')
+                sp = _push_out(sp, p_vip,
+                               cfg.min_vip_dist if vip_dist is None else vip_dist,
+                               self.reasons, 'vip')
 
         # 3. the room
         c = np.array([cfg.room_center[0], cfg.room_center[1]])
@@ -567,12 +663,39 @@ class AdversaryScript:
     #: the VIP's offset), NOT all the way round: a leg behind the VIP puts the
     #: adversary through the wall. check() verifies every leg against the
     #: actual arena, which is the part to trust when these are edited.
-    legs: tuple = ((6.0, 35.0, 3.0),     # rise and sit off to one side
-                   (8.0, 35.0, 2.3),     # probe 1
-                   (5.0, 35.0, 2.9),     # pushed back, retreat
-                   (7.0, -35.0, 2.9),    # swing round to the other side
-                   (8.0, -35.0, 2.3),    # probe 2
-                   (6.0, -35.0, 3.0))    # give up
+    #: Retreat radii cut from 2.9/3.0 m to 2.55/2.60 m on 2026-10-01: measured
+    #: against the real volume, a retreat to 3.0 m put the adversary 2.42 m
+    #: from the volume centre on a bearing whose first sustained dropout is at
+    #: 2.25 m -- i.e. the "give up and back off" legs flew it out of tracking.
+    #: The probe radius is always ring_radius + min_adv_sep exactly -- it is
+    #: the one number here that is a safety limit rather than staging, so it
+    #: moves whenever the ring does and never independently.
+    #: Bearings are ABSOLUTE and sit either side of 180 deg, because the VIP
+    #: moved to +x: the adversary must approach across the far half of the
+    #: room, not through the operator. The radii moved with ring_radius on
+    #: 2026-10-01: probe 2.00 -> 1.80 m (still exactly ring + min_adv_sep) and
+    #: standoff 2.20 -> 2.30 m, which the smaller ring makes affordable. At
+    #: 145 deg with the VIP 0.60 m out on +x, a 2.30 m standoff leaves the
+    #: adversary 1.78 m from the volume centre, 0.22 m inside the 2.00 m
+    #: arena -- so the retreat genuinely clears release_radius instead of
+    #: being clamped back in with the block still engaged.
+    legs: tuple = ((6.0, 145.0, 2.30),   # rise and sit off to one side
+                   (8.0, 145.0, 1.80),   # probe 1 = ring_radius + min_adv_sep
+                   (5.0, 145.0, 2.30),   # pushed back, retreat past release
+                   (7.0, 215.0, 2.30),   # swing round to the other side
+                   (8.0, 215.0, 1.80),   # probe 2
+                   (6.0, 215.0, 2.30))   # give up
+
+    #: One label per leg, for the operator-paced mode: what the NEXT press of
+    #: Enter is about to make the adversary do. Kept beside the legs rather
+    #: than in the show, so editing a leg and forgetting its label is a visible
+    #: mismatch in one file instead of a lie printed at the operator.
+    labels: tuple = ('rise and sit off to one side',
+                     'PROBE 1 - run at the VIP',
+                     'pushed back, retreat',
+                     'swing round to the other side',
+                     'PROBE 2 - run at the VIP again',
+                     'give up and back off')
 
     def target(self, t, p_vip):
         """Where the adversary should be at show time ``t``."""
@@ -590,6 +713,29 @@ class AdversaryScript:
     @property
     def duration(self):
         return sum(d for d, _, _ in self.legs)
+
+    def leg_start(self, i):
+        """Show time at which leg ``i`` begins."""
+        return sum(d for d, _, _ in self.legs[:max(0, min(i, len(self.legs)))])
+
+    def leg_mid(self, i):
+        """A time safely INSIDE leg ``i``.
+
+        The operator-paced mode holds the adversary on one leg until Enter, and
+        ``target()`` selects the leg by time, so it needs a time that cannot sit
+        exactly on a boundary and select the neighbour.
+        """
+        i = max(0, min(i, len(self.legs) - 1))
+        return self.leg_start(i) + self.legs[i][0] * 0.5
+
+    def label(self, i):
+        if 0 <= i < len(self.labels):
+            return self.labels[i]
+        return f'leg {i + 1}'
+
+    @property
+    def n_legs(self):
+        return len(self.legs)
 
     def check(self, cfg, p_vip=None):
         """Problems with this script against ``cfg`` (empty list = OK).

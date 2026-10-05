@@ -199,6 +199,28 @@ def scripts_signature():
     return tuple(sig)
 
 
+def _ros_params(text):
+    """Split a "a:=1 b:=2" field into ROS -p arguments, rejecting junk.
+
+    The console never runs through a shell, so there is no quoting hazard here
+    -- the risk is a typo reaching the drones as a silently-ignored parameter.
+    `ros2 run` accepts an unknown -p without complaint, so a misspelled
+    `vip_mode:=manaul` would launch the escort with the DEFAULT mode and look
+    like it worked. Anything not shaped name:=value is dropped loudly instead.
+    """
+    out = []
+    for tok in str(text or '').split():
+        name, sep, value = tok.partition(':=')
+        if not sep or not name or not value:
+            raise ValueError(
+                f'ROS parameters must be name:=value, not {tok!r} -- '
+                'e.g. vip_mode:=point adversary:=manual')
+        if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.]*', name):
+            raise ValueError(f'{name!r} is not a parameter name')
+        out.append(f'{name}:={value}')
+    return out
+
+
 def _script_param(scripts, label, default_name):
     opts = [f"{d['pkg']} {d['name']}" for d in scripts]
     desc = {}
@@ -473,8 +495,13 @@ def build_catalog(fleet):
     def run_flight(v):
         pkg, name = _split(v, '')
         argv = ['ros2', 'run', pkg, name]
+        params = _ros_params(v.get('rosargs', ''))
         if v.get('sim') == 'yes':
-            argv += ['--ros-args', '-p', 'use_sim_time:=true']
+            params.insert(0, 'use_sim_time:=true')
+        if params:
+            argv.append('--ros-args')
+            for kv in params:
+                argv += ['-p', kv]
         return argv
 
     if flights:
@@ -494,6 +521,12 @@ def build_catalog(fleet):
                 _script_param(flights, 'script', 'hello_world'),
                 p('sim', 'simulation clock', 'select', 'no', ['no', 'yes'],
                   'yes ONLY with backend:=sim.'),
+                p('rosargs', 'ROS parameters', 'text', '',
+                  help='Space-separated name:=value, e.g. '
+                       '"vip_mode:=point adversary:=manual paced:=true". Each '
+                       'becomes a -p flag. Read the script\'s own docstring '
+                       '(shown above) for what it accepts -- escort_show does '
+                       'nothing useful without these.'),
             ],
             docs='docs/RUNNING.md#multi-drone-trajectory-demos'))
 

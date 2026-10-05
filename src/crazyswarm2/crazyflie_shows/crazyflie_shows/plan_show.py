@@ -18,7 +18,7 @@ It also runs with nothing sourced at all, straight from the source tree, which
 is the point -- you can plan a show on a laptop that has never seen the rig::
 
     PYTHONPATH=/opt/ros/humble/lib/python3.10/site-packages \\
-        python3 -m crazyflie_shows.plan_show --yaml config/crazyflies.yaml
+        python3 -m crazyflie_shows.plan_show --yaml ../crazyflie/config/crazyflies.yaml
 """
 
 import argparse
@@ -55,14 +55,23 @@ def load_fleet(yaml_path):
 
 
 def default_yaml():
-    """The installed config if the workspace is sourced, else the source tree."""
+    """The ONE crazyflies.yaml: the `crazyflie` package's, which the server reads.
+
+    This package used to ship its own copy, because the show lived outside the
+    workspace and had nothing else to read. Inside the workspace that copy is
+    only a way to validate one geometry and fly another -- and it already
+    happened: on 2026-10-02 the copy was missing cf8 entirely while the
+    workspace yaml had it. There is one fleet, so there is one file. Override
+    per run with ``--yaml``; nothing needs editing twice.
+    """
     try:
         from ament_index_python.packages import get_package_share_directory
-        return os.path.join(get_package_share_directory('crazyflie_shows'),
+        return os.path.join(get_package_share_directory('crazyflie'),
                             'config', 'crazyflies.yaml')
     except Exception:
-        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        return os.path.join(here, 'config', 'crazyflies.yaml')
+        here = os.path.dirname(os.path.abspath(__file__))
+        return os.path.abspath(os.path.join(
+            here, '..', '..', 'crazyflie', 'config', 'crazyflies.yaml'))
 
 
 def bar(value, limit, width=28):
@@ -80,6 +89,23 @@ def hints(msg, cfg):
     violation, which scaling down makes worse.
     """
     out = []
+    # Order matters: a separation failure "from these start positions" is about
+    # where the drones are PARKED, and every lever below is about the figures.
+    # Telling someone to grow the n-gon when a drone is standing 0.89 m from
+    # its neighbour sends them to edit code instead of moving a drone.
+    if 'start positions' in msg or 'parked outside' in msg:
+        return ['this is the MARKS, not the choreography - the drones are '
+                'standing too close',
+                'together (or outside the tracked volume) before anything takes '
+                'off:',
+                '  1. move the offending drone; marks want >= 1 m, and all of '
+                'them inside',
+                f'     {safety.ARENA_RADIUS_PLAN:.2f} m of {safety.ARENA_CENTRE}',
+                '  2. python3 scripts/sync_initial_positions.py   (mocap up, '
+                'server stopped)',
+                '  3. re-run this planner; restart the server so it re-reads '
+                'the yaml',
+                'No ShowConfig change is the right fix here.']
     if 'separation' in msg:
         out += [f'the show is too SMALL for the {safety.PLAN_SEPARATION:.2f} m '
                 'budget - scaling down makes',
@@ -176,8 +202,16 @@ def report(plan, cfg, names, verbose=True):
         f'   {bar(r["max_accel"], safety.MAX_ACCEL)}')
     out(f'    radius      {r["max_radius"]:5.2f} m  max {cfg.arena_radius:.2f} m'
         f'   {bar(r["max_radius"], cfg.arena_radius)}')
+    ac = r.get('arena_center', safety.ARENA_CENTRE)
+    out(f'                          about ({ac[0]:+.3f}, {ac[1]:+.3f}) m, the centre of '
+        f'the MEASURED volume - not of the')
+    out(f'                          formation. Tracking held to '
+        f'{safety.ARENA_RADIUS_TESTED:.2f} m and was lost at '
+        f'{safety.ARENA_RADIUS_LOST:.2f} m (2026-10-01)')
     out(f'    height      {r["max_z"]:5.2f} m  max {cfg.ceiling:.2f} m'
         f'   {bar(r["max_z"], cfg.ceiling)}')
+    out(f'                          that is the centre column; the volume cones in to '
+        f'{safety.ceiling_at(9.9):.2f} m at full radius')
     out(f'    floor       {r.get("min_z_cruise", r["min_z"]):5.2f} m  min '
         f'{cfg.floor:.2f} m   {bar(cfg.floor, r.get("min_z_cruise", r["min_z"]))}'
         '  (lowest point between takeoff and landing)')

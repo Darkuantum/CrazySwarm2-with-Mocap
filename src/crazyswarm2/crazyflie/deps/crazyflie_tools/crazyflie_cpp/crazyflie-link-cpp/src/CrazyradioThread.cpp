@@ -1,5 +1,7 @@
 #include <iostream>
 
+#include <cstdio>
+
 #include "CrazyradioThread.h"
 #include "Crazyradio.h"
 // #include "native_link/Connection.h"
@@ -354,6 +356,31 @@ void CrazyradioThread::run()
             if (ack) {
                 ++con->statistics_.ack_count;
                 Packet p_ack(ack.data(), ack.size());
+                // Trace (default off): classify each ack and emit ONE summary per
+                // second. The question it answers is whether log data (port 5,
+                // channel 2) reaches the link layer at all for a drone whose log
+                // topics have gone silent -- and nulls (port 15, channel 3) are
+                // what the drone sends when it has nothing to say, so counting
+                // them separately is the whole point.
+                if (con->trace_.load(std::memory_order_relaxed)) {
+                    if (ack.size() > 0) {
+                        const uint8_t hdr = ack.data()[0];
+                        const unsigned port = (hdr >> 4) & 0x0F, chan = hdr & 0x03;
+                        if (port == 15 && chan == 3)      ++con->trace_null_;
+                        else if (port == 5 && chan == 2)  ++con->trace_log_;
+                        else                              ++con->trace_other_;
+                    }
+                    const auto now = std::chrono::steady_clock::now();
+                    if (con->trace_tick_.time_since_epoch().count() == 0) {
+                        con->trace_tick_ = now;
+                    } else if (now - con->trace_tick_ >= std::chrono::seconds(1)) {
+                        fprintf(stderr, "[trace link %010llx] 1s: log=%u null=%u other=%u\n",
+                                (unsigned long long)con->address_, con->trace_log_,
+                                con->trace_null_, con->trace_other_);
+                        con->trace_log_ = con->trace_null_ = con->trace_other_ = 0;
+                        con->trace_tick_ = now;
+                    }
+                }
                 if (con->useAckFilter_ &&
                     ack.size() == 0)
                     // p_ack.port() == 15 && p_ack.channel() == 3)

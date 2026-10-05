@@ -50,10 +50,22 @@ def _param(node, name, default):
     return node.get_parameter(name).value
 
 
-def wait_for_poses(node, cfs, timeout=6.0):
+def wait_for_poses(node, cfs, timeout=25.0, report_every=5.0):
     """Block until every drone has published at least one ``/cfX/pose``.
 
     Returns the list of drones still silent when the timeout expires.
+
+    **The timeout is 25 s, not 6.** MEASURED 2026-10-02 from every
+    crazyflie_server log since June: unicast telemetry on this rig drops out
+    routinely -- the 09-17 show that flew cleanly had cf3 reporting a low
+    receive rate in 98 of its 435 seconds, and sustained silences of 10 s or
+    more are normal with five drones on one radio. A 6 s window therefore
+    failed drones that were fine, which reads as "the show is broken" and sends
+    you looking for a fault that is not there. Flight itself does not depend on
+    this: the server sends mocap poses to the drones as BROADCASTS, which carry
+    no ACK and are never retried, so a drone can fly well while its telemetry
+    is lossy. This gate is about proving the chain once, so give it time to be
+    proved, and say which drones are still missing while waiting.
 
     ``/cfX/pose`` is the *onboard* estimate, forwarded by the server from the
     firmware's default pose log topic. With ``stabilizer.estimator: 2`` that
@@ -63,12 +75,25 @@ def wait_for_poses(node, cfs, timeout=6.0):
     nothing has proved none of it, and per HANDOVER.md section 6 flying it is
     the fly-away case.
     """
-    end = node.get_clock().now().nanoseconds + int(timeout * 1e9)
+    t0 = node.get_clock().now().nanoseconds
+    end = t0 + int(timeout * 1e9)
+    nxt = t0 + int(report_every * 1e9)
+    missing = lambda: [cf.prefix.lstrip('/') for cf in cfs if not cf.poseStamped]
     while node.get_clock().now().nanoseconds < end:
         rclpy.spin_once(node, timeout_sec=0.05)
         if all(cf.poseStamped for cf in cfs):
             return []
-    return [cf.prefix.lstrip('/') for cf in cfs if not cf.poseStamped]
+        now = node.get_clock().now().nanoseconds
+        if now >= nxt:
+            nxt = now + int(report_every * 1e9)
+            print(f'    waiting for a pose from: {", ".join(missing())} '
+                  f'({(now - t0) / 1e9:.0f}/{timeout:.0f} s - telemetry on this '
+                  'radio is lossy, this is normal)', flush=True)
+    return missing()
+
+
+#: How long a drone gets to produce its first /cfX/pose. See wait_for_poses.
+POSE_WAIT_S = 25.0
 
 
 def check_placement(node, cfs, names, plan, tol):
@@ -87,16 +112,20 @@ def check_placement(node, cfs, names, plan, tol):
     so the default 0.25 m leaves 0.86 m, still over the 0.80 m budget. Raising
     it eats that margin directly.
     """
-    silent = wait_for_poses(node, cfs)
+    silent = wait_for_poses(node, cfs, timeout=POSE_WAIT_S)
     if silent:
         raise SystemExit(
             f'\n  NO POSE from: {", ".join(silent)}\n'
             '  These drones have never published /cfX/pose, so nothing has\n'
             '  confirmed they are being tracked. Flying an untracked drone is\n'
             '  the fly-away case (HANDOVER.md 6). Check, in this order:\n'
-            '    ros2 topic hz /poses                      # mocap alive at all?\n'
-            '    ip -o -f inet addr show dev <motive NIC>   # 141.23.110.162 present?\n'
-            '    ros2 topic echo /cfX/pose --once\n')
+            f'  Nothing arrived in {POSE_WAIT_S:.0f} s, which is longer than this '
+            'radio\'s usual dropouts. Check, in this order:\n'
+            '    ros2 topic hz /poses                  # is the mocap stream alive?\n'
+            '    ros2 topic hz /cfX/status             # does ANY telemetry return?\n'
+            '    grep "Low unicast receive rate" ~/.ros/log/<newest>/launch.log\n'
+            '  A receive rate near 0.1 with thousands of packets sent is a radio\n'
+            '  problem (antenna placement, 2.4 GHz interference), not a mocap one.\n')
 
     bad = []
     for cf, nm, want in zip(cfs, names, plan.starts):
@@ -113,7 +142,7 @@ def check_placement(node, cfs, names, plan, tol):
             + ', '.join(f'{nm} off by {d:.2f} m' for nm, d in bad)
             + f'\n  (tolerance {tol:.2f} m)\n'
             '  Either move the drone to its initial_position, or update\n'
-            '  initial_position in config/crazyflies.yaml from /poses (never\n'
+            '  initial_position in crazyflie/config/crazyflies.yaml from /poses (never\n'
             '  from /cfX/pose - HANDOVER.md 6), rebuild, and re-run plan_show.\n')
 
 
@@ -134,7 +163,7 @@ def main():
     if len(cfs) < 3:
         raise SystemExit(
             f'the show needs at least 3 drones, the server offers {len(cfs)}. '
-            'Check `enabled:` in config/crazyflies.yaml.')
+            'Check `enabled:` in crazyflie/config/crazyflies.yaml.')
 
     cfg = choreography.ShowConfig()
     cfg.scale = float(_param(node, 'scale', cfg.scale))

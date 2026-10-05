@@ -144,19 +144,33 @@ symlinks back into `src/`. That gives an asymmetric rule:
 `No executable found` almost always means you added a file and skipped the
 rebuild.
 
-### Config overriding
+### Config: one file (changed 2026-10-02)
 
-`config/crazyflies.yaml` and `config/motion_capture.yaml` are passed to
-`crazyflie/launch.py` as **launch arguments**, so the vendored copies are never
-edited. `server.yaml` and the URDF are **not** overridable — they are hardcoded
-in that file's `parse_yaml()` and always come from the `crazyflie` package.
+**This package no longer has a `config/` directory.** It used to ship its own
+`crazyflies.yaml` and `motion_capture.yaml`, passed to `crazyflie/launch.py` as
+launch arguments — necessary when the show lived outside the workspace, and a
+trap inside it: the fleet had to be edited in two places, and the copies
+drifted (the package's had no cf8 while the workspace's did, so the planner
+checked one fleet and the server flew another).
 
-> **`config/crazyflies.yaml` has five drones enabled** (2026-09-07):
-> `cf1, cf2, cf3, cf10, cf12` — the same five §3's planner was verified against.
-> All five share one radio (`radio://0/80/2M/...`, dongle 0). **Scan every
-> address before every launch** (§6): one unreachable drone wedges the whole
-> server silently. `cf6` stays disabled (dead on radio); `cf5`/`cf11` stay
-> commented out.
+Both now default to the `crazyflie` package's own files — the same ones the
+server reads and `sync_initial_positions.py` writes. They are still launch
+arguments, so another fleet is
+`show_launch.py crazyflies_yaml_file:=/path/to/other.yaml`. `server.yaml` and
+the URDF were never overridable (hardcoded in `parse_yaml()`).
+
+> Which drones are enabled is whatever `crazyflie/config/crazyflies.yaml` says
+> — read it, do not trust a list in a document. **Scan every enabled address
+> before every launch** (§6): one unreachable drone wedges the whole server
+> silently.
+
+`scripts/sync_initial_positions.py` writes that same file, and since
+2026-10-02 it records a mark for **every drone the mocap is streaming**, not
+just the enabled ones — so running a four-drone show and then a five-drone one
+does not need a re-sync, and no fleet switch can carry a stale mark. If you do
+launch with `crazyflies_yaml_file:=` pointing elsewhere, `show_launch.py` says
+so in a banner and gives you the matching `--yaml` sync command; nothing else
+can tell.
 
 ---
 

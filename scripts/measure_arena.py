@@ -51,6 +51,38 @@ DROPOUT_S = 0.15
 EDGE_MARGIN = 0.30
 
 
+
+#: A dropout shorter than this is treated as an occlusion (a body, a hand, a
+#: bad marker angle), not as the edge of the tracked volume.
+SUSTAINED_S = 0.8
+
+#: The height band the drones actually occupy. The headline radius is measured
+#: here and nowhere else -- see the truncated-cone note in analyse().
+FLIGHT_Z = (0.8, 2.0)
+
+
+def _sectors(r, p, centre, t, dropouts, gaps, n=8):
+    """Per-direction coverage. The volume is not a circle, and the escort puts
+    a drone near the edge on purpose, so which WAY it is near the edge matters.
+    """
+    import math
+    ang = (np.degrees(np.arctan2(p[:, 1] - centre[1], p[:, 0] - centre[0])) % 360)
+    width = 360.0 / n
+    out = []
+    for k in range(n):
+        lo, hi = k * width, (k + 1) * width
+        inside = (ang >= lo) & (ang < hi)
+        if not inside.any():
+            out.append({'lo': lo, 'hi': hi, 'n': 0, 'r_max': None, 'first_drop': None})
+            continue
+        d_here = [r[i] for i in dropouts
+                  if gaps[i] >= SUSTAINED_S and lo <= ang[i] < hi]
+        out.append({'lo': lo, 'hi': hi, 'n': int(inside.sum()),
+                    'r_max': float(r[inside].max()),
+                    'first_drop': float(min(d_here)) if d_here else None})
+    return out
+
+
 def analyse(samples, centre=None):
     """Summarise (t, x, y, z) samples of one rigid body.
 
@@ -73,7 +105,39 @@ def analyse(samples, centre=None):
     dropouts = np.flatnonzero(gaps > DROPOUT_S)
     # The radius at which each dropout STARTED -- the last place it was seen.
     drop_r = r[dropouts] if len(dropouts) else np.array([])
-    clean = float(drop_r.min()) if len(drop_r) else float(r.max())
+
+    # The headline used to be drop_r.min() -- the smallest radius at which ANY
+    # dropout began. One momentary occlusion anywhere destroys that estimate:
+    # on the 2026-10-01 walk a single 0.3 s blip at 0.97 m (the carrier's own
+    # body between the drone and a camera) reported the arena as 0.67 m, in a
+    # volume whose drones sit at up to 1.77 m and track at 50 Hz all day.
+    #
+    # A dropout only says something about the EDGE if it lasted long enough to
+    # be loss of coverage rather than a passing occlusion, so brief ones are
+    # excluded from the headline and reported separately. They are still worth
+    # seeing -- an occlusion that happens once while walking will happen again
+    # while flying -- but they are not the arena.
+    sustained = dropouts[gaps[dropouts] >= SUSTAINED_S] if len(dropouts) else dropouts
+    brief = dropouts[gaps[dropouts] < SUSTAINED_S] if len(dropouts) else dropouts
+    sust_r = r[sustained] if len(sustained) else np.array([])
+
+    # A tracked volume is a truncated cone, not a cylinder: wide through the
+    # middle and pinching in near the ceiling. Measured 2026-10-01, walk 2 --
+    # tracking held to 3.1 m at 1.0-2.0 m altitude but only 2.09 m above 2.0 m,
+    # and the single worst dropout (15.9 s at r = 1.97 m) happened at z = 2.33 m.
+    # Taking the minimum over ALL heights reports that CEILING failure as the
+    # arena radius, which is how a volume good to 2.6 m at flight height came
+    # out as 1.97 m. So the headline radius is measured only where the drones
+    # actually fly, and the height limit is reported separately.
+    band = (p[:, 2] >= FLIGHT_Z[0]) & (p[:, 2] <= FLIGHT_Z[1])
+    in_band = np.array([band[i] for i in sustained], bool) if len(sustained) else np.array([], bool)
+    sust_r_band = sust_r[in_band] if len(sust_r) else np.array([])
+    r_band = r[band]
+    clean = (float(sust_r_band.min()) if len(sust_r_band)
+             else float(r_band.max()) if len(r_band) else float(r.max()))
+    # where it was lost ABOVE the flight band -- the ceiling, not the wall
+    high = [i for i in sustained if p[i, 2] > FLIGHT_Z[1]]
+    z_lost = float(min(p[i, 2] for i in high)) if high else None
 
     return {
         'n': len(samples),
@@ -86,6 +150,11 @@ def analyse(samples, centre=None):
         'clean_radius': clean,
         'dropouts': len(dropouts),
         'dropout_radii': np.sort(drop_r),
+        'sustained_radii': np.sort(sust_r),
+        'flight_band': FLIGHT_Z,
+        'z_lost': z_lost,
+        'brief_radii': np.sort(r[brief]) if len(brief) else np.array([]),
+        'sectors': _sectors(r, p, centre, t, dropouts, gaps),
         'lost_seconds': float(gaps[dropouts].sum()) if len(dropouts) else 0.0,
         'rate_hz': float(len(t) / max(t[-1] - t[0], 1e-6)),
     }
@@ -107,6 +176,22 @@ def report(a, cfg_radius=2.5, cfg_ceiling=2.0, cfg_floor=0.3):
         radii = ', '.join(f'{v:.2f}' for v in a['dropout_radii'][:8])
         print(f'  dropouts        {a["dropouts"]}, losing {a["lost_seconds"]:.1f} s '
               f'in total, first lost at radii: {radii} m')
+    brief = a.get('brief_radii')
+    if brief is not None and len(brief):
+        print(f'    of those, {len(brief)} were brief (< {SUSTAINED_S}s) at radii: '
+              + ', '.join(f'{v:.2f}' for v in brief)
+              + ' m -- treated as occlusion, not as the edge')
+    secs = a.get('sectors') or []
+    if secs:
+        print('\n  coverage by direction (the volume is not a circle):')
+        for sec in secs:
+            if not sec['n']:
+                print(f'    {sec["lo"]:3.0f}-{sec["hi"]:3.0f} deg   not walked')
+                continue
+            fd = ('no sustained dropout' if sec['first_drop'] is None
+                  else f'first sustained dropout {sec["first_drop"]:.2f} m')
+            print(f'    {sec["lo"]:3.0f}-{sec["hi"]:3.0f} deg   walked to '
+                  f'{sec["r_max"]:.2f} m, {fd}')
     else:
         print('  dropouts        none -- so this is a floor on the volume, not '
               'its edge; you did not reach a boundary')
@@ -172,6 +257,7 @@ def collect(body, topic, duration):
     """Samples of one rigid body from /poses. Needs rclpy and a live mocap."""
     import rclpy
     from rclpy.node import Node
+    from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
     from motion_capture_tracking_interfaces.msg import NamedPoseArray
 
     samples = deque()
@@ -180,7 +266,17 @@ def collect(body, topic, duration):
     class Collector(Node):
         def __init__(self):
             super().__init__('measure_arena')
-            self.create_subscription(NamedPoseArray, topic, self.cb, 50)
+            # /poses is published BEST_EFFORT (motion_capture.yaml sets the
+            # poses qos mode to "sensor"). A default RELIABLE subscription is
+            # QoS-incompatible with it and receives NOTHING -- rclpy only warns
+            # ("offering incompatible QoS ... No messages will be received"),
+            # so the script ran a full capture and reported 0 samples. Same
+            # trap as `ros2 topic hz /poses`, which is silent for the same
+            # reason unless told to use best effort.
+            self.create_subscription(
+                NamedPoseArray, topic, self.cb,
+                QoSProfile(depth=50, reliability=ReliabilityPolicy.BEST_EFFORT,
+                           history=HistoryPolicy.KEEP_LAST))
             self.t0 = self.get_clock().now().nanoseconds * 1e-9
 
         def cb(self, msg):

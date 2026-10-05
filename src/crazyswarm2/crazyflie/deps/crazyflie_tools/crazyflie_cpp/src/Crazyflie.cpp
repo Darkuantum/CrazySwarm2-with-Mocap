@@ -1,4 +1,5 @@
 //#include <regex>
+#include <cstdio>
 #include <mutex>
 #include <cassert>
 
@@ -1026,6 +1027,43 @@ bitcraze::crazyflieLinkCpp::Packet Crazyflie::waitForResponse(
 
 void Crazyflie::processPacket(const bitcraze::crazyflieLinkCpp::Packet& p)
 {
+  // Trace (default off): what arrived, and what we decided to do with it. The key
+  // columns are logvalid (does it pass crtpLogDataResponse::valid -- port 5,
+  // channel 2, payload > 3) and cb (is that block id registered). A log packet
+  // failing valid() is dropped SILENTLY, with no "unrequested data" warning,
+  // which is consistent with the stall this was written to chase.
+  if (m_trace.load(std::memory_order_relaxed)) {
+    const bool lv = crtpLogDataResponse::valid(p);
+    const bool cb = lv && m_logBlockCb.count(crtpLogDataResponse::blockId(p)) > 0;
+    const bool isNull = (p.port() == 15 && p.channel() == 3);
+    if (isNull)    ++m_trace_null;
+    else if (lv) { ++m_trace_log; if (cb) ++m_trace_logcb; }
+    else           ++m_trace_other;
+    // Per-packet lines ONLY for anomalies, so normal operation costs one line a
+    // second per drone and every oddity still shows up individually: a log-shaped
+    // packet that fails valid() is dropped silently by the dispatcher (no
+    // "unrequested data" warning), and valid-but-unregistered means the block id
+    // went away.
+    if (lv && !cb) {
+      fprintf(stderr, "[trace host %s] ANOMALY log packet, block id NOT registered: "
+              "port=%u ch=%u len=%zu\n", m_connection.uri().c_str(),
+              (unsigned)p.port(), (unsigned)p.channel(), (size_t)p.size());
+    } else if (!isNull && !lv && p.port() == 5) {
+      fprintf(stderr, "[trace host %s] ANOMALY port 5 packet failed "
+              "crtpLogDataResponse::valid: ch=%u len=%zu\n",
+              m_connection.uri().c_str(), (unsigned)p.channel(), (size_t)p.size());
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (m_trace_tick.time_since_epoch().count() == 0) {
+      m_trace_tick = now;
+    } else if (now - m_trace_tick >= std::chrono::seconds(1)) {
+      fprintf(stderr, "[trace host %s] 1s: log=%u dispatched=%u null=%u other=%u\n",
+              m_connection.uri().c_str(), m_trace_log, m_trace_logcb,
+              m_trace_null, m_trace_other);
+      m_trace_log = m_trace_logcb = m_trace_null = m_trace_other = 0;
+      m_trace_tick = now;
+    }
+  }
   if (crtpConsoleResponse::valid(p))
   {
     if (m_consoleCallback)
