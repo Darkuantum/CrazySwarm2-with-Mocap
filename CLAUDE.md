@@ -292,9 +292,11 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   ~0.84/s) and `ros2 param set` still reaches the drone (an LED write works).
   The DRONE is not at fault either: a second Crazyradio in a separate process
   connects and streams its log at 10 Hz, with hours of drone uptime (no reboot).
-  **Recovery: restart the server** (its connect sequence does `logReset()` and
-  recreates the blocks). Power-cycling drones is NOT needed -- that is the
-  supervisor-LOCKED case below, a different failure.
+  **Recovery is now automatic** -- the telemetry watchdog below recreates that
+  one drone's log blocks in place. The manual fallback is to restart the server
+  (its connect sequence does `logReset()` and recreates the blocks).
+  Power-cycling drones is NOT needed -- that is the supervisor-LOCKED case
+  below, a different failure.
   Diagnose with `warnings.communication.publish_stats: true` (already on) ->
   `/cfX/connection_statistics`, plus `scripts/link_stall_recorder.py`, which
   dumps the 60 s precursor for EVERY drone the moment one stalls.
@@ -321,12 +323,53 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   (`logReset`, create and `start` are all acked); and the radio loop skipping
   connections (it services every connection every iteration,
   `CrazyradioThread.cpp:195`).
-  **Leading suspect, inferred not proven:** Crazyradio 2.0 "inline mode" ack
-  read desync -- `sendPacketInline` reads the reply with a 10 ms timeout and
-  returns an empty ack on timeout (`Crazyradio.cpp:285-296`), so a late reply
-  can become the NEXT read's result and be attributed to the wrong connection.
-  Inline mode is enabled only for CR2.0 firmware >= 5.1
-  (`CrazyradioThread.cpp` ~148); a Crazyradio PA never takes that path.
+  **LOCALISED 2026-10-05 by packet tracing (`trace_cf:=all`).** At the freeze the
+  link trace reads `log=0 null=~200 other=1` and the host trace agrees
+  (`log=0 dispatched=0`): **zero log packets ever leave the drone on that
+  connection** -- it answers every poll with a 1-byte "nothing to send" null.
+  So nothing is dropped, misdispatched or failing validation host-side; there is
+  nothing arriving to drop. That kills the two host-side explanations outright
+  (lost before dispatch, and misdelivery to another connection) and leaves the
+  drone's per-link log production. The inline-mode desync theory is NOT
+  supported: it would affect every connection and raise unrequested-block
+  warnings, and neither happens.
+  Context, not cause: freezes follow a ~3 s link disturbance and a backlog flush
+  (`log=50 null=1` in one second), but other drones survive identical saturated
+  bursts (cf1 took `log=34 null=0` and stayed healthy), so the flush alone is
+  not sufficient.
+  **ROOT CAUSE, MEASURED 2026-10-05: the drone DROPS its log blocks.** The
+  watchdog's first remedy was a stop/start of the existing blocks; at a real cf5
+  stall that came back as `Could not start log block!` -- a response, not a
+  timeout, so the drone answered the control request and REFUSED it. A block
+  cannot be started if it no longer exists on the aircraft. That single result
+  explains the whole syndrome: no block -> nothing to send -> every poll
+  answered with a null -> a link that measures perfectly healthy. It also
+  explains why only a server restart ever recovered it (its connect sequence
+  re-CREATES the blocks) and why a second dongle always worked (a fresh
+  connection creates its own). What makes the drone drop them is still open --
+  a firmware-side log-engine reset is the obvious candidate -- but the recovery
+  no longer depends on knowing.
+  **FIX IN PLACE -- the telemetry watchdog** (`server.yaml`
+  `telemetry_watchdog_s: 5.0`, `check_telemetry_watchdog()` in
+  `crazyflie_server.cpp`): when a drone delivers no log data for that long while
+  its latency echo is still current (< 2 s), the server recovers that one drone
+  in two tiers -- **tier 1** `restart_log_blocks()` (stop/start, cheap, works if
+  the blocks still exist), and when that throws, **tier 2**
+  `rebuild_log_blocks()`: destroy the block objects, `logReset()`, then create
+  and start them all again, which is the logging half of a server restart
+  without the restart. Tier 2 is why every block is now registered through
+  `add_log_builder()` at connect instead of just being constructed -- the
+  builder closure is the only record of how to make that block again. It
+  **refuses to act unless mocap positively shows the drone on the floor** (`z <= 0.10 m`): the shows take off with broadcast `/all/takeoff`,
+  which no per-drone command handler ever observes, and `/cfX/status` is dead
+  exactly when it would be asked, so mocap altitude is the only signal that sees
+  both cases. Unknown altitude counts as airborne. Set to 0 to disable.
+  **Packet tracing** (`ros2 launch crazyflie launch.py trace_cf:=all`, or a
+  comma-separated subset) prints ONE summary per second per drone from the link
+  layer and from `processPacket`, plus per-packet lines only for anomalies. It
+  is a launch argument, NOT `--ros-args` (`ros2 launch` has no such flag), and
+  is read at connect because this rig's `/parameter_events` never loop back.
+  Backups of every traced file: `data/patch-backups/trace-<sha>/REVERT.sh`.
 - **A second Crazyradio is the best diagnostic probe on this rig.** With the
   server holding one dongle, a second one lets another process talk to the same
   drone: the link library **skips any radio whose serial it cannot query**

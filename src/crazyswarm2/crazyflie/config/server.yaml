@@ -38,6 +38,17 @@
         # drone answers every poll with nothing to say, on that link only.
         # Costs one small message per drone per second. Turn back off when done.
         publish_stats: true
+    # Telemetry watchdog, seconds (0 = off). MEASURED 2026-10-05 by packet trace:
+    # a drone can stop sending log data on its connection while the link stays
+    # alive -- link trace reads log=0 with ~200 nulls/s, i.e. it answers every
+    # poll with "nothing to send" -- and only recreating its log blocks (which a
+    # server restart does) brings telemetry back. At this threshold the server
+    # restarts that one drone's blocks in place instead. It REFUSES to act unless
+    # mocap positively shows the drone on the floor (z <= 0.10 m), because the
+    # shows take off with broadcast /all/takeoff that no per-drone handler sees,
+    # and telemetry is dead exactly when /cfX/status would be asked.
+    telemetry_watchdog_s: 5.0
+
     firmware_params:
       query_all_values_on_connect: true
     # simulation related

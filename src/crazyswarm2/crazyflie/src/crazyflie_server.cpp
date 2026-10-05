@@ -500,14 +500,20 @@ public:
 
             std::function<void(uint32_t, const logPose*)> cb = std::bind(&CrazyflieROS::on_logging_pose, this, std::placeholders::_1, std::placeholders::_2);
 
-            log_block_pose_.reset(new LogBlock<logPose>(
-              &cf_,{
+            const std::list<std::pair<std::string, std::string>> vars({
                 {"stateEstimate", "x"},
                 {"stateEstimate", "y"},
                 {"stateEstimate", "z"},
                 {"stateEstimateZ", "quat"}
-              }, cb));
-            log_block_pose_->start(uint8_t(100.0f / (float)freq)); // this is in tens of milliseconds
+            });
+            period_pose_ = uint8_t(100.0f / (float)freq);
+            // Registered as a BUILDER (which creates it now) rather than just
+            // constructed: a stalled drone has DROPPED its blocks, so recovery
+            // has to create them again - see rebuild_log_blocks().
+            add_log_builder([this, vars, cb]() mutable {
+              log_block_pose_.reset(new LogBlock<logPose>(&cf_, vars, cb));
+              log_block_pose_->start(period_pose_);
+            });
           }
           else if (i.first.find("default_topics.scan") == 0) {
             int freq = log_config_map["default_topics.scan.frequency"].get<int>();
@@ -517,14 +523,17 @@ public:
 
             std::function<void(uint32_t, const logScan*)> cb = std::bind(&CrazyflieROS::on_logging_scan, this, std::placeholders::_1, std::placeholders::_2);
 
-            log_block_scan_.reset(new LogBlock<logScan>(
-              &cf_,{
+            const std::list<std::pair<std::string, std::string>> vars({
                 {"range", "front"},
                 {"range", "left"},
                 {"range", "back"},
                 {"range", "right"}
-              }, cb));
-            log_block_scan_->start(uint8_t(100.0f / (float)freq)); // this is in tens of milliseconds
+            });
+            period_scan_ = uint8_t(100.0f / (float)freq);
+            add_log_builder([this, vars, cb]() mutable {
+              log_block_scan_.reset(new LogBlock<logScan>(&cf_, vars, cb));
+              log_block_scan_->start(period_scan_);
+            });
           }
           else if (i.first.find("default_topics.odom") == 0) {
             int freq = log_config_map["default_topics.odom.frequency"].get<int>();
@@ -534,8 +543,7 @@ public:
 
             std::function<void(uint32_t, const logOdom*)> cb = std::bind(&CrazyflieROS::on_logging_odom, this, std::placeholders::_1, std::placeholders::_2);
 
-            log_block_odom_.reset(new LogBlock<logOdom>(
-              &cf_,{
+            const std::list<std::pair<std::string, std::string>> vars({
                 {"stateEstimateZ", "x"},
                 {"stateEstimateZ", "y"},
                 {"stateEstimateZ", "z"},
@@ -546,8 +554,12 @@ public:
                 //{"stateEstimateZ", "rateRoll"},
                 //{"stateEstimateZ", "ratePitch"},
                 //{"stateEstimateZ", "rateYaw"}
-              }, cb));
-            log_block_odom_->start(uint8_t(100.0f / (float)freq)); // this is in tens of milliseconds
+            });
+            period_odom_ = uint8_t(100.0f / (float)freq);
+            add_log_builder([this, vars, cb]() mutable {
+              log_block_odom_.reset(new LogBlock<logOdom>(&cf_, vars, cb));
+              log_block_odom_->start(period_odom_);
+            });
             
           }
           else if (i.first.find("default_topics.status") == 0) {
@@ -587,9 +599,11 @@ public:
                 logvars.push_back({"pm", "vbatMV"});
             }
 
-            log_block_status_.reset(new LogBlock<logStatus>(
-              &cf_,logvars, cb));
-            log_block_status_->start(uint8_t(100.0f / (float)freq)); // this is in tens of milliseconds
+            period_status_ = uint8_t(100.0f / (float)freq);
+            add_log_builder([this, logvars, cb]() mutable {
+              log_block_status_.reset(new LogBlock<logStatus>(&cf_, logvars, cb));
+              log_block_status_->start(period_status_);
+            });
           }
           else if (i.first.find("custom_topics") == 0
                    && i.first.rfind(".vars") != std::string::npos) {
@@ -609,12 +623,16 @@ public:
               std::placeholders::_2,
               std::placeholders::_3);
 
-            log_blocks_generic_.emplace_back(new LogBlockGeneric(
-              &cf_,
-              vars,
-              (void*)&publishers_generic_.back(),
-              cb));
-            log_blocks_generic_.back()->start(uint8_t(100.0f / (float)freq)); // this is in tens of milliseconds
+            // publishers_generic_ is a std::list, so this address stays valid
+            // however many more custom topics are added after it.
+            void* user_data = (void*)&publishers_generic_.back();
+            const uint8_t period = uint8_t(100.0f / (float)freq);
+            add_log_builder([this, vars, cb, user_data, period]() mutable {
+              log_blocks_generic_.emplace_back(new LogBlockGeneric(
+                &cf_, vars, user_data, cb));
+              periods_generic_.push_back(period);
+              log_blocks_generic_.back()->start(period);
+            });
           }
         }
       }
@@ -941,6 +959,7 @@ private:
   }
 
   void on_logging_pose(uint32_t time_in_ms, const logPose* data) {
+    last_log_rx_ = std::chrono::steady_clock::now();   // telemetry watchdog
     if (shutting_down_) return;  // publishers may already be destroyed during teardown
     if (publisher_pose_) {
       geometry_msgs::msg::PoseStamped msg;
@@ -976,6 +995,7 @@ private:
   }
 
   void on_logging_scan(uint32_t time_in_ms, const logScan* data) {
+    last_log_rx_ = std::chrono::steady_clock::now();   // telemetry watchdog
     if (shutting_down_) return;  // publishers may already be destroyed during teardown
     if (publisher_scan_) {
       
@@ -1007,6 +1027,7 @@ private:
   }
 
   void on_logging_odom(uint32_t time_in_ms, const logOdom* data) {
+    last_log_rx_ = std::chrono::steady_clock::now();   // telemetry watchdog
     if (shutting_down_) return;  // publishers may already be destroyed during teardown
     if (publisher_odom_) {
       nav_msgs::msg::Odometry msg;
@@ -1036,6 +1057,7 @@ private:
   }
 
   void on_logging_status(uint32_t time_in_ms, const logStatus* data) {
+    last_log_rx_ = std::chrono::steady_clock::now();   // telemetry watchdog
     if (shutting_down_) return;  // publishers may already be destroyed during teardown
     if (publisher_status_) {
       
@@ -1113,6 +1135,7 @@ private:
   }
 
   void on_logging_custom(uint32_t time_in_ms, const std::vector<float>* values, void* userData) {
+    last_log_rx_ = std::chrono::steady_clock::now();   // telemetry watchdog
     if (shutting_down_) return;  // publishers may already be destroyed during teardown
 
     auto pub = reinterpret_cast<rclcpp::Publisher<crazyflie_interfaces::msg::LogDataGeneric>::SharedPtr*>(userData);
@@ -1145,6 +1168,14 @@ private:
     return false;
   }
 
+  //: Create a log block AND remember how, so it can be created again later.
+  void add_log_builder(std::function<void()> build)
+  {
+    build();                                  // exactly what the code did before
+    log_block_builders_.push_back(std::move(build));
+  }
+
+  //: Tier 1 - stop/start the blocks the drone is believed to still hold.
   void restart_log_blocks()
   {
     if (log_block_pose_   && period_pose_)   { log_block_pose_->stop();   log_block_pose_->start(period_pose_); }
@@ -1155,6 +1186,30 @@ private:
     for (auto& b : log_blocks_generic_) {
       if (b && i < periods_generic_.size() && periods_generic_[i]) { b->stop(); b->start(periods_generic_[i]); }
       ++i;
+    }
+  }
+
+  //: Tier 2 - the drone has dropped its blocks, so create them from scratch.
+  //
+  //  MEASURED 2026-10-05: at a stall, tier 1 fails with "Could not start log
+  //  block!" - the drone ANSWERS the control request and refuses it, i.e. the
+  //  block id it is being asked to start no longer exists on the aircraft.
+  //  That is the whole explanation of the stall: no block, nothing to send,
+  //  so every poll is answered with a null and the link looks perfectly
+  //  healthy. This is the logging half of what a server restart does.
+  void rebuild_log_blocks()
+  {
+    // Destroy first: ~LogBlock frees its id, so the rebuild reuses the same
+    // ids and the drone's own log state is wiped by logReset() underneath.
+    log_block_pose_.reset();
+    log_block_scan_.reset();
+    log_block_odom_.reset();
+    log_block_status_.reset();
+    log_blocks_generic_.clear();
+    periods_generic_.clear();                 // the builders push these back
+    cf_.logReset();
+    for (auto& build : log_block_builders_) {
+      build();
     }
   }
 
@@ -1178,13 +1233,24 @@ private:
                 "(latency %.1f s ago) - restarting its log blocks in place",
                 name_.c_str(), quiet, since_latency);
     recovering_ = true;
+    bool recovered = false;
     try {
       restart_log_blocks();
       RCLCPP_WARN(logger_, "[%s] log blocks restarted; watching for data", name_.c_str());
+      recovered = true;
     } catch (const std::exception& e) {
-      RCLCPP_ERROR(logger_, "[%s] log-block restart FAILED (%s) - the drone may have "
-                   "dropped the blocks entirely; a server restart remains the fallback",
-                   name_.c_str(), e.what());
+      RCLCPP_WARN(logger_, "[%s] stop/start refused (%s) - the drone no longer holds "
+                  "these blocks; recreating them", name_.c_str(), e.what());
+    }
+    if (!recovered) {
+      try {
+        rebuild_log_blocks();
+        RCLCPP_WARN(logger_, "[%s] log blocks RECREATED (logReset + create + start); "
+                    "watching for data", name_.c_str());
+      } catch (const std::exception& e) {
+        RCLCPP_ERROR(logger_, "[%s] log-block rebuild FAILED (%s) - only a server "
+                     "restart will revive this drone's telemetry", name_.c_str(), e.what());
+      }
     }
     last_log_rx_ = std::chrono::steady_clock::now();
     recovering_ = false;
@@ -1229,6 +1295,7 @@ private:
 
   void on_latency(uint64_t latency_in_us)
   {
+    last_latency_rx_ = std::chrono::steady_clock::now();   // telemetry watchdog
     if (latency_in_us / 1000.0 > max_latency_) {
       RCLCPP_WARN(logger_, "[%s] High latency: %.1f ms", name_.c_str(), latency_in_us / 1000.0);
     }
@@ -1290,6 +1357,8 @@ private:
   const CrazyflieBroadcaster* cfbc_;
 
   std::list<std::unique_ptr<LogBlockGeneric>> log_blocks_generic_;
+  //: How to create every log block again from nothing - see rebuild_log_blocks().
+  std::vector<std::function<void()>> log_block_builders_;
   //: Telemetry watchdog state - see check_telemetry_watchdog().
   double telemetry_watchdog_s_{0.0};
   bool recovering_{false};
