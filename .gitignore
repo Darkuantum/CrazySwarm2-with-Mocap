@@ -22,8 +22,14 @@ video/*.mov
 # crazyflie_server writes these into the working directory on connect (the
 # param/log table-of-contents of whatever firmware it just talked to). They are
 # regenerated every run and are per-firmware, so they are cache, not source.
-/log*.csv
-/params*.csv
+# Anywhere, not just the repo root: two of them were committed into
+# src/crazyswarm2/crazyflie/config/ in 2026-10-02 and installed into the
+# package share, where nothing read them.
+log*.csv
+params*.csv
+
+# Claude Code session transcripts dropped into the working directory.
+*-this-session-is-being-continued-from-a-previous-*.txt
 
 # ---- editors / OS ----
 .vscode/
