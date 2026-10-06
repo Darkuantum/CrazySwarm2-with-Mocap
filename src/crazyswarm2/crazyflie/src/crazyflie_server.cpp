@@ -1,5 +1,6 @@
 #include <memory>
 #include <atomic>
+#include <mutex>
 #include <set>
 #include <vector>
 #include <regex>
@@ -712,7 +713,18 @@ public:
   //: handler - the only place that sees altitude for every drone however it was
   //: commanded, broadcast /all/takeoff included.
   //: Did trajectory `id` fail to upload to this drone? See upload_trajectory().
-  bool trajectory_is_bad(uint8_t id) const { return bad_trajectories_.count(id) > 0; }
+  bool trajectory_is_bad(uint8_t id) const
+  {
+    std::lock_guard<std::mutex> lock(bad_trajectories_mutex_);
+    return bad_trajectories_.count(id) > 0;
+  }
+
+  void mark_trajectory_bad(uint8_t id, bool bad)
+  {
+    std::lock_guard<std::mutex> lock(bad_trajectories_mutex_);
+    if (bad) bad_trajectories_.insert(id);
+    else     bad_trajectories_.erase(id);
+  }
 
   //: "This drone has been told to fly." Latched until mocap positively sees it
   //: on the floor again, because a command's effect outlives the call and
@@ -893,7 +905,7 @@ private:
       request->reversed,
       request->relative,
       request->group_mask);
-    if (bad_trajectories_.count(request->trajectory_id)) {
+    if (trajectory_is_bad(request->trajectory_id)) {
       RCLCPP_FATAL(logger_, "[%s] REFUSING to start trajectory %d: its upload did "
                    "not complete. Re-upload it before flying.",
                    name_.c_str(), request->trajectory_id);
@@ -975,16 +987,20 @@ private:
     }
     // The upload can now give up instead of blocking forever (see
     // Crazyflie::uploadTrajectory). It MUST NOT escape into rclcpp: this
-    // callback group is mutually exclusive and shared with this drone's
-    // land/takeoff/arm/emergency services and the telemetry watchdog.
-    // UploadTrajectory.srv carries no success field, so the caller cannot be
-    // told -- hence FATAL, and the flag that start_trajectory checks.
+    // callback group is mutually exclusive and -- note, wider than an earlier
+    // version of this comment claimed -- shared across the WHOLE FLEET, so a
+    // throw here would take every drone's land/takeoff/arm/emergency and the
+    // 1 ms spin_once that publishes all telemetry, not just this drone's.
+    // UploadTrajectory.srv does carry success/message (crazyflie_py raises on
+    // it); bad_trajectories_ is the belt-and-braces that also makes
+    // start_trajectory refuse the id, including on the broadcast path where
+    // StartTrajectory.srv has no response fields at all.
     try {
       cf_.uploadTrajectory(request->trajectory_id, request->piece_offset, pieces);
-      bad_trajectories_.erase(request->trajectory_id);
+      mark_trajectory_bad(request->trajectory_id, false);
       response->success = true;
     } catch (const std::exception& e) {
-      bad_trajectories_.insert(request->trajectory_id);
+      mark_trajectory_bad(request->trajectory_id, true);
       response->success = false;
       response->message = std::string(name_) + ": " + e.what();
       RCLCPP_FATAL(logger_, "[%s] TRAJECTORY %d UPLOAD FAILED (%s) - DO NOT FLY IT; "
@@ -1499,7 +1515,14 @@ private:
   double telemetry_watchdog_s_{0.0};
   bool recovering_{false};
   bool rebuild_pending_{false};
-  //: Trajectory ids whose upload did not complete - start_trajectory refuses them.
+  //: Trajectory ids whose upload did not complete - start_trajectory refuses
+  //: them. MUTEX-GUARDED: written by upload_trajectory() on
+  //: callback_group_cf_srv and read by the BROADCAST start_trajectory handler
+  //: on callback_group_all_srv_ -- two different callback groups, so genuinely
+  //: concurrent, and a concurrent read/write of a std::set is undefined
+  //: behaviour. Use trajectory_is_bad() / mark_trajectory_bad(), never the
+  //: member directly.
+  mutable std::mutex bad_trajectories_mutex_;
   std::set<uint8_t> bad_trajectories_;
   //: Written from note_mocap_z() on callback_group_mocap_ and from the command
   //: handlers, read by may_be_airborne() on callback_group_cf_srv -- different
