@@ -13,6 +13,10 @@
 
   <depend>rclpy</depend>
   <depend>crazyflie_py</depend>
+  <!-- multi_trajectory_formation checks its plan against the MEASURED arena
+       (safety.ARENA_CENTRE / ARENA_RADIUS_PLAN) before arming, instead of
+       carrying its own copy of numbers that predate the 2026-10-01 survey. -->
+  <depend>crazyflie_shows</depend>
   <depend>tf2_ros</depend>
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>

@@ -90,12 +90,13 @@ CEILING_PINCH = 2.00            # m
 #: MIN_SEPARATION. This is the number check_show enforces.
 PLAN_SEPARATION = MIN_SEPARATION + TRACKING_MARGIN
 
-#: The inherited numbers. **Kept only so an explicit caller can still ask for
-#: them**; nothing defaults to them any more, because 2026-10-01 measured the
-#: room and ARENA_RADIUS is 0.5 m larger than anywhere a drone has been
-#: tracked. A show checked against 2.5 m is not checked.
-ARENA_RADIUS = 2.5     # m, INHERITED, disproven - see ARENA_RADIUS_TESTED
-CEILING = 2.0          # m, INHERITED - see CEILING_TESTED
+# The inherited ARENA_RADIUS = 2.5 / CEILING = 2.0 used to live here, said to
+# be "kept only so an explicit caller can still ask for them". They were in
+# fact referenced by exactly one thing -- check_envelope's own default
+# arguments -- so the comment was true of the intent and false of the code,
+# and the one show that took those defaults (demo_show) was checked against a
+# radius 0.6 m beyond anywhere a drone has ever been tracked. Deleted
+# 2026-10-06; use ARENA_RADIUS_PLAN and ceiling_at().
 
 #: What a *plan* must stay inside, for the same reason PLAN_SEPARATION exists:
 #: the drones fly the plan with up to TRACKING_MARGIN of error, and
@@ -256,8 +257,17 @@ def best_phase_ngon(starts, center, radius, height, ngon_fn, step_deg=1.0):
     return best
 
 
-def check_leg(src, dst, label='leg', min_sep=MIN_SEPARATION):
-    """Assert a transition is safe; returns the separation, raises if not."""
+def check_leg(src, dst, label='leg', min_sep=PLAN_SEPARATION):
+    """Assert a transition is safe; returns the separation, raises if not.
+
+    Defaults to PLAN_SEPARATION, not MIN_SEPARATION: the caller is checking a
+    *plan*, and the drones fly it with up to TRACKING_MARGIN of error, so a
+    leg planned at exactly MIN_SEPARATION is flown under it. That is the
+    2026-09-07 incident that created TRACKING_MARGIN in the first place.
+    check_show and assign_makespan always used the plan budget; this one gate
+    held the lower bar until 2026-10-06, and demo_show -- whose ONLY
+    separation gate it is -- took the default.
+    """
     sep = transition_min_sep(src, dst)
     if sep < min_sep:
         raise ValueError(
@@ -265,18 +275,34 @@ def check_leg(src, dst, label='leg', min_sep=MIN_SEPARATION):
     return sep
 
 
-def check_envelope(positions, radius=ARENA_RADIUS, ceiling=CEILING,
-                   center=(0.0, 0.0), label='envelope'):
-    """Assert every position is inside the flyable volume."""
+def check_envelope(positions, radius=ARENA_RADIUS_PLAN, ceiling=None,
+                   center=ARENA_CENTRE, label='envelope'):
+    """Assert every position is inside the flyable volume.
+
+    Defaults are the MEASURED volume (2026-10-01), centred on ARENA_CENTRE --
+    not the inherited 2.5 m from (0, 0), which this function's own defaults
+    were the last thing in the package still referencing.
+
+    ``ceiling=None`` applies the truncated-cone limit from :func:`ceiling_at`,
+    which is radius-dependent, because one number for the whole room either
+    forbids the centre climb or blesses an untested corner. An explicit
+    ``ceiling`` can only LOWER it, never raise it above what has been flown --
+    the same composition check_show uses.
+    """
     for i, p in enumerate(positions):
         p = np.asarray(p, float)
         r = float(np.linalg.norm(p[:2] - np.asarray(center, float)))
         if r > radius:
             raise ValueError(
                 f'{label}: slot {i} at r={r:.2f} m exceeds arena {radius} m')
-        if len(p) > 2 and p[2] > ceiling:
-            raise ValueError(
-                f'{label}: slot {i} at z={p[2]:.2f} m exceeds ceiling {ceiling} m')
+        if len(p) > 2:
+            limit = ceiling_at(r)
+            if ceiling is not None:
+                limit = min(float(ceiling), float(limit))
+            if p[2] > limit:
+                raise ValueError(
+                    f'{label}: slot {i} at z={p[2]:.2f} m exceeds the ceiling '
+                    f'{float(limit):.2f} m flown clean at r={r:.2f} m')
 
 
 def scaled_duration(src, dst, avg_speed=0.5, minimum=2.0):

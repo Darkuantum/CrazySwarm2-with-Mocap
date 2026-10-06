@@ -7,6 +7,7 @@ from math import atan2, cos, degrees, radians, sin
 
 from crazyflie_py import Crazyswarm
 from crazyflie_py.uav_trajectory import Polynomial4D, Trajectory
+from crazyflie_shows import safety
 import numpy as np
 
 FORM_HEIGHT = 1.0
@@ -33,11 +34,26 @@ TRI_TAIL_OFFSETS = [(0.8, 0.0),      # apex
 # separation stays exactly the start-position spacing throughout — no
 # assignment needed. A final (0, 0) leg returns everyone to their start.
 WAYPOINT_OFFSETS = [(0.6, 0.0), (-0.6, 0.5), (0.0, -0.6)]
-# swarm orbit: the whole formation translates rigidly around the room center
-ROOM_CENTER = np.array([0.0467, -0.1037])  # user-measured mocap-area center
-ORBIT_R = 1.2
-# tangential speed at R=1.2 is 2*pi*1.2/12 ~= 0.63 m/s (ORBIT_PERIOD kept at
-# 12), centripetal accel ~0.33 m/s^2 — well inside the 1.3 m/s envelope
+# swarm orbit: the whole formation translates rigidly around the arena centre.
+#
+# ROOM_CENTER used to be a local np.array([0.0467, -0.1037]) carried over from
+# before the arena was surveyed, and sat 0.359 m from the centre of the volume
+# Motive can actually see. Because each drone orbits ROOM_CENTER + its own
+# triangle offset, that offset did not merely shift the sweep, it ADDED to the
+# worst radius: with ORBIT_R = 1.2 the outermost drone reached 2.418 m from
+# safety.ARENA_CENTRE -- 0.52 m outside ARENA_RADIUS_PLAN and 0.18 m outside
+# ARENA_RADIUS_LOST, the radius at which a flying drone actually lost tracking
+# on 2026-10-01. Anchor to the measured centre, and size the radius so that
+# max|TRI_TAIL_OFFSETS| + ORBIT_R stays inside the budget.
+ROOM_CENTER = np.array(safety.ARENA_CENTRE)
+#: max|TRI_TAIL_OFFSETS| is 1.039 m, so ARENA_RADIUS_PLAN (1.90) allows at
+#: most 0.861. 0.80 is used rather than 0.86 to leave real headroom: at 0.85
+#: the orbit sweep plans to 1.889 m of 1.90 m, i.e. 99% of budget, and any
+#: later change to the formation offsets would then refuse. At 0.80 the sweep
+#: reaches 1.84 m.
+ORBIT_R = 0.80
+# tangential speed at R=0.80 is 2*pi*0.80/12 ~= 0.42 m/s (ORBIT_PERIOD kept
+# at 12), centripetal accel ~0.22 m/s^2 — well inside the 1.3 m/s envelope
 ORBIT_PERIOD = 12.0
 
 
@@ -137,6 +153,74 @@ def plan_gather(starts):
     return center, base_angles, slots, best
 
 
+def check_plan_envelope(hovers, slots, tri_assigned, orbit_shift, center):
+    """Refuse to arm if any commanded point leaves the MEASURED volume.
+
+    This file had no envelope check at all until 2026-10-06, and there is no
+    geofence anywhere server-side -- so a plan that left the tracked volume was
+    flown, and the only thing that noticed was the drone losing tracking.
+
+    Checks every point the demo ever commands, not just the figures: the hover
+    columns over the marks, the rigid waypoint tour, the gather n-gon, the
+    extrema of the rotation circle, the triangle, the orbit entry, and the
+    worst point of the orbit sweep -- which is the binding one, because each
+    drone circles ROOM_CENTER + its own triangle offset, so the offset ADDS to
+    the radius.
+    """
+    worst = []        # (radius, what)
+
+    centre = np.asarray(ROOM_CENTER, float)
+
+    def add(label, pts):
+        """Record the plan-view radius of every point in ``pts``."""
+        for q in pts:
+            xy = np.asarray(q, float)[:2]
+            worst.append((float(np.linalg.norm(xy - centre)), label))
+
+    add('hover columns over the marks', hovers)
+    for dx, dy in WAYPOINT_OFFSETS:
+        add(f'waypoint leg ({dx:+.1f}, {dy:+.1f})',
+            [h + np.array([dx, dy, 0.0]) for h in hovers])
+    add('gather n-gon', slots)
+    # the rotation circle is a rigid turn of the n-gon about `center`
+    add('rotation circle', [np.array([center[0], center[1]]) + SQUARE_HALF_DIAG
+                            * np.array([cos(radians(a)), sin(radians(a))])
+                            for a in range(0, 360, 15)])
+    add('triangle + tail', tri_assigned)
+    add('orbit entry', [t + orbit_shift for t in tri_assigned])
+    # orbit sweep: every drone traces a circle of ORBIT_R about
+    # ROOM_CENTER + its own triangle offset.
+    for t in tri_assigned:
+        off = np.asarray(t, float)[:2] - np.asarray(center, float)[:2]
+        add('orbit sweep', [np.asarray(ROOM_CENTER, float) + off + ORBIT_R
+                            * np.array([cos(radians(a)), sin(radians(a))])
+                            for a in range(0, 360, 15)])
+
+    budget = safety.ARENA_RADIUS_PLAN
+    r_max, what = max(worst)
+    if r_max > budget:
+        offenders = sorted({w for r, w in worst if r > budget})
+        parked = max(r for r, w in worst if w == 'hover columns over the marks')
+        raise SystemExit(
+            f'\n  REFUSING TO FLY: the plan reaches {r_max:.2f} m from the '
+            f'centre of the tracked volume\n'
+            f'  ({tuple(round(float(c), 3) for c in ROOM_CENTER)}), outside the '
+            f'{budget:.2f} m budget\n'
+            f'  (safety.ARENA_RADIUS_PLAN; tracking was LOST at '
+            f'{safety.ARENA_RADIUS_LOST:.2f} m on 2026-10-01).\n\n'
+            f'  Worst phase: {what}.\n'
+            f'  Outside the budget: ' + ', '.join(offenders) + '\n\n'
+            f'  THE ENVELOPE IS SET BY WHERE THE DRONES ARE PARKED, not by the\n'
+            f'  figures: the hover columns over the current marks already reach\n'
+            f'  {parked:.2f} m of {budget:.2f} m, leaving {budget - parked:.2f} m '
+            f'for every\n  figure and every rigid leg. Re-park onto the gather '
+            f'ring (R=1.10 m\n  at the slot angles, centred on the arena centre), '
+            f'run\n  scripts/sync_initial_positions.py, and re-run this demo.\n')
+    print(f'  envelope ok: worst {r_max:.2f} m of {budget:.2f} m ({what})',
+          flush=True)
+    return r_max
+
+
 def main():
     swarm = Crazyswarm()
     timeHelper = swarm.timeHelper
@@ -169,6 +253,23 @@ def main():
                             orbit_entry[1] - center[1], 0.0])
     orbit_traj = circle_trajectory(ROOM_CENTER, ORBIT_R, degrees(theta_start),
                                    ORBIT_PERIOD, FORM_HEIGHT)
+
+    # The triangle assignment used to be computed mid-flight, which meant the
+    # plan could not be checked before arming. It depends only on the gather
+    # geometry, so resolve it here.
+    tri = triangle_slots(center, n_cf)
+    cur_slots = [slot_position(center, SQUARE_HALF_DIAG, angles[j])[:2]
+                 for j in range(n_cf)]
+    tbest = min(permutations(range(n_cf)),
+                key=lambda p: sum(np.linalg.norm(cur_slots[j] - tri[p[j]][:2])
+                                  for j in range(n_cf)))
+    tri_assigned = [tri[tbest[j]] for j in range(n_cf)]
+
+    # ------------------------------------------------ verify before arming
+    hovers_plan = [np.array(cf.initialPosition) + np.array([0.0, 0.0, 1.0])
+                   for cf in allcfs.crazyflies]
+    check_plan_envelope(hovers_plan, [slots[best[j]] for j in range(n_cf)],
+                        tri_assigned, orbit_shift, center)
 
     TRIALS = 1
     for i in range(TRIALS):
@@ -233,13 +334,6 @@ def main():
         # morph onto the triangle+tail formation (min-distance assignment
         # avoids crossings)
         phase('morph -> triangle + tail')
-        tri = triangle_slots(center, n_cf)
-        cur = [slot_position(center, SQUARE_HALF_DIAG, angles[j])[:2]
-               for j in range(n_cf)]
-        tbest = min(permutations(range(n_cf)),
-                    key=lambda p: sum(np.linalg.norm(cur[j] - tri[p[j]][:2])
-                                      for j in range(n_cf)))
-        tri_assigned = [tri[tbest[j]] for j in range(n_cf)]
         for j, cf in enumerate(allcfs.crazyflies):
             cf.goTo(tri_assigned[j], 0, TRANS_DURATION)
         timeHelper.sleep(TRANS_DURATION + 0.5)
