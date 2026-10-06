@@ -48,100 +48,24 @@ Parameters (``--ros-args -p name:=value``)
 ======================  =======  =====================================
 """
 
-import signal
 import sys
 import time
 
 import numpy as np
-import rclpy
-from crazyflie_interfaces.msg import Status
 from crazyflie_py import Crazyswarm
-from rclpy.qos import qos_profile_sensor_data
 
 from crazyflie_shows import constellation, plan_show
+# The abort machinery and the supervisor check used to be defined HERE, which
+# is why they were the constellation's alone. They are re-exported below so
+# that `from crazyflie_shows.constellation_show import ShowAborted, ...` keeps
+# working, but new code should import them from their own modules.
+from crazyflie_shows.abort import (ABORT_LAND_DURATION, ShowAborted,  # noqa: F401
+                                   abort_land, take_signals)
+from crazyflie_shows.preflight import (check_supervisor,  # noqa: F401
+                                       report_supervisor)
 from crazyflie_shows.swarm_show import _param, check_placement
 
 LED_PARAM = 'colorLedBot.wrgb8888'
-ABORT_LAND_DURATION = 4.0      # s -- a gentle descent from wherever they are
-
-
-class ShowAborted(Exception):
-    """Raised by the signal handler installed in :func:`take_signals`."""
-
-
-def take_signals():
-    """Handle SIGINT/SIGTERM ourselves so an abort can still command a landing.
-
-    MEASURED, sim, 2026-09-20: without this, Ctrl-C mid-show left the drones
-    flying. rclpy installs its own handler in ``rclpy.init`` (inside
-    ``Crazyswarm()``) which shuts the ROS context down *before* the exception
-    reaches this script, so the landing call then dies with "the given context
-    is not valid" -- the one moment it is needed. Replacing the disposition
-    after init keeps the context alive long enough to land.
-
-    A second Ctrl-C during the abort restores the default handler and kills
-    the process outright: the operator must always be able to give up on the
-    script and reach for the E-STOP.
-    """
-    def handler(signum, _frame):
-        raise ShowAborted('Ctrl-C' if signum == signal.SIGINT else f'signal {signum}')
-    signal.signal(signal.SIGINT, handler)
-    signal.signal(signal.SIGTERM, handler)
-
-
-def check_supervisor(node, names, timeout=6.0):
-    """Refuse to fly drones the firmware will not arm. Runs BEFORE the upload.
-
-    MEASURED 2026-10-02: five drones sat in the supervisor's LOCKED state, which
-    an emergency stop latches and which **only a power cycle clears** -- the
-    firmware's state machine has exactly one transition out of locked, back to
-    locked, blocked always. Nothing in the flight path noticed: the show checked
-    placement, spent 55 s uploading trajectories, and only then would it have
-    failed at arm(). The operator read the silent upload as a hang and killed it,
-    which looked like a bug in the show.
-
-    So: ask every drone what the supervisor thinks, before anything is uploaded.
-    Battery thresholds match the console's health page.
-    """
-    latest = {}
-
-    def mk(nm):
-        def cb(msg):
-            latest[nm] = msg
-        return cb
-
-    subs = [node.create_subscription(Status, f'/{nm}/status', mk(nm),
-                                     qos_profile_sensor_data) for nm in names]
-    deadline = time.time() + timeout            # /status is published at 1 Hz
-    while time.time() < deadline and len(latest) < len(names):
-        rclpy.spin_once(node, timeout_sec=0.1)
-    for sub in subs:
-        node.destroy_subscription(sub)
-
-    problems, notes = [], []
-    for nm in names:
-        st = latest.get(nm)
-        if st is None:
-            notes.append(f'{nm}: no /{nm}/status in {timeout:g} s - cannot check '
-                         'the supervisor (old firmware, or a dead link)')
-            continue
-        info, v = st.supervisor_info, st.battery_voltage
-        if info & Status.SUPERVISOR_INFO_IS_LOCKED:
-            problems.append(f'{nm}: supervisor LOCKED (0x{info:04x}) - where an '
-                            'E-STOP leaves a drone. Battery out and in; nothing '
-                            'else clears it')
-        elif not info & Status.SUPERVISOR_INFO_CAN_BE_ARMED:
-            problems.append(f'{nm}: the firmware says it cannot be armed '
-                            f'(0x{info:04x}) - preflight checks have not passed')
-        if info & Status.SUPERVISOR_INFO_IS_TUMBLED:
-            problems.append(f'{nm}: tumbled - stand it back on its feet')
-        if v and v < 3.7:
-            problems.append(f'{nm}: battery {v:.2f} V, below 3.7 V - swap it')
-        elif v and v < 3.8:
-            notes.append(f'{nm}: battery {v:.2f} V - low for a 76 s show')
-        elif st is not None:
-            notes.append(f'{nm}: ready, battery {v:.2f} V, rssi {st.rssi}')
-    return problems, notes
 
 
 def cue(allcfs, cfs, lights):
@@ -174,22 +98,6 @@ def command(allcfs, cfs, cfg, ph):
                                reverse=ph.reverse, relative=True)
     else:
         raise RuntimeError(f'unknown phase kind {ph.kind!r}')
-
-
-def abort_land(allcfs, cfs, timeHelper, cfg, why):
-    """Land where they are and disarm. Best effort: report what worked."""
-    print(f'\n  *** ABORT ({why}) - landing all drones where they are ***', flush=True)
-    signal.signal(signal.SIGINT, signal.SIG_DFL)     # a second Ctrl-C kills us
-    try:
-        allcfs.land(targetHeight=cfg.land_height, duration=ABORT_LAND_DURATION)
-        timeHelper.sleep(ABORT_LAND_DURATION + 0.5)
-        for cf in cfs:
-            cf.arm(False)
-        print('  landed and disarmed.\n', flush=True)
-    except BaseException as e:                     # noqa: BLE001
-        print(f'  could NOT complete the abort landing ({e!r}).\n'
-              '  Use the E-STOP (console or preflight GUI "e") if a drone is '
-              'still airborne.\n', flush=True)
 
 
 def main():
@@ -233,18 +141,8 @@ def main():
 
     # ------------------------------------------------- supervisor go/no-go
     if not sim:
-        print('  SUPERVISOR CHECK (what the firmware will let us do)')
-        problems, notes = check_supervisor(node, names)
-        for line in notes:
-            print(f'    {line}')
-        if problems:
-            print('\n  REFUSING TO FLY - the drones cannot be armed:', flush=True)
-            for p in problems:
-                print(f'    - {p}')
-            print('\n  Nothing was uploaded. Fix the above and re-run; '
-                  '`dry_run:=true` re-checks without uploading.\n')
+        if not report_supervisor(node, names):
             return 1
-        print('    all drones armable\n')
 
     print(f'  lights: {"ON" if lights_on else "off"}'
           f'{" (sim has no LED deck)" if sim and not lights_on else ""}')
@@ -288,9 +186,13 @@ def main():
     armed = False
     try:
         take_signals()
+        # BEFORE the loop, not after: take_signals() is already installed, so a
+        # signal arriving between the first and last arm() would otherwise
+        # raise with armed still False, skip the abort entirely, and leave part
+        # of the fleet armed. Disarming an already-disarmed drone is harmless.
+        armed = True
         for cf in cfs:
             cf.arm(True)
-        armed = True
         timeHelper.sleep(1.0)
 
         t0 = timeHelper.time()
@@ -326,11 +228,11 @@ def main():
         # Deliberate stop: land, then exit quietly. A traceback here would only
         # bury the one line the operator needs to read ("landed and disarmed").
         if armed:
-            abort_land(allcfs, cfs, timeHelper, cfg, str(e))
+            abort_land(allcfs, cfs, timeHelper, cfg.land_height, str(e))
         return 130
     except BaseException as e:                     # noqa: BLE001
         if armed:
-            abort_land(allcfs, cfs, timeHelper, cfg, repr(e))
+            abort_land(allcfs, cfs, timeHelper, cfg.land_height, repr(e))
         raise                                      # a real fault: keep the trace
 
 

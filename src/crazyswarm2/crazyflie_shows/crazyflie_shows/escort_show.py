@@ -146,8 +146,9 @@ from crazyflie_shows import escort, safety
 from crazyflie_shows.escort_teleop import ADVERSARY_TOPIC, VIP_TOPIC
 from crazyflie_shows.constellation import LIGHT
 from crazyflie_shows.escort_viz import EscortViz
-from crazyflie_shows.constellation_show import (ShowAborted, abort_land, cue,
-                                                take_signals)
+from crazyflie_shows.abort import ShowAborted, abort_land, take_signals
+from crazyflie_shows.constellation_show import cue
+from crazyflie_shows.preflight import report_supervisor
 from crazyflie_shows.swarm_show import _param, check_placement
 
 #: wrgb8888 values for the Color LED deck. The adversary must be obviously
@@ -426,9 +427,6 @@ def main():
 
     print('  configuration checks out. Run plan_escort for the full '
           'encounter simulation.\n')
-    if dry_run:
-        print('  dry_run - nothing armed.\n')
-        return 0
 
     # ------------------------------------------------------------- preflight
     poses = PoseCache(node)
@@ -475,6 +473,23 @@ def main():
                         float(_param(node, 'placement_tol', 0.25)))
         print('    all drones within tolerance\n')
 
+    # ------------------------------------------------- supervisor go/no-go
+    # Only the drones that will actually fly. An E-STOP latches the firmware
+    # into LOCKED and arm() is fire-and-forget, so a partial arm would give a
+    # two-drone "ring" around a person that the controller, the viz and the
+    # operator all believe is three.
+    if not sim:
+        will_fly = list(defenders) + ([adv_drone] if adv_drone else [])
+        if not report_supervisor(node, will_fly):
+            return 1
+
+    # The rehearsal stops HERE, after the read-only rig checks, so that a
+    # dry run exercises mocap, placement and the supervisor -- the things that
+    # actually stop a demo -- and not just the geometry.
+    if dry_run:
+        print('  dry_run - plan and preflight checks done; nothing armed.\n')
+        return 0
+
     def vip_now(now):
         if vip_mode == 'point':
             return np.array([vip_point[0], vip_point[1], 0.0])
@@ -492,6 +507,11 @@ def main():
     streaming = False
     try:
         take_signals()
+        # BEFORE the arm loop below: in paced mode operator_gate() sits inside
+        # that loop, so the window between the first and last arm() is seconds
+        # long, and a signal in it would otherwise skip the abort entirely and
+        # leave part of the fleet armed.
+        armed = True
         # Only the drones with a role are armed and flown. A spare hovering
         # through the demo is a drone in the separation budget, in the shot,
         # and on the radio, doing nothing to earn any of it. The ABORT path
@@ -508,7 +528,6 @@ def main():
                               'of the volume, DJI still on the ground, E-STOP in '
                               'hand.')
             cf.arm(True)
-        armed = True
         timeHelper.sleep(1.0)
 
         if lights_on:
@@ -922,7 +941,7 @@ def main():
     except ShowAborted as e:
         if armed:
             _stop_stream(dcfs, acf, streaming)
-            abort_land(allcfs, cfs, timeHelper, _LandCfg(), str(e))
+            abort_land(allcfs, cfs, timeHelper, LAND_HEIGHT, str(e))
         else:
             # Nothing was flying, so there is nothing to land -- but say so.
             # Silence here reads as a crash, and the likeliest way to reach it
@@ -937,7 +956,7 @@ def main():
     except BaseException as e:                        # noqa: BLE001
         if armed:
             _stop_stream(dcfs, acf, streaming)
-            abort_land(allcfs, cfs, timeHelper, _LandCfg(), repr(e))
+            abort_land(allcfs, cfs, timeHelper, LAND_HEIGHT, repr(e))
         raise
 
 
@@ -987,12 +1006,6 @@ class _YamlStarts:
 
     def __init__(self, cfs):
         self.starts = [np.array(cf.initialPosition, float) for cf in cfs]
-
-
-class _LandCfg:
-    """What ``abort_land`` reads off a show config (it only wants the height)."""
-
-    land_height = LAND_HEIGHT
 
 
 def _stop_stream(dcfs, acf, streaming):

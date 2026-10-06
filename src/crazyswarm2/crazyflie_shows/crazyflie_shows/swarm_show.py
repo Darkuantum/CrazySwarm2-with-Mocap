@@ -43,6 +43,8 @@ import rclpy
 from crazyflie_py import Crazyswarm
 
 from crazyflie_shows import choreography, plan_show
+from crazyflie_shows.abort import ShowAborted, abort_land, take_signals
+from crazyflie_shows.preflight import report_supervisor
 
 
 def _param(node, name, default):
@@ -177,10 +179,6 @@ def main():
     plan = choreography.build_plan(names, starts, cfg)
     plan_show.report(plan, cfg, names)
 
-    if dry_run:
-        print('  dry_run - nothing armed, nothing uploaded.\n')
-        return 0
-
     # ------------------------------------------------------------ preflight
     if want_placement and not sim:
         print('  PLACEMENT CHECK (live pose vs initial_position)')
@@ -197,6 +195,22 @@ def main():
     else:
         print('  *** placement check DISABLED by parameter ***\n')
 
+    # ------------------------------------------------- supervisor go/no-go
+    # An E-STOP latches the firmware's supervisor into LOCKED, which only a
+    # power cycle clears, and arm() is fire-and-forget -- so without this the
+    # failure arrives as "nothing took off" after the whole upload.
+    if not sim and not report_supervisor(node, names):
+        return 1
+
+    # The rehearsal stops HERE, not before the checks above: a rehearsal whose
+    # answer is only "the geometry is fine" tells you nothing about the rig,
+    # and every check above is read-only. Everything past this point touches a
+    # drone.
+    if dry_run:
+        print('  dry_run - plan and preflight checks done; nothing uploaded, '
+              'nothing armed.\n')
+        return 0
+
     # -------------------------------------------------------------- upload
     # Sequential and blocking: uploadTrajectory spins until the service
     # returns, so this is 5 drones x 5 figures = 25 round trips over one
@@ -209,47 +223,70 @@ def main():
         print(f'    id {f.traj_id} @ offset {f.piece_offset:>2}  {f.name}')
 
     # ----------------------------------------------------------------- fly
-    for cf in cfs:
-        cf.arm(True)
-    timeHelper.sleep(1.0)
+    #
+    # Everything from here to the disarm runs under the abort machinery in
+    # :mod:`crazyflie_shows.abort`. Until 2026-10-06 it did not, and a Ctrl-C
+    # mid-figure left five armed drones airborne with no script -- on the one
+    # show that has actually flown on hardware.
+    armed = False
+    try:
+        take_signals()
+        # BEFORE the arm loop: a signal arriving between the first and last
+        # arm() would otherwise raise with armed still False and skip the
+        # abort, leaving part of the fleet armed.
+        armed = True
+        for cf in cfs:
+            cf.arm(True)
+        timeHelper.sleep(1.0)
 
-    t0 = timeHelper.time()
-    print(f'\n  SHOW START - {plan.duration:.1f}s of motion, '
-          f'~{plan.duration + len(plan.phases) * cfg.phase_margin:.1f}s total\n')
+        t0 = timeHelper.time()
+        print(f'\n  SHOW START - {plan.duration:.1f}s of motion, '
+              f'~{plan.duration + len(plan.phases) * cfg.phase_margin:.1f}s total\n')
 
-    for ph in plan.phases:
-        print(f'  [t+{timeHelper.time() - t0:5.1f}s] {ph.name}'
-              f'{"  - " + ph.note if ph.note else ""}', flush=True)
+        for ph in plan.phases:
+            print(f'  [t+{timeHelper.time() - t0:5.1f}s] {ph.name}'
+                  f'{"  - " + ph.note if ph.note else ""}', flush=True)
 
-        if ph.kind == 'takeoff':
-            allcfs.takeoff(targetHeight=cfg.takeoff_height, duration=ph.duration)
-        elif ph.kind == 'land':
-            allcfs.land(targetHeight=cfg.land_height, duration=ph.duration)
-        elif ph.kind == 'goto':
-            # Per-drone and unicast: allcfs.goTo is broadcast but hardcodes
-            # relative=True, and every goal here is absolute. Five service
-            # calls spread over some tens of milliseconds, which is nothing
-            # against a 2.5 s leg.
-            for j, cf in enumerate(cfs):
-                cf.goTo(ph.goals[j], 0.0, ph.duration)
-        elif ph.kind == 'figure':
-            # One broadcast packet, so all five start the figure on the same
-            # radio frame. This is the only reason a rigid formation stays
-            # rigid at speed -- five unicast starts would smear the ring by
-            # however long the calls took.
-            allcfs.startTrajectory(ph.figure.traj_id,
-                                   timescale=ph.timescale,
-                                   reverse=ph.reverse,
-                                   relative=True)
-        else:
-            raise RuntimeError(f'unknown phase kind {ph.kind!r}')
+            if ph.kind == 'takeoff':
+                allcfs.takeoff(targetHeight=cfg.takeoff_height, duration=ph.duration)
+            elif ph.kind == 'land':
+                allcfs.land(targetHeight=cfg.land_height, duration=ph.duration)
+            elif ph.kind == 'goto':
+                # Per-drone and unicast: allcfs.goTo is broadcast but hardcodes
+                # relative=True, and every goal here is absolute. Five service
+                # calls spread over some tens of milliseconds, which is nothing
+                # against a 2.5 s leg.
+                for j, cf in enumerate(cfs):
+                    cf.goTo(ph.goals[j], 0.0, ph.duration)
+            elif ph.kind == 'figure':
+                # One broadcast packet, so all five start the figure on the same
+                # radio frame. This is the only reason a rigid formation stays
+                # rigid at speed -- five unicast starts would smear the ring by
+                # however long the calls took.
+                allcfs.startTrajectory(ph.figure.traj_id,
+                                       timescale=ph.timescale,
+                                       reverse=ph.reverse,
+                                       relative=True)
+            else:
+                raise RuntimeError(f'unknown phase kind {ph.kind!r}')
 
-        timeHelper.sleep(ph.duration + cfg.phase_margin)
+            timeHelper.sleep(ph.duration + cfg.phase_margin)
 
-    for cf in cfs:
-        cf.arm(False)
-    print(f'\n  [t+{timeHelper.time() - t0:5.1f}s] landed, disarmed - done\n')
-    return 0
+        for cf in cfs:
+            cf.arm(False)
+        armed = False
+        print(f'\n  [t+{timeHelper.time() - t0:5.1f}s] landed, disarmed - done\n')
+        return 0
+    except ShowAborted as e:
+        # Deliberate stop: land, then exit quietly. A traceback here would only
+        # bury the one line the operator needs ("landed and disarmed").
+        if armed:
+            abort_land(allcfs, cfs, timeHelper, cfg.land_height, str(e))
+        return 130
+    except BaseException as e:                     # noqa: BLE001
+        if armed:
+            abort_land(allcfs, cfs, timeHelper, cfg.land_height, repr(e))
+        raise                                      # a real fault: keep the trace
 
 
 if __name__ == '__main__':
