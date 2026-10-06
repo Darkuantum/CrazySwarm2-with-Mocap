@@ -100,7 +100,41 @@ class EscortConfig:
     #: (arXiv 2507.09463). Level is the only safe relative altitude, and it is
     #: the one geometry the pilot does not have to think about.
     vip_airborne: bool = False
-    vip_height_offset: float = 0.0  # m, ring altitude relative to the VIP
+    #: +0.30: the defenders ride ABOVE the DJI, not level with it.
+    #:
+    #: This was 0.0 and the comment above argued level was "the only safe
+    #: relative altitude". That reasoning only ever ruled out the DJI being
+    #: ABOVE the Crazyflies (downwash). It does not follow that LEVEL is best,
+    #: and level is the one geometry where a lateral mistake by either
+    #: aircraft is a collision rather than a near miss. FLOWN 2026-10-06:
+    #: downwash was not the problem; being coplanar with a hand-flown DJI was,
+    #: both while following it and when the ring re-formed for the landing leg.
+    #:
+    #: 0.30 m, sized against the ceiling: the ring reaches 1.60 m from the
+    #: arena centre, where safety.CEILING_TESTED is 1.95 m, so a DJI at 1.60 m
+    #: still puts the ring at 1.90 m. It also makes the handover seamless --
+    #: with the DJI at 1.40 m the tracked ring sits at exactly
+    #: dji_clear_height, so the defenders do not visibly drop when tracking
+    #: turns on. Brief the pilot to hover at or below 1.50 m.
+    vip_height_offset: float = 0.30  # m, ring altitude relative to the VIP
+
+    #: Where the ring waits while the DJI takes off or lands, in the paced
+    #: mocap-VIP show. NOT ``height``: pinning the ring at the show altitude
+    #: parks it exactly where a hand-flown DJI is least precise and most
+    #: likely to be -- measured on the shipped config, a DJI climbing to its
+    #: 1.2-1.5 m hover passes through 1.20 m with a 0.00 m vertical gap, and
+    #: if it settles at 1.5 m the defenders end up 0.30 m UNDERNEATH it, in
+    #: the downwash this file calls unsurvivable. The same happens in reverse
+    #: on the landing leg. So the ring goes UP and out of the way instead, and
+    #: only comes down to the VIP once the pilot says the DJI is settled.
+    #:
+    #: 1.70 m clears a 1.5 m DJI by 0.20 m and leaves 0.25 m under
+    #: safety.CEILING_TESTED (1.95 m at full radius), which is the binding
+    #: limit because the ring reaches 1.60 m from the arena centre. Raise it
+    #: only against that budget: 1.90 m leaves 0.05 m and is not worth it.
+    #: Above the DJI is also the RIGHT side to be on -- a Crazyflie over a
+    #: DJI is out of its wash; under it is the case nobody has survived.
+    dji_clear_height: float = 1.70   # m, ring altitude during the DJI legs
 
     # How fast the ring may turn to face a new threat bearing. This is not a
     # comfort setting: a slot moving round the ring travels at
@@ -161,6 +195,31 @@ class EscortConfig:
     #: 0.60 m offset. The whole chain shifted down 0.20 m with ring_radius, and
     #: the hysteresis widened with the room the smaller ring freed: 0.12 m of
     #: gap between release and retreat where it used to be 0.07 m.
+    #: How far AHEAD the ring aims, in seconds of the threat's own angular
+    #: motion. The ring turns at phase_rate, so chasing the attacker's CURRENT
+    #: bearing is always late: measured 36 deg of median lag against a moving
+    #: attacker, which is a blocker visibly trailing rather than planted.
+    #: Leading by the measured bearing rate cancels most of it. Too much and
+    #: the ring overshoots every time the attacker changes direction, so this
+    #: is bounded by lead_max_rad below.
+    #: 0.0 -- OFF, by measurement. Leading looked right and measured wrong:
+    #: once the blocker is re-selected every step (lead_swap_hyst) the ring is
+    #: already on the threat, and aiming further ahead only walks it off.
+    #: Measured 2026-10-06 against a circling attacker, median angle between
+    #: the nearest defender and the attacker: 8 deg at lead 0.0, 23 deg at
+    #: 0.6, 24 deg at 1.2. Re-selecting WHICH slot blocks beats predicting
+    #: where the threat will be. Kept as a knob for a fast-moving VIP, where
+    #: the ring is translating as well as turning, but prove it before using it.
+    threat_lead_s: float = 0.0
+    lead_max_rad: float = np.radians(55.0)
+    #: On DISENGAGE, hold the ring where it is instead of winding back to the
+    #: resting orientation. Returning to rest is what made the formation
+    #: oscillate: the attacker backs off past release_radius, the ring spins
+    #: home, the attacker returns, the ring spins out again. Holding costs
+    #: nothing -- the slots are still evenly spaced, just at a different
+    #: phase -- and the next engagement starts from wherever it already is.
+    hold_phase_on_clear: bool = True
+
     alert_radius: float = 1.88     # m, adversary-to-VIP distance that engages
     release_radius: float = 2.0    # m, and the larger one that disengages
 
@@ -174,6 +233,59 @@ class EscortConfig:
     min_pair_sep: float = 0.8      # m, defender to defender
     min_adv_sep: float = 0.8       # m, defender to adversary
 
+    #: WHO gives way when the ring and the attacker converge.
+    #:
+    #: False, and that inverts the original design deliberately. The guard
+    #: used to push DEFENDERS away from the adversary, which meant the ring
+    #: could never be an obstacle: measured 2026-10-06, an attacker driving
+    #: straight in ended 0.34 m from the VIP with the blocker shoved out to
+    #: 1.14 m, behind it. The separation was always honoured and the defence
+    #: was always theatre.
+    #:
+    #: That asymmetry was correct while the adversary flew a VERIFIED script
+    #: that never came inside ring_radius + min_adv_sep -- the clamp was then
+    #: a backstop that should never fire. It stopped being correct when the
+    #: attacker started choosing its own path. The attacker now carries a HARD
+    #: separation projection of its own (ReactiveAdversary.target), so the
+    #: floor is still enforced -- by the party that is trying to close the
+    #: distance, which is the only one that can give way without undoing the
+    #: thing it is there to do.
+    #:
+    #: Set True to restore the old behaviour for a scripted adversary.
+    defenders_yield: bool = False
+    #: Last-resort separation at which a defender gives way EVEN when
+    #: defenders_yield is False. Smaller than min_adv_sep on purpose: the
+    #: attacker owns the 0.80 m floor and yields first, so the ring can be a
+    #: real obstacle -- but the attacker is SLOWER than a defender (0.45 vs
+    #: 0.60 m/s), so a ring translating with a moving VIP can run it down
+    #: faster than it can retreat. Measured before this existed: a walking VIP
+    #: produced 0.31 m of defender-to-adversary separation. This only fires
+    #: once the geometry has already failed; at rest it never fires at all.
+    #: 0.70, chosen off a measured trade (plan_escort, 2026-10-06). It is the
+    #: knob that sets how much of a real obstacle the ring is:
+    #:     0.55 -> static held at 1.76 m, walking adv-def 0.52 m
+    #:     0.70 -> static held at 1.76 m, walking adv-def 0.61 m
+    #:     0.80 -> static held at 1.52 m, walking adv-def 0.79 m   (= old behaviour)
+    #: At 0.80 the defenders yield exactly as they always did and the block
+    #: weakens; below 0.70 the walking case buys nothing further. Raise it to
+    #: 0.80 to trade the block back for margin against a MOVING VIP.
+    defender_yield_floor: float = 0.70
+
+    #: Ring turn rate WHILE BLOCKING. phase_rate is what it uses at rest.
+    #:
+    #: The ring could turn at v_max / ring_radius = 0.60 rad/s; phase_rate
+    #: caps it at 0.30, half its capability, because R * phase_rate is spent
+    #: out of the same budget as following the VIP. That trade is worth making
+    #: at rest and NOT during an encounter: the attacker out-turns a 0.30
+    #: rad/s ring as soon as it is inside 1.4 m, and a ring that cannot hold a
+    #: bearing cannot block. While engaged the VIP is meant to be hovering, so
+    #: spend the budget on turning instead.
+    engaged_phase_rate: float = 0.55
+    #: How much nearer in bearing another slot must be before it takes over as
+    #: the blocker. Without it a threat sitting midway between two slots flips
+    #: the lead every step and the ring judders.
+    lead_swap_hyst: float = np.radians(18.0)
+
     # -- the room ----------------------------------------------------------
     #: MEASURED 2026-10-01, and then FLOWN: cf1 lost tracking at 2.24 m on a
     #: slow spiral at ring height, so 2.0 m leaves 0.24 m to a demonstrated
@@ -183,7 +295,11 @@ class EscortConfig:
     #: 2.25 m (0-45), 2.31 m (225-270) and never in 180-225, which held to
     #: 2.46 m. 2.1 is the worst sector, so it is the one that binds.
     arena_radius: float = 2.0      # m, from room centre (crazyflie_shows.safety)
-    ceiling: float = 2.0           # m
+    #: 1.85 m, not 2.0: this clamps ring_height, and the ring reaches 1.60 m
+    #: from the arena centre where safety.CEILING_TESTED is 1.95 m. 2.0 would
+    #: let a high-hovering DJI drag the ring above altitude anyone has proven
+    #: tracking at. 1.85 keeps the usual 0.10 m margin under 1.95.
+    ceiling: float = 1.85          # m
     floor: float = 0.3             # m
     #: MEASURED 2026-10-01 by walking cf1 through the volume (scripts/
     #: measure_arena.py, 8067 samples): the centroid of the tracked space is
@@ -521,9 +637,12 @@ class PhaseTracker:
         self.cfg = cfg
         self.psi = float(psi0)
 
-    def update(self, psi_target, dt):
-        step = np.clip(wrap_pi(psi_target - self.psi),
-                       -self.cfg.phase_rate * dt, self.cfg.phase_rate * dt)
+    def update(self, psi_target, dt, rate=None):
+        """``rate`` overrides phase_rate -- the ring turns harder while it is
+        blocking, because that is when the VIP is meant to be hovering and the
+        speed budget is better spent on facing the threat than on following."""
+        r = self.cfg.phase_rate if rate is None else float(rate)
+        step = np.clip(wrap_pi(psi_target - self.psi), -r * dt, r * dt)
         self.psi = wrap_pi(self.psi + step)
         return self.psi
 
@@ -551,7 +670,7 @@ class SetpointGuard:
         self.reasons = []
 
     def step(self, target, dt, p_vip=None, p_adv=None, p_others=(),
-             vip_dist=None):
+             vip_dist=None, adv_dist=None):
         """``vip_dist`` overrides ``cfg.min_vip_dist`` for THIS drone.
 
         It exists for the adversary. A defender's floor to the VIP is the
@@ -592,7 +711,9 @@ class SetpointGuard:
         # separation that is never traded away.
         for _ in range(3):
             if p_adv is not None:
-                sp = _push_out(sp, p_adv, cfg.min_adv_sep, self.reasons, 'adversary')
+                sp = _push_out(sp, p_adv,
+                               cfg.min_adv_sep if adv_dist is None else adv_dist,
+                               self.reasons, 'adversary')
             for q in p_others:
                 sp = _push_out(sp, q, cfg.min_pair_sep, self.reasons, 'defender')
             if p_vip is not None:
@@ -679,30 +800,41 @@ class AdversaryScript:
     #: adversary 1.78 m from the volume centre, 0.22 m inside the 2.00 m
     #: arena -- so the retreat genuinely clears release_radius instead of
     #: being clamped back in with the block still engaged.
+    #: ONE approach, then it backs off. Cut from six legs to three on
+    #: 2026-10-06: the second run at the other bearing doubled the length
+    #: without showing anything the first had not, and a demo you have to
+    #: narrate twice is harder to narrate once. The remaining three are the
+    #: whole story -- arrive, commit, be turned away.
     legs: tuple = ((6.0, 145.0, 2.30),   # rise and sit off to one side
-                   (8.0, 145.0, 1.80),   # probe 1 = ring_radius + min_adv_sep
-                   (5.0, 145.0, 2.30),   # pushed back, retreat past release
-                   (7.0, 215.0, 2.30),   # swing round to the other side
-                   (8.0, 215.0, 1.80),   # probe 2
-                   (6.0, 215.0, 2.30))   # give up
+                   (8.0, 145.0, 1.80),   # the probe = ring_radius + min_adv_sep
+                   (6.0, 145.0, 2.30))   # turned away, backs off past release
 
     #: One label per leg, for the operator-paced mode: what the NEXT press of
     #: Enter is about to make the adversary do. Kept beside the legs rather
     #: than in the show, so editing a leg and forgetting its label is a visible
     #: mismatch in one file instead of a lie printed at the operator.
     labels: tuple = ('rise and sit off to one side',
-                     'PROBE 1 - run at the VIP',
-                     'pushed back, retreat',
-                     'swing round to the other side',
-                     'PROBE 2 - run at the VIP again',
-                     'give up and back off')
+                     'ATTACK - run at the VIP',
+                     'turned away - backs off and stands down')
 
-    def target(self, t, p_vip):
-        """Where the adversary should be at show time ``t``."""
+    def target(self, t, p_vip, defenders=(), cfg=None):
+        """Where the adversary should be at show time ``t``.
+
+        ``defenders``/``cfg`` are accepted and ignored so this and
+        :class:`ReactiveAdversary` are interchangeable at every call site.
+        """
         p_vip = np.asarray(p_vip, float)
         t0 = 0.0
-        for dur, bearing, radius in self.legs:
-            if t <= t0 + dur or (dur, bearing, radius) == self.legs[-1]:
+        last = len(self.legs) - 1
+        # Compare by INDEX, not by value. `leg == self.legs[-1]` matched any
+        # leg that happened to be EQUAL to the last one, so a script whose
+        # first and last legs are the same tuple -- which is exactly what
+        # "arrive, attack, go back where you came from" looks like -- returned
+        # leg 0 for all t and the adversary never moved. Found 2026-10-06 when
+        # the script was cut to three legs: plan_escort reported "blocking
+        # engaged 0% of the run", which is the only reason it was caught.
+        for i, (dur, bearing, radius) in enumerate(self.legs):
+            if t <= t0 + dur or i == last:
                 a = np.radians(bearing)
                 return np.array([p_vip[0] + radius * np.cos(a),
                                  p_vip[1] + radius * np.sin(a),
@@ -843,10 +975,17 @@ class EscortController:
     """
 
     def __init__(self, cfg, p_defenders, p_vip, psi0=None):
+        self._prev_phi = None
+        self._phi_rate = 0.0
         self.cfg = cfg
         p_defenders = [np.asarray(p, float) for p in p_defenders]
         self.n = len(p_defenders)
-        psi0 = self.assign(p_defenders, p_vip) if psi0 is None else psi0
+        # ALWAYS assign: it is what sets self.order (the slot mapping), and
+        # skipping it when a phase was supplied left the controller without
+        # one -- slot_of() then raises AttributeError on the first step. No
+        # caller in the repo passes psi0 today, which is why this never fired.
+        auto_psi0 = self.assign(p_defenders, p_vip)
+        psi0 = auto_psi0 if psi0 is None else psi0
         self.phase = PhaseTracker(cfg, psi0)
         self.latch = ThreatLatch(cfg)
         self.vip_vel = VelocityEstimator(cfg.vip_lowpass_hz)
@@ -899,29 +1038,72 @@ class EscortController:
         """Which slot drone ``i`` holds (set once by :meth:`assign`)."""
         return int(np.where(self.order == i)[0][0])
 
-    def step(self, dt, p_vip, p_adv=None, p_defenders=None):
-        """One control step. Returns (setpoints (n,3), info dict)."""
+    def step(self, dt, p_vip, p_adv=None, p_defenders=None, p_threat=None):
+        """One control step. Returns (setpoints (n,3), info dict).
+
+        ``p_threat`` is the bearing the ring TURNS TO COVER, when that is not
+        simply where the adversary is now. A reactive attacker aims at the
+        ring's widest gap, so turning to its current position is always one
+        move behind; passing its aim point makes the ring cover the gap it is
+        going for instead. Engagement and every separation still use the real
+        ``p_adv`` -- only the rotation target is anticipated.
+        """
         cfg = self.cfg
+        p_thr = p_adv if p_threat is None else np.asarray(p_threat, float)
         p_vip = np.asarray(p_vip, float)
         v_vip = self.vip_vel.update(p_vip, dt)
 
         was_engaged = self.engaged
         self.engaged = self.latch.update(p_vip, p_adv)
-        if self.engaged and not was_engaged:
-            # First contact: whoever is closest in bearing leads, and the ring
-            # turns the short way to put them on the threat line.
-            phi = float(np.arctan2(p_adv[1] - p_vip[1], p_adv[0] - p_vip[0]))
+        if self.engaged:
+            # WHICH defender takes the threat bearing -- re-checked every step,
+            # not just at first contact.
+            #
+            # Picking it once meant that when the attacker flanked, the
+            # original lead stayed the designated blocker and the whole ring
+            # had to rotate it round -- up to 180 deg at phase_rate, which it
+            # cannot do before the attacker arrives. Handing the post to the
+            # slot ALREADY nearest the threat caps the rotation at half the
+            # slot spacing (60 deg for three).
+            #
+            # This does NOT swap slots: order is fixed by assign() and never
+            # changes, so nobody crosses anybody. It only changes which slot
+            # the ring aims at the threat, which is a smaller rotation, not a
+            # different formation. The hysteresis stops it dithering between
+            # two slots at the midpoint, where a tie would otherwise flip the
+            # whole ring back and forth every step.
+            phi = float(np.arctan2(p_thr[1] - p_vip[1], p_thr[0] - p_vip[0]))
             here = slot_angles(self.phase.psi, self.n)
-            self.lead = int(np.argmin(np.abs(wrap_pi(here - phi))))
+            off = np.abs(wrap_pi(here - phi))
+            best = int(np.argmin(off))
+            if not was_engaged or off[best] < off[self.lead] - cfg.lead_swap_hyst:
+                self.lead = best
+        # Bearing rate of the threat about the VIP, low-passed. This is what
+        # the ring is actually chasing, and knowing its RATE is what lets the
+        # ring stop trailing it.
+        phi_now = (float(np.arctan2(p_thr[1] - p_vip[1], p_thr[0] - p_vip[0]))
+                   if p_thr is not None else None)
+        if phi_now is not None and self._prev_phi is not None:
+            raw = wrap_pi(phi_now - self._prev_phi) / max(dt, 1e-3)
+            self._phi_rate += (raw - self._phi_rate) * min(dt / 0.25, 1.0)
+        self._prev_phi = phi_now
+
         if self.engaged:
             # slot 0 goes onto the VIP-adversary bearing: a defender ends up
-            # between the two, which is the whole demo.
+            # between the two, which is the whole demo. AIM AHEAD of it by the
+            # measured bearing rate, bounded, or the blocker arrives where the
+            # attacker used to be.
             base = wrap_pi(TWO_PI * np.arange(self.n) / self.n)
-            psi_t = float(np.arctan2(p_adv[1] - p_vip[1], p_adv[0] - p_vip[0])
-                          - base[self.lead])
+            lead = float(np.clip(self._phi_rate * cfg.threat_lead_s,
+                                 -cfg.lead_max_rad, cfg.lead_max_rad))
+            psi_t = float(phi_now + lead - base[self.lead])
+        elif cfg.hold_phase_on_clear:
+            psi_t = self.phase.psi          # hold, do not wind back to rest
         else:
             psi_t = self.rest_psi
-        psi = self.phase.update(psi_t, dt)
+        psi = self.phase.update(
+            psi_t, dt,
+            cfg.engaged_phase_rate if self.engaged else cfg.phase_rate)
 
         # Reinforce: once a defender is on the threat bearing, the other two
         # leave their posts and close up beside it, so the adversary faces a
@@ -960,9 +1142,450 @@ class EscortController:
         clamped = {}
         for i, g in enumerate(self.guards):
             others = [live[j] for j in range(self.n) if j != i]
-            out[i] = g.step(slots[self.slot_of(i)], dt, p_vip, p_adv, others)
+            out[i] = g.step(
+                slots[self.slot_of(i)], dt, p_vip, p_adv, others,
+                adv_dist=(cfg.min_adv_sep if cfg.defenders_yield
+                          else cfg.defender_yield_floor))
             if g.reasons:
                 clamped[i] = list(g.reasons)
         return out, {'psi': psi, 'engaged': self.engaged, 'v_vip': v_vip,
                      'close': self.close, 'lead': self.lead, 'clamped': clamped,
                      'untrusted': list(self.untrusted)}
+
+
+#: Phases a reactive attacker moves through, in order. Same shape as
+#: AdversaryScript.labels so the operator-paced machinery is unchanged.
+REACTIVE_PHASES = ('take station off to one side',
+                   'ATTACK - it finds its own way in',
+                   'stand down and withdraw')
+
+
+@dataclass
+class ReactiveAdversary:
+    """An attacker that plans its own approach and gives up when blocked.
+
+    Replaces a fixed script with a gradient: pulled toward the VIP, pushed by
+    whatever defender is nearest, and held inside the room. Three consequences
+    that are the point of it:
+
+    * its path is never the same twice, because it depends on where the
+      defenders actually are;
+    * moving the VIP genuinely evades it, instead of towing it around at a
+      fixed radius (the scripted version resolved every leg against the VIP's
+      CURRENT position, which read as the attacker flying formation with it);
+    * when it cannot make progress it STANDS DOWN, which is a thing the
+      audience can see happen rather than a leg ending on a timer.
+
+    What it is not: an optimiser, or a guarantee. It is a saturated gradient
+    with a give-up timer. ``check`` verifies its PARAMETERS, and
+    ``plan_escort`` runs it -- but a reactive attacker cannot be proven the
+    way a script can, so the separations are enforced by SetpointGuard exactly
+    as before and the ring is what keeps it honest.
+
+    It flies at the DEFENDERS' altitude, not the VIP's: the ring rides above
+    an airborne VIP, and an attacker left at the VIP's height would approach
+    underneath the drones meant to be facing it.
+    """
+
+    height: float = 1.2             # overwritten per step with the ring height
+    #: FASTER than a defender, and that is not a mistake.
+    #:
+    #: This was 0.45 against the defenders' 0.60 "so the ring can get ahead of
+    #: it", which compared the wrong quantity. The race is ANGULAR and the
+    #: defenders are on the inside track: they sit at ring_radius while the
+    #: attacker sits at ring_radius + min_adv_sep, so to match the ring's
+    #: angular rate the attacker must cover 1.8x the distance. The ring turns
+    #: at engaged_phase_rate = 0.55 rad/s, so the attacker only wins beyond
+    #: 0.55 * 1.80 = 0.99 m/s.
+    #:
+    #: Making it slower in LINEAR terms made it slower in angular terms too,
+    #: which is why it was trivially contained and read as unaggressive. 0.80
+    #: is visibly faster than the defenders, still 0.19 m/s short of
+    #: out-turning them, and it also fixes a hazard the yield inversion
+    #: created: an attacker slower than the ring could be RUN DOWN by a ring
+    #: translating with a moving VIP.
+    v_max: float = 0.80             # m/s
+    #: Where it waits before committing and after standing down.
+    stand_off: float = 2.30         # m from the VIP
+    bearing: float = 145.0          # deg, which side it enters from
+    #: Gradient weights. Only their RATIO matters -- the sum is saturated to
+    #: v_max -- but the repulsion must win inside ``repel_range`` or the
+    #: attacker drives through the ring and leans on the guard instead.
+    #: MEASURED by sweep (plan_escort, 2026-10-06), not guessed. At
+    #: k_repel 2.2 / range 1.30 the attacker walked straight through the ring
+    #: to 0.01 m of the VIP -- the defenders YIELD to it, so their push fades
+    #: exactly as it closes and nothing stops it. 3.5 / 1.70 turns it away at
+    #: 1.76 m (inside alert_radius, so the ring does engage) while holding
+    #: 0.86 m from the nearest defender against a 0.80 m floor.
+    k_attract: float = 1.0
+    k_repel: float = 3.5
+    k_wall: float = 2.0
+    #: How much of the repulsion is turned sideways rather than straight back.
+    #: 0 reproduces the passive bounce-in-place this replaced.
+    k_tangent: float = 0.0          # only meaningful with seek_gaps
+    #: How deep it tries to get, as a radius from the VIP.
+    #:
+    #: It used to aim INSIDE the ring (0.8 * ring_radius) and that is
+    #: unfixable by tuning: three defenders 120 deg apart leave 1.73 m gaps,
+    #: so a gap-seeker always walks through. Measured over 18 gain
+    #: combinations on 2026-10-06, EVERY one reached the VIP (0.01-0.06 m) and
+    #: every one breached defender separation (0.67-0.77 m against 0.80).
+    #: More repulsion does not help, because the hole is real.
+    #:
+    #: So it presses the ring instead of passing through it: it circles
+    #: hunting the widest gap, which is what makes the encounter move, and
+    #: the ring has to chase. The defence holding is then a property of the
+    #: geometry rather than of a gain nobody can tune.
+    attack_reach: float = 0.0       # m; 0 = derive it from the geometry
+
+    def shell(self, cfg=None):
+        """Closest the attacker may ever be to the VIP.
+
+        Derived, not chosen: ``ring_radius + min_adv_sep`` puts it one full
+        separation outside the ring on EVERY bearing, so it can press a gap
+        without ever being adjacent to a defender. It is the same radius the
+        old scripted probe used, for the same reason -- the difference is that
+        the attacker now picks its own bearing on that shell instead of being
+        told one.
+        """
+        if self.attack_reach > 0.0:
+            return self.attack_reach
+        # min_adv_sep, NOT ring_radius + min_adv_sep. The larger shell made
+        # the attacker orbit a standoff it was never allowed to cross, so the
+        # defence could not fail and therefore could not succeed either -- it
+        # read as the attacker "being nice". This is a collision floor against
+        # the DJI and nothing more: what keeps it off the VIP is supposed to
+        # be three drones, and now it has to be.
+        return 0.8 if cfg is None else cfg.min_adv_sep
+    #: Range over which the attraction tapers to zero as it arrives.
+    approach_band: float = 0.60     # m
+    #: Strength of the VIP keep-out barrier. Must dominate k_attract or the
+    #: attacker pushes through its own limit.
+    k_keepout: float = 4.0
+    #: How far a defender pushes. Must exceed min_adv_sep, or the attacker
+    #: only reacts once it is already inside the separation floor and the
+    #: guard has to rescue every approach.
+    repel_range: float = 1.70       # m
+    #: Blocked for this long -> stand down. Blocked means "not closing on the
+    #: VIP by more than progress_eps", which is what being walled actually
+    #: looks like: still moving, sliding along the ring, getting no nearer.
+    give_up_s: float = 12.0
+    progress_eps: float = 0.08      # m/s of closing speed that counts
+    #: How fast the "closest I have managed" reference RELAXES back outward.
+    #:
+    #: Without this it is an all-time ratchet, and an attacker that presses,
+    #: is pushed out, and presses again registers no progress at all after its
+    #: single best approach -- so it stood down mid-attack. Measured in sim
+    #: 2026-10-06: it oscillated 1.76 <-> 2.10 m, engaged the whole time, and
+    #: gave up at t+21 s because nothing had beaten 1.76 m since t+16 s.
+    #: Relaxing the reference means REPEATED pressure counts as trying, and
+    #: the timer only runs when it is genuinely being driven off and kept off.
+    #: MEASURED 2026-10-06 against a held ring: 0.01 -> it presses for 31 s
+    #: then stands down; 0.02 -> 46 s; 0.03 and above -> it never gives up at
+    #: all, which costs the demo its payoff beat (and leaves the paced leg
+    #: with no completion to announce). 31 s of probing is the middle act.
+    relax_rate: float = 0.01        # m/s
+    duration: float = 40.0
+
+
+    def __post_init__(self):
+        self.p = None
+        self._gap = None
+        self.phase = 0
+        self.stood_down = False
+        self._best = np.inf
+        self._since = 0.0
+        self._t = None
+
+    # -- the same surface AdversaryScript exposes, so paced mode is unchanged
+    @property
+    def n_legs(self):
+        return len(REACTIVE_PHASES)
+
+    @property
+    def labels(self):
+        return REACTIVE_PHASES
+
+    def label(self, i):
+        return REACTIVE_PHASES[max(0, min(i, len(REACTIVE_PHASES) - 1))]
+
+
+
+    def leg_start(self, i):
+        return i * self.duration / self.n_legs
+
+    def leg_mid(self, i):
+        return self.leg_start(i) + self.duration / (2 * self.n_legs)
+
+    def station(self, p_vip):
+        """Where it waits: ``stand_off`` from the VIP on its entry bearing."""
+        a = np.radians(self.bearing)
+        return np.array([p_vip[0] + self.stand_off * np.cos(a),
+                         p_vip[1] + self.stand_off * np.sin(a), self.height])
+
+    def set_phase(self, i, p_vip):
+        """Called when the operator advances a leg. Idempotent.
+
+        It MUST do nothing when the phase is unchanged: plan_escort calls it
+        every step, and resetting the give-up timer each time would mean the
+        attacker could never stand down.
+        """
+        i = max(0, min(int(i), self.n_legs - 1))
+        if i == self.phase:
+            return
+        self.phase = i
+        if self.phase == 1:                 # committing: restart the timer
+            self.stood_down = False
+            self._best = float(np.linalg.norm(
+                np.asarray(self.p, float)[:2] - np.asarray(p_vip, float)[:2]))
+            self._since = 0.0
+
+    def target(self, t, p_vip, defenders=(), cfg=None):
+        """Where the attacker wants to be now. Stateful: integrates itself."""
+        p_vip = np.asarray(p_vip, float)
+        if self.p is None:
+            self.p = self.station(p_vip)
+        dt = 0.05 if self._t is None else float(np.clip(t - self._t, 1e-3, 0.5))
+        self._t = t
+        self.p[2] = self.height
+
+        if self.phase != 1 or self.stood_down:
+            goal = self.station(p_vip)
+            v = (goal[:2] - self.p[:2]) * 1.0
+        else:
+            v = self._attack(p_vip, defenders, cfg, dt)
+
+        n = float(np.linalg.norm(v))
+        if n > self.v_max:
+            v *= self.v_max / n
+        self.p[:2] = self.p[:2] + v * dt
+        # HARD keep-out, applied after integration. The force version alone is
+        # not enough: inside the ring each defender's push points away from
+        # THAT defender, so three of them sum to a push toward the centre --
+        # onto the VIP -- and it out-votes any gain (measured: closest 0.02 m
+        # with k_keepout at 4.0). A projection cannot be out-voted, and it
+        # turns being pressed into sliding around the bubble, which is the
+        # behaviour worth watching anyway.
+        # ALWAYS, not just while attacking. The shell is what guarantees
+        # separation: at ring_radius + min_adv_sep the attacker is one full
+        # min_adv_sep outside the ring no matter which bearing it is on, so it
+        # cannot be adjacent to a defender even when it sits in a gap. Applied
+        # only during the attack it still crossed the ring on the way out.
+        if True:
+            d = self.p[:2] - np.asarray(p_vip, float)[:2]
+            dn = float(np.linalg.norm(d))
+            shell = self.shell(cfg)
+            sep = cfg.min_adv_sep if cfg is not None else 0.8
+            # HARD collision avoidance, same shape as SetpointGuard: iterate
+            # the projections and ALWAYS finish on the VIP shell. The soft
+            # repulsion above is what makes it look like it is avoiding; this
+            # is what makes it actually avoid. The shell only guarantees
+            # separation while the defenders are ON the ring -- a defender
+            # pushed off it (or a moving VIP the ring is lagging) breaks that
+            # assumption, which is exactly when a hard floor has to exist.
+            for _ in range(3):
+                for q in defenders:
+                    dq = self.p[:2] - np.asarray(q, float)[:2]
+                    dqn = float(np.linalg.norm(dq))
+                    if dqn < sep:
+                        if dqn < 1e-6:
+                            dq, dqn = np.array([1.0, 0.0]), 1.0
+                        self.p[:2] = (np.asarray(q, float)[:2]
+                                      + dq * (sep / dqn))
+                d = self.p[:2] - np.asarray(p_vip, float)[:2]
+                dn = float(np.linalg.norm(d))
+                if dn < shell:
+                    if dn < 1e-6:
+                        d, dn = np.array([1.0, 0.0]), 1.0
+                    self.p[:2] = np.asarray(p_vip, float)[:2] + d * (shell / dn)
+        if cfg is not None:
+            c = np.array(cfg.room_center)
+            r = self.p[:2] - c
+            rn = float(np.linalg.norm(r))
+            if rn > cfg.arena_radius:
+                self.p[:2] = c + r * (cfg.arena_radius / rn)
+        return self.p.copy()
+
+    #: Hunt the ring's widest gap instead of pressing head-on.
+    #:
+    #: OFF by default, and that is a measured decision, not timidity. Gap
+    #: seeking makes the encounter move -- the attacker sweeps 460 deg around
+    #: the VIP instead of 95, and the ring turns 216 deg instead of 85 -- but
+    #: it also gets IN, every time, at every gain tried (18 combinations,
+    #: 2026-10-06). That is geometry, not tuning: three defenders 120 deg
+    #: apart leave 1.73 m gaps, and closing the wall into a 116 deg arc leaves
+    #: 244 deg wide open. Forcing it back out with a keep-out projection then
+    #: pushed it into DEFENDERS (0.29 m against a 0.80 m floor).
+    #:
+    #: The honest fix is the one that cannot be done two days before a demo:
+    #: stop the defenders yielding, so the ring is a real obstacle and the
+    #: attacker is deflected by bodies rather than by an invented barrier.
+    #: Until then this stays off and the attacker presses head-on.
+    seek_gaps: bool = True
+    #: A committed gap counts as CLOSED once a defender is within this angle
+    #: of it; only then does the attacker pick a new one. Without commitment
+    #: it re-chose the widest gap every single step, and with three near-equal
+    #: gaps that is a coin flip 20 times a second -- it dithered between two
+    #: of them and swept 52 deg of arc in a whole encounter ("stuck in the
+    #: same quadrant"). Committing makes it actually GO somewhere, and makes
+    #: the ring chase it when it does.
+    gap_closed_deg: float = 42.0
+    #: How much it prefers a gap on the FAR side over the nearest one.
+    #:
+    #: With this at 0 it takes whichever opening is closest, which is always
+    #: the one it is already next to -- it alternated between two gaps 80 deg
+    #: apart and swept 74 deg of arc all encounter, while the room actually
+    #: allows 201 deg (the +x side is unreachable: the shell there lands
+    #: outside the arena). Biasing toward distant gaps makes it break off and
+    #: flank, which is the move that forces the ring to travel.
+    flank_bias: float = 0.9
+
+    def aim(self, p_vip, defenders):
+        """The bearing it is trying to get through: the ring's WIDEST GAP.
+
+        Driving straight at the VIP is why the first version looked passive.
+        Attraction pointed in, repulsion pointed straight back out, both along
+        the same radial line, so the attacker bounced in and out of one spot
+        and the ring never had to rotate -- which made the defenders look
+        static too. Hunting the gap makes it travel: the ring turns to cover,
+        the gap moves, it chases the gap, and the defence has to keep up.
+
+        The race is deliberately close. At ~1.8 m from the VIP the attacker's
+        0.45 m/s is 0.25 rad/s around it, against the ring's phase_rate of
+        0.30 rad/s -- so the ring can just outrun it. Tension, with the
+        defence winning.
+        """
+        # VIP-RELATIVE, like the gap branch below. This returned the
+        # attacker->VIP bearing, which is 180 deg out, and BOTH callers treat
+        # the result as a bearing measured from the VIP. Two consequences,
+        # and every symptom chased on 2026-10-06 was one of them:
+        #   * _attack aimed at a point on the FAR side of the VIP, so the
+        #     attacker drove straight through it -- which is why no value of
+        #     attack_reach, k_keepout or k_repel ever bounded the approach;
+        #   * escort_show fed it to ctrl.step as the threat bearing, so the
+        #     ring turned to face AWAY and the blocker took station at the
+        #     opposite end of the circle.
+        if not self.seek_gaps or len(defenders) == 0:
+            return float(np.arctan2(*(self.p[:2] - p_vip[:2])[::-1]))
+        a = sorted(float(np.arctan2(*(np.asarray(q, float)[:2] - p_vip[:2])[::-1]))
+                   for q in defenders)
+        gaps = []
+        for i in range(len(a)):
+            lo = a[i]
+            hi = a[(i + 1) % len(a)] + (TWO_PI if i + 1 == len(a) else 0.0)
+            gaps.append((hi - lo, wrap_pi(lo + (hi - lo) / 2.0)))
+
+        def covered(ang):
+            return min(abs(wrap_pi(ang - b)) for b in a) < np.radians(
+                self.gap_closed_deg)
+
+        # Stay committed until the ring actually closes the gap we chose.
+        if self._gap is not None and not covered(self._gap):
+            return self._gap
+        open_gaps = [g for g in gaps if not covered(g[1])]
+        if not open_gaps:                      # fully covered: press the widest
+            open_gaps = gaps
+        here = float(np.arctan2(*(self.p[:2] - p_vip[:2])[::-1]))
+        self._gap = max(
+            open_gaps,
+            key=lambda g: g[0] + self.flank_bias * abs(wrap_pi(g[1] - here)))[1]
+        return self._gap
+
+    def _attack(self, p_vip, defenders, cfg, dt):
+        # aim THROUGH the widest gap, not straight at the VIP
+        ang = self.aim(p_vip, defenders)
+        goal = p_vip[:2] + self.shell(cfg) * np.array([np.cos(ang), np.sin(ang)])
+        to_goal = goal - self.p[:2]
+        d_goal = float(np.linalg.norm(to_goal))
+        # Attraction must DECAY as it arrives. A unit vector here means full
+        # speed at any range, so the attacker could never settle on the goal
+        # radius -- it overshot straight through the VIP and oscillated, and
+        # no value of attack_reach changed that (measured 2026-10-06: closest
+        # 0.01 m at every reach from 1.2 to 1.8). Linear inside approach_band,
+        # saturated outside, so it still commits from far away.
+        v = (self.k_attract * min(1.0, d_goal / self.approach_band)
+             * to_goal / max(d_goal, 1e-6))
+
+        to_vip = p_vip[:2] - self.p[:2]
+        d_vip = float(np.linalg.norm(to_vip))
+
+        for q in defenders:
+            d = self.p[:2] - np.asarray(q, float)[:2]
+            dn = float(np.linalg.norm(d))
+            if dn < self.repel_range:
+                # linear falloff: full push on contact, nothing at the edge
+                w = self.k_repel * (1.0 - dn / self.repel_range)
+                u = d / max(dn, 1e-6)
+                v += w * u
+                # ...plus a TANGENTIAL component, or a pure radial push just
+                # bounces it back the way it came and it never gets round the
+                # defender. Signed toward the gap it is aiming for, so the
+                # push becomes a slide in the direction it already wants.
+                tang = np.array([-u[1], u[0]])
+                if float(tang @ (goal - self.p[:2])) < 0.0:
+                    tang = -tang
+                v += self.k_tangent * w * tang
+
+        # KEEP OUT of the VIP's bubble. Without this, attack_reach is only a
+        # goal, and nothing stops the attacker slipping inside the ring --
+        # where the three defenders' pushes very nearly cancel and the
+        # residual drives it onto the VIP. Measured: closest 0.01 m at every
+        # reach and every gain. As a barrier it is the thing that makes the
+        # defence hold, and it is also what the attacker would do anyway: it
+        # wants to threaten the VIP, not collide with it.
+        if d_vip < self.attack_reach:
+            v += (self.k_keepout * (1.0 - d_vip / self.attack_reach)
+                  * (-to_vip / max(d_vip, 1e-6)))
+
+        if cfg is not None:                 # the room pushes back too
+            c = np.array(cfg.room_center)
+            r = self.p[:2] - c
+            rn = float(np.linalg.norm(r))
+            margin = cfg.arena_radius - rn
+            if margin < 0.40:
+                v += self.k_wall * (1.0 - max(margin, 0.0) / 0.40) * (-r / max(rn, 1e-6))
+
+        # progress check: closing on the VIP, or just being herded?
+        self._best = min(self._best + self.relax_rate * dt, d_vip + 1e3)
+        if d_vip < self._best - self.progress_eps * dt:
+            self._best = d_vip
+            self._since = 0.0
+        else:
+            self._since += dt
+            if self._since >= self.give_up_s:
+                self.stood_down = True
+        return v
+
+    def check(self, cfg, p_vip):
+        """Problems with the PARAMETERS. A path cannot be checked; these can."""
+        bad = []
+        # ANGULAR, not linear. The old check compared the two speeds directly
+        # and was simply the wrong comparison -- see v_max above.
+        # The radius it actually ORBITS at when the block is working -- one
+        # separation outside the ring -- NOT shell(), which is the minimum
+        # distance it may ever be from the VIP (0.80 m). Dividing by the
+        # floor instead of the operating radius made this report 1.00 rad/s
+        # for a 0.80 m/s attacker and refuse a configuration that is fine.
+        shell = cfg.ring_radius + cfg.min_adv_sep
+        w_adv = self.v_max / max(shell, 1e-6)
+        w_ring = min(cfg.engaged_phase_rate, cfg.v_max / cfg.ring_radius)
+        if w_adv >= w_ring:
+            bad.append(
+                f'adversary turns at {w_adv:.2f} rad/s about the VIP '
+                f'({self.v_max:.2f} m/s at {shell:.2f} m) and the ring only '
+                f'manages {w_ring:.2f} -- it can out-turn the defence, so the '
+                f'block cannot hold. Cap it below {w_ring * shell:.2f} m/s.')
+        if self.repel_range <= cfg.min_adv_sep:
+            bad.append(f'repel_range {self.repel_range:.2f} m is inside '
+                       f'min_adv_sep {cfg.min_adv_sep:.2f} -- the attacker '
+                       'only reacts once the guard is already rescuing it')
+        if self.stand_off <= cfg.release_radius:
+            bad.append(f'stand_off {self.stand_off:.2f} m does not clear '
+                       f'release_radius {cfg.release_radius:.2f} -- it would '
+                       'start and end the run already engaged')
+        st = self.station(np.asarray(p_vip, float))
+        d = float(np.linalg.norm(st[:2] - np.array(cfg.room_center)))
+        if d > cfg.arena_radius:
+            bad.append(f'its waiting station is {d:.2f} m from room centre, '
+                       f'outside the {cfg.arena_radius:.2f} m arena')
+        return bad

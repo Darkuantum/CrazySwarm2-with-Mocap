@@ -127,6 +127,10 @@ before takeoff and refused if it does not check out:
 ``rate_hz``             20.0        setpoint stream rate per drone
 ``vip_height_offset``   0.0         m, ring altitude relative to an airborne
                                     VIP
+``dji_clear_height``    1.70        m, where the ring waits while the DJI
+                                    takes off / lands. Must clear the DJI's
+                                    hover altitude; bounded above by
+                                    safety.CEILING_TESTED (1.95 m)
 ======================  ==========  =================================
 
 ``probe < alert < release < retreat`` has to hold; ``plan_escort`` refuses if
@@ -140,6 +144,8 @@ import numpy as np
 import rclpy
 from crazyflie_py import Crazyswarm
 from geometry_msgs.msg import PointStamped
+from rclpy.qos import qos_profile_sensor_data
+
 from motion_capture_tracking_interfaces.msg import NamedPoseArray
 
 from crazyflie_shows import escort, safety
@@ -168,7 +174,12 @@ from crazyflie_shows.swarm_show import _param, check_placement
 # deck at all (the cue raises keyError there and is swallowed by cue()).
 LED_DEFENDER = LIGHT['deep_blue']    # on the ring, nothing to do
 LED_ADVERSARY = LIGHT['red']         # the threat
-LED_BLOCKING = LIGHT['amber']        # the LEAD, standing on the threat bearing
+# CYAN, not amber. amber is wrgb(r=0xFF, g=0x50) and the adversary is
+# wrgb(r=0xFF) -- amber IS red with a little green, and across a room the
+# drone doing the blocking and the drone being blocked read as the same
+# colour. Reported from the first hardware flight, 2026-10-06. Cyan is the
+# only cue in the palette with no red channel at all.
+LED_BLOCKING = LIGHT['cyan']         # the LEAD, standing on the threat bearing
 LED_WING = LIGHT['violet']           # the other two, closed up beside the lead
 
 TAKEOFF_HEIGHT = 0.6
@@ -189,7 +200,20 @@ class PoseCache:
         self.node = node
         self.pos = {}
         self.stamp = {}
-        node.create_subscription(NamedPoseArray, topic, self._cb, 10)
+        # SENSOR QoS, not the default. motion_capture_tracking publishes
+        # /poses BEST_EFFORT; a RELIABLE subscription is INCOMPATIBLE with it
+        # and rclpy delivers NOTHING -- "No messages will be received from
+        # it", as a one-line WARN at startup and silence thereafter.
+        #
+        # This shipped broken and nothing caught it: under backend:=sim there
+        # is no /poses at all, so the miss looks exactly like the expected
+        # "no believable live pose ... (expected under backend:=sim)", and the
+        # escort has never flown on hardware. It disables everything that
+        # needs mocap -- vip_mode:=mocap (the DJI), adversary:=external, the
+        # geofence, the staleness watchdogs and the live placement check.
+        # Every other tool in this repo already uses sensor QoS here.
+        node.create_subscription(NamedPoseArray, topic, self._cb,
+                                 qos_profile_sensor_data)
 
     def _cb(self, msg):
         t = self.node.get_clock().now().nanoseconds * 1e-9
@@ -240,10 +264,26 @@ def _cfg_from_params(node):
     cfg = escort.EscortConfig()
     for name in ('ring_radius', 'height', 'v_max', 'phase_rate', 'alert_radius',
                  'release_radius', 'min_vip_dist', 'rate_hz',
-                 'vip_height_offset'):
+                 'vip_height_offset', 'dji_clear_height'):
         setattr(cfg, name, float(_param(node, name, getattr(cfg, name))))
     return cfg
 
+
+#: What to type to advance a paced show. A bare Enter is the natural thing in
+#: a terminal, but the mission console's stdin box sends a LINE and used to
+#: refuse to send an empty one, so operators typed a stray letter at every
+#: gate to get past it. ``operator_said`` has always treated ANY non-'q' line
+#: as "continue", so the hint now says so instead of leaving people guessing.
+CONTINUE_HINT = '[Enter] (or any text) continue   [q] land'
+
+#: When a paced leg counts as FINISHED, so the operator is told rather than
+#: having to guess from a picture that stops moving. Both must hold: the
+#: adversary's commanded setpoint has converged on its leg target, and the
+#: ring has stopped moving. The ring one matters -- the attacker arrives
+#: first and the defenders are still swinging onto the new threat bearing,
+#: which is exactly the part worth watching.
+LEG_DONE_TOL = 0.08    # m, commanded adversary to its leg target
+LEG_DONE_V = 0.05      # m/s, fastest commanded defender setpoint
 
 #: Operator pacing. The show is an encounter between three drones, a scripted
 #: attacker and a human flying a DJI; coordinating that on a wall clock means
@@ -275,17 +315,51 @@ def operator_said(block=False, timeout=0.0):
     return line.strip() or ' '                          # bare Enter
 
 
-def operator_gate(prompt, pump=None):
-    """Hold until the operator says go. ``pump`` keeps the drones fed."""
-    print(f'\n  >>> {prompt}\n      [Enter] continue   [q] land now', flush=True)
+def drain_stdin():
+    """Throw away anything already typed. Returns True if 'q' was among it.
+
+    A gate must be answered by a decision made AFTER reading it. Keystrokes
+    queued while the previous leg ran would otherwise satisfy the next gate
+    the instant it opens -- and on 2026-10-06 that collapsed the whole landing
+    sequence: extra presses skipped the "bring the DJI down" confirmation, so
+    the defenders landed alongside the DJI instead of after it. A 'q' in the
+    buffer is still honoured; it is the one input that is never premature.
+    """
+    sawq = False
+    while select.select([sys.stdin], [], [], 0.0)[0]:
+        line = sys.stdin.readline()
+        if line == '':
+            break
+        if line.strip() in ('q', 'Q'):
+            sawq = True
+    return sawq
+
+
+def operator_gate(prompt, pump=None, spin=None):
+    """Hold until the operator says go.
+
+    ``pump`` runs one control iteration per wait tick -- it keeps the drones
+    fed AND the ROS caches fresh. ``spin`` is the weaker version for gates
+    reached before anything is flying: it only services callbacks.
+
+    Passing NEITHER makes the gate block in select() without ever calling
+    spin_once, which freezes every pose timestamp for as long as the operator
+    thinks. That is not a cosmetic bug -- the next staleness check reports the
+    operator's own reaction time as a mocap dropout and lands the show.
+    """
+    if drain_stdin():                       # a queued 'q' still lands
+        raise ShowAborted('operator asked to land')
+    print(f'\n  >>> {prompt}\n      {CONTINUE_HINT}', flush=True)
     while True:
-        said = operator_said(block=(pump is None), timeout=0.05)
+        said = operator_said(block=(pump is None and spin is None), timeout=0.05)
         if said in ('q', 'Q', 'EOF'):
             raise ShowAborted('operator asked to land')
         if said:
             return
         if pump is not None:
             pump()
+        elif spin is not None:
+            spin()
 
 
 def main():
@@ -307,7 +381,7 @@ def main():
     # EscortConfig.vip_offset and ESCORT.md).
     vip_point = list(_param(node, 'vip_point',
                             escort.vip_home(cfg_default)[:2].tolist()))
-    adv_mode = str(_param(node, 'adversary', 'scripted'))
+    adv_mode = str(_param(node, 'adversary', 'reactive'))
     adv_name = str(_param(node, 'adversary_name', 'adv'))
     # A comma-separated STRING, not a string array: rclpy infers the type of
     # a `[]` default as BYTE_ARRAY, so `-p defenders:=[cf1,cf2,cf3]` dies with
@@ -323,8 +397,9 @@ def main():
 
     if vip_mode not in ('point', 'mocap', 'manual'):
         raise SystemExit(f"vip_mode must be point | mocap | manual, not {vip_mode!r}")
-    if adv_mode not in ('scripted', 'external', 'manual', 'none'):
-        raise SystemExit("adversary must be scripted | external | manual | none, "
+    if adv_mode not in ('scripted', 'reactive', 'external', 'manual', 'none'):
+        raise SystemExit("adversary must be reactive | scripted | external | "
+                         "manual | none, "
                          f'not {adv_mode!r}')
 
     cfg = _cfg_from_params(node)
@@ -332,7 +407,9 @@ def main():
     # is: a hand-flown DJI being escorted. A person wearing a hat is the
     # exception and says so with vip_airborne:=false.
     cfg.vip_airborne = bool(_param(node, 'vip_airborne', vip_mode == 'mocap'))
-    script = escort.AdversaryScript(height=cfg.height)
+    script = (escort.ReactiveAdversary(height=cfg.height)
+              if adv_mode == 'reactive'
+              else escort.AdversaryScript(height=cfg.height))
 
     # ------------------------------------------------------------ who is who
     if want_defenders:
@@ -352,7 +429,7 @@ def main():
                          f'{len(names)} drones ({names})')
 
     adv_drone = None
-    if adv_mode in ('scripted', 'manual'):
+    if adv_mode in ('scripted', 'reactive', 'manual'):
         adv_drone = (adv_drone_name or auto_adv
                      or next((n for n in names if n not in defenders), ''))
         if not adv_drone:
@@ -526,7 +603,8 @@ def main():
                 _armed_yet['v'] = True
                 operator_gate('ARM and take off the defenders? Everyone clear '
                               'of the volume, DJI still on the ground, E-STOP in '
-                              'hand.')
+                              'hand.',
+                              spin=lambda: rclpy.spin_once(node, timeout_sec=0.02))
             cf.arm(True)
         timeHelper.sleep(1.0)
 
@@ -671,6 +749,17 @@ def main():
             sp_h, _ = ctrl.step(dt_h, p_v, None, live_h)
             for i_h, cf_h in enumerate(dcfs):
                 _stream(cf_h, sp_h[i_h], ctrl.guards[i_h].v)
+            # The ADVERSARY too, or it falls out of the sky.
+            #
+            # Once a drone has been fed low-level setpoints the firmware
+            # commander cuts thrust ~2 s after the stream stops. This pump fed
+            # only the defenders, so every gate opened AFTER the encounter
+            # starved the attacker: on 2026-10-06 the dji_down gate lasted as
+            # long as it took to land the DJI and the attacker simply dropped.
+            # It holds its last commanded point -- it is not part of the
+            # encounter while a gate is open, it just has to stay airborne.
+            if acf is not None and streaming:
+                _stream(acf, adv_guard.sp, np.zeros(3))
             timeHelper.sleepForRate(cfg.rate_hz)
 
         # last_good must START valid: if the VIP is already outside on the very
@@ -681,6 +770,21 @@ def main():
         fence = {'on': True, 'centre': _home.copy(), 'last_good': _home.copy(),
                  'was_airborne': cfg.vip_airborne}
         leg_i = 0
+        leg_done = {'v': False}      # announced completion of the current leg?
+        stood_said = {'v': False}    # announced the attacker giving up?
+        # Where the adversary's CURRENT leg is measured from.
+        #
+        # AdversaryScript resolves a leg against the VIP's position RIGHT NOW,
+        # so a moving VIP drags the attacker with it at a fixed radius -- on
+        # the first hardware flight it read as the attacker flying formation
+        # with the DJI, which is the single most scripted-looking thing in the
+        # demo. Freezing the anchor at the start of each leg makes the attacker
+        # fly its own path to a fixed point in the room; it still ATTACKS where
+        # the VIP was when it committed, so a pilot who moves genuinely evades
+        # it instead of towing it. (The real answer is a reactive policy that
+        # re-plans -- ESCORT.md; this is the part that fits before Thursday.)
+        leg_anchor = {'p': None}
+        p_track = None               # fenced VIP; set at the end of each loop
         # FIRST IN, LAST OUT. The Crazyflies are already up and holding a ring;
         # the DJI goes up last and comes down first, so the big aircraft is
         # never manoeuvred past three hovering drones and the ring is never
@@ -695,20 +799,45 @@ def main():
         # plane without moving it at all.
         phase = 'dji_up' if (paced and vip_mode == 'mocap') else 'encounter'
         track_vip = cfg.vip_airborne
+        show_height = cfg.height
         if phase == 'dji_up':
+            # Pin the ring HIGH, not at the show altitude. See
+            # EscortConfig.dji_clear_height: parking it at `height` puts the
+            # defenders exactly in the climbing DJI's path, and a DJI that
+            # settles above them leaves three Crazyflies in its downwash.
             cfg.vip_airborne = False          # pin the ring, ignore VIP altitude
-            print(f'\n  ring holding a constant {cfg.height:.2f} m while the DJI '
-                  'climbs -- it will not follow the VIP until you say so')
-            operator_gate('PILOT: take off the DJI, climb into the ring and hold '
-                          'steady. Press Enter once it is up and settled.',
+            cfg.height = cfg.dji_clear_height
+            print(f'\n  ring CLIMBING to {cfg.height:.2f} m to clear the DJI '
+                  f'(show altitude is {show_height:.2f} m) -- it will not '
+                  'follow the VIP until you say so')
+            operator_gate('PILOT: wait for the ring to settle high, THEN take '
+                          'off the DJI, climb to your hover height under the '
+                          'ring and hold steady. Enter once it is up and settled.',
                           pump=_hold)
+            cfg.height = show_height
             cfg.vip_airborne = track_vip      # now the ring rides with the VIP
             phase = 'encounter'
             print(f'  ring now tracking the VIP {cfg.vip_height_offset:+.2f} m')
         if paced:
             print(f'\n  PACED: the adversary waits for you at every leg '
                   f'({script.n_legs} of them). The defenders react on their own.')
-            operator_gate(f'begin? next: {script.label(0)}')
+            # pump=_hold is NOT optional. An unpumped gate blocks in
+            # select() and never calls spin_once, so NO /poses callbacks run
+            # and every pose timestamp freezes at the moment the gate opened.
+            # The first staleness check after the gate then measures how long
+            # the OPERATOR took to press Enter and reports it as a lost VIP.
+            # Measured on hardware 2026-10-06: 7.9 s at this prompt ->
+            # "VIP (operator) has been lost for 8.1 s", landing a show whose
+            # mocap never missed a frame. It also left the defenders coasting
+            # on their last setpoint with no guard running.
+            operator_gate(f'begin? next: leg 1/{script.n_legs} '
+                          f'-- {script.label(0)}', pump=_hold)
+        # leg 1 is measured from wherever the VIP is when the encounter opens
+        _seed = vip_now(timeHelper.time())
+        # p_vip0 is None in mocap mode, and np.asarray(None) would mask the
+        # real failure (a VIP the loop is about to abort on anyway).
+        leg_anchor['p'] = np.asarray(
+            _seed if _seed is not None else escort.vip_home(cfg), float).copy()
         while True:
             rclpy.spin_once(node, timeout_sec=0.0)
             now = timeHelper.time()
@@ -723,11 +852,15 @@ def main():
                     break
                 if said:
                     leg_i += 1
+                    leg_done['v'] = False
+                    # p_vip still holds last iteration's value (50 ms old)
+                    leg_anchor['p'] = np.asarray(p_vip, float).copy()
+                    stood_said['v'] = False
                     if leg_i >= script.n_legs:
                         print('\n  last leg done', flush=True)
                         break
-                    print(f'\n  >>> leg {leg_i + 1}/{script.n_legs}: '
-                          f'{script.label(leg_i)}\n      [Enter] next   [q] land',
+                    print(f'\n  >>> leg {leg_i + 1}/{script.n_legs} STARTED: '
+                          f'{script.label(leg_i)}\n      {CONTINUE_HINT}',
                           flush=True)
             elif t >= duration:
                 break
@@ -748,7 +881,7 @@ def main():
                 timeHelper.sleepForRate(cfg.rate_hz)
                 continue
 
-            if adv_mode in ('scripted', 'manual'):
+            if adv_mode in ('scripted', 'reactive', 'manual'):
                 if adv_mode == 'manual':
                     # A stale teleop freezes the adversary where it is; it does
                     # NOT land the demo, because the defenders and the person
@@ -756,8 +889,35 @@ def main():
                     want = manual_adv.get(now, 1.0)
                     want = adv_guard.sp if want is None else want
                 else:
-                    want = script.target(
-                        script.leg_mid(leg_i) if paced else t, p_vip)
+                    if adv_mode == 'reactive':
+                        # It flies at the RING's altitude, not the VIP's: the
+                        # ring now rides above an airborne DJI, and an
+                        # attacker left at the VIP's height would come in
+                        # underneath the drones meant to be facing it.
+                        script.height = escort.ring_height(cfg, p_vip)
+                        # Paced: the operator advances it. UNPACED: advance
+                        # on time, or the phase stays 0 and it never attacks
+                        # at all -- it just holds its station for the whole
+                        # run, which is what a free-running sim showed.
+                        script.set_phase(
+                            leg_i if paced
+                            else int(t / (script.duration / script.n_legs)),
+                            p_vip)
+                        # The FENCED VIP, not the raw one. p_track holds last
+                        # iteration's value here (50 ms old) because the fence
+                        # is evaluated further down the loop. Using p_vip let
+                        # the attacker chase a strayed DJI out of the arena
+                        # while the ring correctly stayed behind -- the one
+                        # drone still commanded to follow it anywhere.
+                        want = script.target(now - t0,
+                                             p_vip if p_track is None else p_track,
+                                             [g.sp for g in ctrl.guards], cfg)
+                    else:
+                        anchor = (leg_anchor['p']
+                                  if paced and leg_anchor['p'] is not None
+                                  else p_vip)
+                        want = script.target(
+                            script.leg_mid(leg_i) if paced else t, anchor)
                 # A manual adversary gets ONE floor: it may not touch the VIP.
                 #
                 # Only in manual mode, and only against the VIP. A SCRIPTED
@@ -779,7 +939,14 @@ def main():
                 # defenders flying at all. 0.80 m lets it through the ring and
                 # still cannot reach the DJI. It is a reused constant, not a
                 # measurement against a DJI's prop wash (ESCORT.md).
-                guard_vip = p_vip if adv_mode == 'manual' else None
+                # Backstop for both UNVERIFIED modes. A scripted adversary
+                # is proven offline and needs none; a manual or reactive one
+                # has no proof, and the sweep that tuned the reactive gains
+                # found a setting that walked it to 0.01 m of the VIP. The
+                # gradient is what SHOULD turn it away; this is what happens
+                # if the gradient is wrong on the day.
+                guard_vip = (p_vip if adv_mode in ('manual', 'reactive')
+                             else None)
                 p_adv = adv_guard.step(want, step, p_vip=guard_vip,
                                        vip_dist=cfg.min_adv_sep)
                 _stream(acf, p_adv, adv_guard.v)
@@ -829,7 +996,25 @@ def main():
             p_track = p_vip if fence['on'] else fence['centre']
 
             live = [_live(poses, n, cf, now) for n, cf in zip(defenders, dcfs)]
-            sp, info = ctrl.step(step, p_track, p_adv, live)
+            # A reactive attacker aims at the ring's WIDEST GAP, so turning
+            # to where it is now is always one move behind. Hand the ring the
+            # gap it is heading for instead: measured in sim 2026-10-06, the
+            # ring turns 720 deg instead of 216 and holds the attacker at
+            # 0.46 m instead of 0.01 m. Engagement and every separation still
+            # use the real p_adv -- only the rotation target is anticipated.
+            # NO gap-bearing override. Feeding the ring the gap the attacker
+            # is AIMING at sounded like anticipation and was the opposite: with
+            # flank_bias the attacker deliberately picks gaps far from itself,
+            # so the ring left the attacker uncovered to go and stand on an
+            # opening 120 deg away. Measured 2026-10-06: the nearest defender
+            # sat 58 deg off the attacker (worst 105), against 24 deg when the
+            # ring simply tracks where the attacker IS.
+            #
+            # The controller does its own anticipation from the threat's
+            # measured bearing RATE, bounded by lead_max_rad -- forward bias
+            # that cannot run off to the far side of the circle.
+            p_threat = None
+            sp, info = ctrl.step(step, p_track, p_adv, live, p_threat=p_threat)
             for i, cf in enumerate(dcfs):
                 _stream(cf, sp[i], ctrl.guards[i].v)
             # Draw AFTER the setpoints are away: the picture must never delay a
@@ -838,12 +1023,67 @@ def main():
             # script ahead of now. A teleoperated or mocap-tracked one does not
             # -- pass nothing rather than draw a line the demo cannot know.
             adv_plan = None
-            if adv_mode == 'scripted' and p_adv is not None:
+            if adv_mode == 'scripted' and p_adv is not None:   # reactive: no plan to draw
                 base = script.leg_mid(leg_i) if paced else t
-                adv_plan = [script.target(base + k * 0.5, p_vip) for k in range(1, 25)]
+                a_plan = (leg_anchor['p'] if paced and leg_anchor['p'] is not None
+                          else p_vip)
+                adv_plan = [script.target(base + k * 0.5, a_plan) for k in range(1, 25)]
             viz.publish(p_vip, p_adv, sp,
                         dict(info, slot_of=ctrl.slot_of), cfg.ring_radius,
                         adv_plan=adv_plan)
+
+            # ---- paced: say when the leg has actually FINISHED ----------
+            # The adversary is frozen on leg_mid(leg_i), so it flies to that
+            # point and then just sits there. Nothing on screen distinguished
+            # "still flying this leg" from "arrived, waiting for you", so the
+            # operator was pressing Enter on a guess -- and pressing early
+            # cuts off the very reaction the leg exists to show.
+            if (paced and adv_mode in ('scripted', 'reactive')
+                    and not leg_done['v'] and p_adv is not None):
+                ring_v = max((float(np.linalg.norm(g.v)) for g in ctrl.guards),
+                             default=0.0)
+                if adv_mode == 'reactive':
+                    # The attack phase is over when the attacker GIVES UP, not
+                    # when it arrives somewhere -- that is the whole point of
+                    # it. The other two phases end on reaching its station.
+                    if leg_i == 1:
+                        reach = 0.0 if script.stood_down else 1e9
+                    else:
+                        st = script.station(p_vip)
+                        reach = float(np.linalg.norm(
+                            np.asarray(p_adv, float)[:2] - st[:2]))
+                else:
+                    goal = script.target(script.leg_mid(leg_i),
+                                         leg_anchor['p'] if leg_anchor['p'] is not None
+                                         else p_vip)
+                    reach = float(np.linalg.norm(np.asarray(p_adv, float)[:2]
+                                                 - np.asarray(goal, float)[:2]))
+                if reach <= LEG_DONE_TOL and ring_v <= LEG_DONE_V:
+                    leg_done['v'] = True
+                    d_vip = float(np.linalg.norm(np.asarray(p_adv, float)[:2]
+                                                 - np.asarray(p_vip, float)[:2]))
+                    nxt = (f'leg {leg_i + 2}/{script.n_legs} -- '
+                           f'{script.label(leg_i + 1)}'
+                           if leg_i + 1 < script.n_legs
+                           else 'END -- land the defenders')
+                    print(f'\n  >>> leg {leg_i + 1}/{script.n_legs} COMPLETE: '
+                          f'{script.label(leg_i)}\n'
+                          f'      adversary settled {d_vip:.2f} m from the VIP, '
+                          f'ring {"BLOCKING" if info["engaged"] else "clear"}\n'
+                          f'      next: {nxt}\n'
+                          f'      {CONTINUE_HINT}', flush=True)
+
+            # The attacker giving up is the demo's payoff. Say so -- it left
+            # silently on the first sim run and read as the show breaking.
+            if (adv_mode == 'reactive' and script.stood_down
+                    and not stood_said['v']):
+                stood_said['v'] = True
+                d_sd = float(np.linalg.norm(np.asarray(p_adv, float)[:2]
+                                            - np.asarray(p_vip, float)[:2]))
+                print(f'\n  [t+{t:5.1f}s] ATTACKER STOOD DOWN -- blocked for '
+                      f'{script.give_up_s:.0f} s without getting nearer than '
+                      f'{d_sd:.2f} m. It is withdrawing to its station.\n',
+                      flush=True)
 
             if info['engaged'] != was_engaged:
                 was_engaged = info['engaged']
@@ -920,10 +1160,11 @@ def main():
             # Pin the ring again before the DJI descends, or it follows the VIP
             # down and puts the defenders on the floor with it.
             cfg.vip_airborne = False
-            print(f'\n  ring pinned at {cfg.height:.2f} m -- it will NOT follow '
-                  'the DJI down')
-            operator_gate('PILOT: bring the DJI DOWN now and land it. The '
-                          'defenders are holding their ring and will stay up '
+            cfg.height = cfg.dji_clear_height
+            print(f'\n  ring CLIMBING to {cfg.height:.2f} m to clear the DJI '
+                  '-- it will NOT follow the DJI down')
+            operator_gate('PILOT: wait for the ring to lift clear, THEN bring '
+                          'the DJI DOWN and land it. The defenders hold high '
                           'until you confirm it is on the ground.', pump=_hold)
             print('  DJI down -- landing the defenders')
         for cf in dcfs + ([acf] if acf else []):

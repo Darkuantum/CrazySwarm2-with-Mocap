@@ -107,6 +107,7 @@ LIGHT = {
     'magenta':   wrgb(r=0xD0, b=0x90),
     'amber':     wrgb(r=0xFF, g=0x50),
     'white':     wrgb(w=0x70),
+    'cyan':      wrgb(g=0xC0, b=0xFF),  # the ONLY cue with no red in it
     'red':       wrgb(r=0xFF),          # = crazyswarm_py LED_SCRIPT_RUNNING
 }
 #: Low-to-high gradient for the staircase, one colour per step.

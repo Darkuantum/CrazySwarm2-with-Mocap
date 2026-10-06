@@ -71,7 +71,12 @@ def simulate(cfg, script, walk_speed=0.0, duration=None, walk_bearing=90.0,
         p_next[2] = p_vip[2]
         p_vip = p_next
 
-        p_adv = script.target(t, p_vip)
+        # A reactive attacker needs to see the defenders and the room, and
+        # needs its phase advanced; a scripted one ignores all of it. Driving
+        # both through the same call is what lets plan_escort verify either.
+        if hasattr(script, 'set_phase'):
+            script.set_phase(int(t / (script.duration / script.n_legs)), p_vip)
+        p_adv = script.target(t, p_vip, pos, cfg)
         sp, info = ctrl.step(dt, p_vip, p_adv, pos)
         # first-order lag towards the commanded setpoint
         pos += (sp - pos) * min(dt / max(lag_tau, 1e-3), 1.0)
@@ -357,6 +362,9 @@ def main():
     ap.add_argument('--height', type=float, help='override defender height, m')
     ap.add_argument('--vmax', type=float, help='override the speed cap, m/s')
     ap.add_argument('--phase-rate', type=float, help='override ring turn rate, rad/s')
+    ap.add_argument('--scripted', action='store_true',
+                    help='verify the old fixed-leg adversary instead of the '
+                         'reactive one the show now flies by default')
     ap.add_argument('--marks', action='store_true',
                     help='where to stand the drones, and check the yaml marks')
     ap.add_argument('--yaml', default=None,
@@ -377,7 +385,12 @@ def main():
             setattr(cfg, attr, val)
     if args.vip_z is not None:
         cfg.vip_airborne = True
-    script = escort.AdversaryScript(height=cfg.height)
+    # Verify what the SHOW actually flies. escort_show defaults to the
+    # reactive attacker, so a planner that only ever checked the script would
+    # be proving a demo nobody runs.
+    script = (escort.AdversaryScript(height=cfg.height) if args.scripted
+              else escort.ReactiveAdversary(height=cfg.height))
+    print(f'  adversary     {"scripted (fixed legs)" if args.scripted else "REACTIVE - finds its own way in"}')
 
     if args.marks:
         from crazyflie_shows.plan_show import default_yaml
