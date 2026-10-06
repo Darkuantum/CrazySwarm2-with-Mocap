@@ -32,7 +32,24 @@ set -u
 
 SERVER='/crazyflie_server'
 LED_SUFFIX='params.colorLedBot.wrgb8888'
-FALLBACK_PARAM='cf11.params.colorLedBot.wrgb8888'
+# If the server advertises no LED params, fall back to the enabled fleet from
+# crazyflies.yaml rather than a hardcoded name. This used to be
+# 'cf11.params...': cf11 is not in the fleet and is on a channel nothing uses,
+# so the fallback could only ever fail.
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FLEET_YAML="$REPO_DIR/src/crazyswarm2/crazyflie/config/crazyflies.yaml"
+
+fallback_params() {
+    python3 - "$FLEET_YAML" "$LED_SUFFIX" <<'PYEOF' 2>/dev/null
+import sys
+
+import yaml
+
+robots = (yaml.safe_load(open(sys.argv[1])) or {}).get('robots') or {}
+for name in sorted(n for n, r in robots.items() if (r or {}).get('enabled')):
+    print(f'{name}.{sys.argv[2]}')
+PYEOF
+}
 
 # Named colors -> DECIMAL wrgb value (ros2 param set needs decimal integers).
 # Values match src/crazyswarm2/crazyflie_examples/crazyflie_examples/color_led.py:
@@ -103,9 +120,14 @@ apply_named() {
     mapfile -t params < <(discover_led_params)
 
     if [ "${#params[@]}" -eq 0 ]; then
+        mapfile -t params < <(fallback_params)
+        if [ "${#params[@]}" -eq 0 ]; then
+            echo "ERROR: no '$LED_SUFFIX' params on $SERVER and no enabled" \
+                 "drones in $FLEET_YAML" >&2
+            return 1
+        fi
         echo "WARNING: no '$LED_SUFFIX' params found on $SERVER;" \
-             "falling back to $FALLBACK_PARAM"
-        params=("$FALLBACK_PARAM")
+             "falling back to the enabled fleet (${params[*]%%.*})"
     fi
 
     local hex

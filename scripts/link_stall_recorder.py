@@ -78,10 +78,29 @@ FLEET_YAML = WORKSPACE / 'src/crazyswarm2/crazyflie/config/crazyflies.yaml'
 
 #: How much history every stall dump carries, per drone.
 PRECURSOR_S = 60.0
-#: A drone counts as stalled after this many consecutive zero-rate seconds.
-ZERO_SECONDS = 4
+#: A drone counts as stalled once this long has passed with NO pose at all.
+#:
+#: This used to be ZERO_SECONDS = 4 consecutive seconds of a zero *windowed
+#: rate*, which with a 5 s window needed ~9 s of silence to fire. That was
+#: fine while only a server restart could recover a stall, and became unable
+#: to fire at all once the telemetry watchdog landed (server.yaml
+#: telemetry_watchdog_s: 5.0): the watchdog declares at 5 s and has the log
+#: blocks back ~1 s later, so the pose stream resumes before the rate ever
+#: reads 0.00 four times running, zero_run tops out at 1-2 and dump() never
+#: runs. eadcda1 edited this file AFTER the watchdog landed, saying the
+#: recorder would now "show the outage itself", while leaving the trigger
+#: unable to see it. Absence of stall dumps then reads as absence of stalls --
+#: exactly the trap CLAUDE.md records being burned by on 2026-10-02.
+#:
+#: A gap is also the right measurement: it is what the drone's own firmware
+#: times out on (1 s without receiving anything -> logReset + crtpReset).
+STALL_GAP_S = 2.0
 #: ...but only if it had been delivering at least this much beforehand.
 ALIVE_HZ = 3.0
+#: Wait this long after declaring a stall before writing the dump, so that the
+#: watchdog's recovery -- and the server's "log blocks RECREATED" line -- land
+#: INSIDE the captured window instead of just after it.
+DUMP_DELAY_S = 6.0
 
 
 def enabled_drones(path=FLEET_YAML):
@@ -133,9 +152,10 @@ class Recorder(Node):
         self.stats = {n: None for n in names}                      # latest counters
         self.rx = {n: None for n in names}                         # drone-side rx
         self.history = {n: deque(maxlen=int(PRECURSOR_S) + 10) for n in names}
-        self.zero_run = defaultdict(int)
+        self.last_pose = {n: None for n in names}   # last arrival, per drone
         self.was_alive = defaultdict(bool)
         self.stalled = set()
+        self.pending_dump = {}                      # name -> when to dump
         self.csv = open(self.out_dir / f'link_{int(time.time())}.csv', 'w', buffering=1)
         self.csv.write('t,launcher,drone,pose_hz,sent,sent_ping,receive,enqueued,ack,'
                        'rx_uc,rx_bc\n')
@@ -182,7 +202,9 @@ class Recorder(Node):
 
     def _pose_cb(self, name):
         def cb(_msg):
-            self.stamps[name].append(time.time())
+            now = time.time()
+            self.stamps[name].append(now)
+            self.last_pose[name] = now
         return cb
 
     def rate(self, name, now):
@@ -211,27 +233,44 @@ class Recorder(Node):
                 f'{st.get("receive","")},{st.get("enqueued","")},{st.get("ack","")},'
                 f'{rx.get("rx_uc","")},{rx.get("rx_bc","")}\n')
 
+            # A GAP, not a windowed rate: the watchdog recovers a stalled
+            # drone in ~1 s, which a 5 s window never sees as zero.
+            last = self.last_pose[n]
+            gap = None if last is None else now - last
+
             if hz >= ALIVE_HZ:
                 self.was_alive[n] = True
-                self.zero_run[n] = 0
-                if n in self.stalled:
-                    self.stalled.discard(n)
-                    print(f'  [{time.strftime("%H:%M:%S")}] {n} RECOVERED '
-                          f'({hz:.1f} Hz) - note what changed', flush=True)
-            elif hz == 0.0 and self.was_alive[n]:
-                self.zero_run[n] += 1
-                if self.zero_run[n] == ZERO_SECONDS and n not in self.stalled:
-                    # Every drone quiet at once is the stack being stopped, not
-                    # five simultaneous stalls -- do not write junk dumps for it.
-                    others = [m for m in self.names if m != n]
-                    if others and all(self.rate(m, now) == 0.0 for m in others):
-                        print(f'  [{time.strftime("%H:%M:%S")}] all drones quiet '
-                              '- treating as a stack shutdown, not a stall',
-                              flush=True)
-                        self.was_alive[n] = False
-                        continue
-                    self.stalled.add(n)
-                    self.dump(n, now)
+            if gap is not None and gap < STALL_GAP_S and n in self.stalled:
+                self.stalled.discard(n)
+                print(f'  [{time.strftime("%H:%M:%S")}] {n} RECOVERED after '
+                      f'{gap:.1f}s gap ({hz:.1f} Hz) - note what changed',
+                      flush=True)
+            elif (gap is not None and gap >= STALL_GAP_S
+                    and self.was_alive[n] and n not in self.stalled):
+                # Every drone quiet at once is the stack being stopped, not
+                # five simultaneous stalls -- do not write junk dumps for it.
+                others = [m for m in self.names if m != n]
+                if others and all(
+                        self.last_pose[m] is None
+                        or now - self.last_pose[m] >= STALL_GAP_S
+                        for m in others):
+                    print(f'  [{time.strftime("%H:%M:%S")}] all drones quiet '
+                          '- treating as a stack shutdown, not a stall',
+                          flush=True)
+                    self.was_alive[n] = False
+                    continue
+                self.stalled.add(n)
+                print(f'  [{time.strftime("%H:%M:%S")}] {n} STALLED '
+                      f'({gap:.1f}s with no pose) - dumping in '
+                      f'{DUMP_DELAY_S:.0f}s so the recovery is in the window',
+                      flush=True)
+                self.pending_dump[n] = now + DUMP_DELAY_S
+
+        # Deferred dumps, so the watchdog's recovery is inside the precursor.
+        for n, when in list(self.pending_dump.items()):
+            if now >= when:
+                del self.pending_dump[n]
+                self.dump(n, now)
 
     def dump(self, victim, now):
         """Write the precursor window for every drone, plus the server log tail."""
