@@ -407,9 +407,11 @@ ros2 topic echo /cf1/connection_statistics --once
 > address, or a **datarate mismatch** — learned the hard way with cf11 (a `2M`
 > URI on a drone whose radio runs at `1M`). No error is printed, and the hung
 > server needs SIGKILL. **Go/no-go rule: scan every enabled address before
-> every launch** (`ros2 run crazyflie scan --address 0xE7E7E7E7XX` — the
-> current enabled fleet is `0xE7E7E7E701`, `0xE7E7E7E702`, `0xE7E7E7E703`,
-> `0xE7E7E7E710`, `0xE7E7E7E714`) and fix
+> every launch** — `./scripts/scan_fleet.sh`, which derives the address list
+> from `crazyflies.yaml` and reports GO/NO-GO. Do not scan a list written down
+> here or anywhere else: the enabled set changes between shows, and the stale
+> copies in this file used to name two drones that no longer exist while
+> omitting one that flies. Then fix
 > the URI or disable the drone in `config/crazyflies.yaml`. See
 > [TROUBLESHOOTING](TROUBLESHOOTING.md#crazyradio--drones) and — when running
 > two dongles — the rules in

@@ -31,6 +31,7 @@ def node_fn(context,*args, **kwargs):
     log_latencies = LaunchConfiguration('log_latencies')
     conf_file = LaunchConfiguration('conf_file')
     node_name = LaunchConfiguration('node_name')
+    namespace = LaunchConfiguration('namespace')
     activate = LaunchConfiguration('activate')
     immt = LaunchConfiguration('immt')
 
@@ -66,7 +67,14 @@ def node_fn(context,*args, **kwargs):
         executable="natnet_ros2_node",
         output="screen",
         name=node_name.perform(context),
-        namespace='',
+        # Namespaced (default 'mocap') so each rigid body publishes
+        # /mocap/<body>/pose. It used to be '', which put natnet's output on
+        # /<body>/pose -- the SAME topic crazyflie_server publishes the
+        # drone's own onboard estimate on. pose_bridge then republished a mix
+        # of mocap truth and the drone's own EKF output into /poses, which the
+        # server force-fuses at extPosStdDev 1e-3. Pass namespace:='' to get
+        # the old topics back.
+        namespace=namespace.perform(context),
         parameters=params,
         #arguments=[
         #        "--ros-args",
@@ -114,6 +122,7 @@ def generate_launch_description():
         DeclareLaunchArgument('log_latencies', default_value="False"),
         DeclareLaunchArgument('conf_file', default_value="initiate.yaml"),
         DeclareLaunchArgument('node_name', default_value="natnet_ros"),
+        DeclareLaunchArgument('namespace', default_value="mocap"),
         DeclareLaunchArgument('activate', default_value="false"),
         DeclareLaunchArgument('immt', default_value="PoseStamped",description="publish type of individual markers PoseStampted or PointStamped"),
         OpaqueFunction(function=node_fn)  

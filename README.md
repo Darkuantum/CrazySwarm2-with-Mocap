@@ -31,12 +31,17 @@ dependencies and builds it on **Ubuntu 22.04 + ROS 2 Humble** or
 
 ![CrazySwarm2 with Motion Capture — system architecture: Motive streams NatNet multicast at 50 Hz to motion_capture_tracking, which publishes /poses to crazyflie_server; the server drives the Crazyflie fleet over Crazyradio #0 (radio://0/80/2M); user scripts (crazyflie_py) and the preflight GUI + RViz command and monitor it; alternative open-driver path: Motive → natnet_ros2 → /<body>/pose → pose_bridge.py → /poses](Pics/Crazyswarm_mocap_architecture.jpg)
 
-> **Single-dongle fleet.** Five drones — `cf1`, `cf2`, `cf3`, `cf10` and `cf14` —
-> are enabled, **all on ONE Crazyradio dongle** (`radio://0/80/2M`; addresses
-> `0xE7E7E7E701/02/03/10/14`). `cf6` is commented out in the yaml —
-> **dead on radio 2026-08-04** (silent on full channel/datarate sweeps at its
-> own and the factory address; needs a physical check — do not re-enable until
-> `scan --address 0xE7E7E7E706` answers). `cf5` and `cf11` are disabled spares.
+> **Single-dongle fleet.** Five drones, **all on ONE Crazyradio dongle**
+> (`radio://0/80/2M`). **`config/crazyflies.yaml` is the only roster** — do not
+> trust a list written in prose, including this one. Print the live fleet with:
+>
+> ```bash
+> ./scripts/scan_fleet.sh --list        # add --all to include disabled drones
+> ```
+>
+> `cf6` is **dead on radio 2026-08-04** (silent on full channel/datarate sweeps
+> at its own and the factory address; needs a physical check — do not re-enable
+> until `scan --address 0xE7E7E7E706` answers) and is no longer in the yaml.
 > The earlier two-dongle cf1+cf11 setup is historical; its two hard-won rules
 > still apply **when running two dongles** (rationale in the `crazyflies.yaml`
 > comments and [CLAUDE.md → Gotchas](CLAUDE.md#gotchas-hard-won--dont-re-derive)):

@@ -53,10 +53,10 @@ Each drone needs its own rigid body so Motive streams one pose per drone:
 3. In the rigid body's properties, give it a **name that matches everything
    downstream** — the same string used in:
    - `config/crazyflies.yaml` (the robot key, e.g. `cf1`),
-   - `pose_bridge.py` `DRONES` (**alternative natnet_ros2 path only** — this
-     list must be kept in sync with the fleet enabled in `crazyflies.yaml`;
-     it currently reads `['cf1', 'cf2']` while the enabled fleet is
-     `cf1`/`cf2`/`cf3`/`cf10`/`cf14`, so update it before using that path),
+   - `pose_bridge.py` `DRONES` (**alternative natnet_ros2 path only** — it
+     reads the roster from `crazyflies.yaml` since 2026-10-06, so there is
+     nothing to keep in sync; before that it carried a hardcoded
+     `['cf1', 'cf2']` that had been wrong for months),
    - the `/<name>/pose` topic published by `natnet_ros2`.
 4. Enable **streaming IDs / names** and make sure orientation looks stable (the
    rigid body's axes shouldn't jitter or flip). Keep marker patterns

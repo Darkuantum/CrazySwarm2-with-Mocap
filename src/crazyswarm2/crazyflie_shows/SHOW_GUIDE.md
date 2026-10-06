@@ -405,12 +405,10 @@ ros2 topic hz /poses                                  # want ~50 Hz
 python3 scripts/sync_initial_positions.py --dry-run   # body names vs fleet (from the workspace root)
 ss -uanp | grep :1511                                 # two sockets = an orphan is starving it
 
-# 3. scan EVERY enabled address — one silent drone wedges the whole server
-ros2 run crazyflie scan --address 0xE7E7E7E701
-ros2 run crazyflie scan --address 0xE7E7E7E702
-ros2 run crazyflie scan --address 0xE7E7E7E703
-ros2 run crazyflie scan --address 0xE7E7E7E710
-ros2 run crazyflie scan --address 0xE7E7E7E712
+# 3. scan EVERY enabled address — one silent drone wedges the whole server.
+#    Derived from the yaml; the hardcoded list that used to sit here named
+#    cf10 and cf12, neither of which is in the fleet any more.
+./scripts/scan_fleet.sh
 
 # 4. overlay check
 source install/setup.bash && ros2 pkg prefix crazyflie
