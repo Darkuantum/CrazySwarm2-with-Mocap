@@ -336,8 +336,25 @@ class CrazyflieServer(Node):
                     poly_z,
                     poly_yaw,
                     duration))
-            cf.uploadTrajectory(request.trajectory_id, request.piece_offset, pieces)
+            try:
+                cf.uploadTrajectory(
+                    request.trajectory_id, request.piece_offset, pieces)
+            except Exception as e:                      # noqa: BLE001
+                # Mirror the cpp server's contract (crazyflie_server.cpp
+                # upload_trajectory): UploadTrajectory.srv carries success +
+                # message, and crazyflie_py RAISES on success=False. A sim
+                # server that leaves the field at its default False makes
+                # every trajectory demo fail with a message that blames the
+                # radio -- and sim is the only validation path the
+                # constellation and escort shows have.
+                response.success = False
+                response.message = '{}: {}'.format(name, e)
+                self.get_logger().fatal(
+                    '[%s] TRAJECTORY %d UPLOAD FAILED (%s)'
+                    % (name, request.trajectory_id, e))
+                return response
 
+        response.success = True
         return response
 
     def _start_trajectory_callback(self, request, response, name='all'):
