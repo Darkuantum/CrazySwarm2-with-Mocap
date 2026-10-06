@@ -1,4 +1,5 @@
 //#include <regex>
+#include <chrono>
 #include <cstdio>
 #include <mutex>
 #include <cassert>
@@ -1229,7 +1230,22 @@ void Crazyflie::uploadTrajectory(
       // upload pieces
       size_t remainingBytes = sizeof(poly4d) * pieces.size();
       size_t numRequests = ceil(remainingBytes / 24.0f);
+      // Absolute caps, so a backlogged drone cannot extend this forever. The
+      // per-call cap is checked between chunks; the per-chunk cap inside the
+      // attempt loop. Both exist because this runs in a service handler on a
+      // mutually-exclusive callback group.
+      constexpr double CHUNK_CAP_S = 10.0;
+      constexpr double CALL_CAP_S = 90.0;
+      const auto call_start = std::chrono::steady_clock::now();
       for (size_t i = 0; i < numRequests; ++i) {
+        const double call_s =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - call_start).count();
+        if (call_s > CALL_CAP_S) {
+          throw std::runtime_error(
+            "uploadTrajectory: gave up after " + std::to_string((int)call_s) +
+            " s at chunk " + std::to_string(i) + "/" + std::to_string(numRequests) +
+            " - upload ABANDONED");
+        }
         crtpMemoryWriteRequest req(entry.id, pieceOffset * sizeof(poly4d) + i*24);
         size_t size = std::min<size_t>(remainingBytes, 24);
         req.setDataAt(0, reinterpret_cast<const uint8_t *>(pieces.data()) + i * 24, size);
@@ -1247,24 +1263,106 @@ void Crazyflie::uploadTrajectory(
         // telemetry watchdog down with it, permanently, until the server is
         // restarted.
         using res = crtpMemoryWriteResponse;
+        // Match THIS chunk's reply by memory id and address, not just by shape.
+        //
+        // crtpMemoryWriteResponse::valid() tests only port 4 / channel 2 /
+        // 6-byte payload, which every memory-write reply satisfies. That was
+        // survivable while the wait was unbounded and strictly ordered; the
+        // bounded wait and the chunk RESEND added in 627ab55 can put a
+        // duplicate reply in the queue, and a shape-only predicate then
+        // accepts the stale one -- leaving the host one reply out of phase for
+        // the rest of the upload. A chunk whose request was lost in that state
+        // is counted as written, define_trajectory goes out fire-and-forget,
+        // and success is reported for a trajectory with a 24-byte hole. Because
+        // sizeof(poly4d) is 132 and 132 % 24 != 0 the hole lands mid
+        // coefficient array, so the drone flies a hybrid of two polynomials:
+        // piecewise_eval applies whatever bytes are there with no validation,
+        // no clamp and no finiteness check.
+        //
+        // Exact matching is possible because the firmware answers by REUSING
+        // the request packet -- crtp_mem.c memWriteProcess, whose own comment
+        // reads "Dont' touch the first 5 bytes, they will be the same.", then
+        // sets only data[5] = STATUS_OK/EIO and size = 6. So payload 0 is the
+        // memory id, 1..4 the 32-bit address and 5 the status, exactly as the
+        // accessors in crtp.h read them.
+        const uint32_t expectedAddr =
+            static_cast<uint32_t>(pieceOffset * sizeof(poly4d) + i * 24);
+        bool saw_stale = false;
+        size_t stale_seen = 0;
+        auto isOurChunk = [&](const bitcraze::crazyflieLinkCpp::Packet& pkt) {
+          if (!res::valid(pkt)) return false;
+          if (res::id(pkt) == entry.id && res::address(pkt) == expectedAddr) return true;
+          // A memory-write reply that is not ours: our own earlier or duplicate
+          // answer. Keep the diagnostic the old log-and-continue provided, but
+          // once per chunk rather than per packet -- and treat it as positive
+          // proof that the drone is ALIVE and merely backlogged.
+          saw_stale = true;
+          if (stale_seen++ == 0) {
+            m_logger.warning("uploadTrajectory: stale mem-write reply (id " +
+                             std::to_string((int)res::id(pkt)) + ", addr " +
+                             std::to_string(res::address(pkt)) + ", status " +
+                             std::to_string((int)res::status(pkt)) +
+                             ") while waiting for addr " + std::to_string(expectedAddr) +
+                             " - the drone is answering but backlogged");
+          }
+          return false;
+        };
+
         bitcraze::crazyflieLinkCpp::Packet p;
-        for (size_t attempt = 0; attempt < 3; ++attempt) {
-          p = waitForResponse(&res::valid, 500 /*ms*/, 2 /*tries*/);
+        const auto chunk_start = std::chrono::steady_clock::now();
+        for (size_t attempt = 0; ; ++attempt) {
+          p = waitForResponse(isOurChunk, 500 /*ms*/, 2 /*tries*/);
           if (p) {
             break;
           }
-          m_logger.warning("uploadTrajectory: no response for chunk " +
-                           std::to_string(i) + ", resending");
-          m_connection.send(req);
+          const double chunk_s =
+              std::chrono::duration<double>(std::chrono::steady_clock::now() - chunk_start).count();
+          // Tightening the predicate removed an accidental latency absorber:
+          // a desynced upload used to short-circuit on whatever reply arrived,
+          // tolerating unbounded reply latency. Seconds of it are physically
+          // reachable -- the reply sits on the drone's single 200-deep CRTP tx
+          // queue drained at roughly one packet per received poll, and at the
+          // receive ratio MEASURED on this rig during an upload (0.10) a full
+          // queue is ~12 s deep. So when a stale reply proves the drone is
+          // answering, keep waiting instead of failing the show; only a chunk
+          // with NO reply at all gets resent, because resending while replies
+          // are already backlogged just adds more duplicates.
+          const bool backlogged = saw_stale;
+          if (chunk_s >= CHUNK_CAP_S) {
+            break;
+          }
+          if (attempt + 1 >= 3 && !backlogged) {
+            break;
+          }
+          saw_stale = false;      // each extension needs fresh proof of life
+          if (backlogged) {
+            m_logger.warning("uploadTrajectory: chunk " + std::to_string(i) +
+                             " still queued on the drone after " +
+                             std::to_string((int)chunk_s) + " s, waiting");
+          } else {
+            m_logger.warning("uploadTrajectory: no response for chunk " +
+                             std::to_string(i) + ", resending");
+            m_connection.send(req);
+          }
         }
         if (!p) {
           throw std::runtime_error(
-            "uploadTrajectory: no response after 3 attempts - upload ABANDONED");
+            "uploadTrajectory: no reply for the write at address " +
+            std::to_string(expectedAddr) + " - upload ABANDONED");
         }
-        if (   res::id(p) != entry.id
-            || res::address(p) != pieceOffset * sizeof(poly4d) + i*24
-            || res::status(p) != 0) {
-            m_logger.error("uploadTrajectory: unexpected response!" + std::to_string(res::status(p)));
+        // The predicate guarantees this reply is ours, so a non-zero status is
+        // a real refusal and not a mismatched packet. It means exactly one
+        // thing: crtpCommanderHighLevelWriteTrajectory's only bounds check,
+        // `(offset + length) <= sizeof(trajectories_memory)`, failed against
+        // the 4096-byte buffer. That is deterministic, so do NOT retry -- fail
+        // the upload. The server catches this, records the id in
+        // bad_trajectories_, and start_trajectory then refuses that id.
+        if (res::status(p) != 0) {
+          throw std::runtime_error(
+            "uploadTrajectory: the drone REJECTED the write at address " +
+            std::to_string(expectedAddr) + " (status " +
+            std::to_string((int)res::status(p)) +
+            ") - trajectory memory overflow? - upload ABANDONED");
         }
 
         remainingBytes -= size;
