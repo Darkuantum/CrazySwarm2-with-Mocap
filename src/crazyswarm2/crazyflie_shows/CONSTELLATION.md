@@ -127,17 +127,23 @@ way.
 
 ### Measured budgets (`plan_constellation`, five drones)
 
+Re-run `plan_constellation` yourself after every position sync — these numbers
+depend on `initial_position`, and the block below was stale for four days
+(pre-`scale 0.95`, naming cf3/cf8 as the binding pair while cf8 is disabled).
+As of 2026-10-06, on the five enabled marks:
+
 ```
-separation   1.00 m  min 0.90 m    90%    (3D; cf3/cf8 at t=24.2 s)
-plan-view    1.00 m  min 0.90 m    90%           <- the binding separation
-speed        1.80 m/s  max 2.00    90%
-accel        2.39 m/s2 max 3.00    80%
-radius       1.53 m  max 1.90 m    81%    about the MEASURED volume centre
+separation   0.97 m  min 0.90 m    93%    (cf2/cf5 at t=24.2 s)
+speed        1.71 m/s  max 2.00    86%
+accel        2.27 m/s2 max 3.00    76%
+radius       1.76 m  max 1.90 m    93%    about the MEASURED volume centre
 height       1.45 m  max 2.32 m    63%    centre column; 1.85 m at full radius
-floor        0.60 m  min 0.30 m    50%
 pieces         25     max 31       81%
-downwash     2.26x the measured ellipsoid          (reported, not enforced)
 ```
+
+**That 1.76 m is the parking, not the figures.** The figures never reach past
+~1.53 m; the envelope is set by where the drones are standing. Park on the
+gather ring (R = 1.10 m at the slot angles) and the same show plans to 1.46 m.
 
 At four drones it is the same show one drone lighter: radius 1.51 m,
 separation 1.02 m.
@@ -217,10 +223,15 @@ lights           true*   light cues (*default false under use_sim_time)
 bpm              120.0   tempo of the beat grid — re-plans the whole show
 check_placement  true    compare live pose to initial_position before arming
 placement_tol    0.25    m, how far off a drone may be
-scale            1.0     grow/shrink the whole show
-arena_radius     2.5     m
-ceiling          2.0     m
+scale            0.95    grow/shrink the whole show (shrunk 2026-10-05)
+arena_radius     1.90    m = safety.ARENA_RADIUS_PLAN (MEASURED)
+ceiling          2.32    m = CEILING_CENTRE_TESTED less the tracking margin
 ```
+
+The last two used to be documented here as 2.5 m and 2.0 m, the inherited
+numbers. **Raising `arena_radius` is not a tuning knob**: it reaches
+`safety.check_show` with no clamp, and 2.5 m is 0.26 m beyond the radius at
+which a flying drone actually lost tracking. Pass these only to go tighter.
 
 `bpm` is the interesting one: it retimes every phase to a new beat grid and
 re-verifies. Slower is always safe; faster raises speed and accel, and
@@ -258,12 +269,15 @@ alive, **scan every enabled address**, overlay check. On top of it, for this
 show specifically:
 
 0. **Stand five drones on five marks ≥1 m apart, inside the tracked volume**
-   (1.90 m of `safety.ARENA_CENTRE`). The yaml enables cf1/cf2/cf3/cf5/cf8;
-   **cf8's mark is a planned one, not a measured one** — its old recorded spot
-   sat 0.36 m from where cf3 now stands, so it was replaced with
-   (−0.27, +1.66), verified to plan clean. (−0.22, −1.15) also works. Any
-   well-spread spot does, because the figures are built at the arena centre,
-   not at the marks.
+   (1.90 m of `safety.ARENA_CENTRE`). Read the roster from the yaml —
+   `./scripts/scan_fleet.sh --list` — rather than from this page: as of
+   2026-10-06 it enables cf1/cf2/cf3/cf4/cf5, and cf8 is DISABLED, so an
+   earlier version of this step had you standing a drone on a mark that was
+   never written to the yaml while omitting cf4, which flies. cf8's old
+   recorded spot sits 0.164 m from where cf3 now stands, so it cannot be used
+   as-is if cf8 is re-enabled. Any well-spread spot works, because the figures
+   are built at the arena centre, not at the marks — but see the radius note
+   above: the parking is what sets the envelope.
 1. `ros2 launch crazyflie launch.py server:=False` (mocap and the GUIs, no
    radio), then `python3 scripts/sync_initial_positions.py` with the drones on
    their marks. Start the real stack afterwards — the yaml is read only at

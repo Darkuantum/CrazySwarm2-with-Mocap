@@ -81,15 +81,23 @@ pieces of firmware memory instead of 18.
 
 ### Measured budgets
 
+Re-run `plan_show` after every position sync; the radius line in particular
+moves with `initial_position`. As of 2026-10-06, on the five enabled marks:
+
 ```
 separation   0.91 m  min 0.90 m    99%     (= 0.80 m floor + 0.10 m tracking margin)
 speed        1.87 m/s  max 2.00     93%
 accel        2.58 m/s2 max 3.00     86%
-radius       1.45 m  max 2.50 m     58%
-height       1.45 m  max 2.00 m     73%
-floor        0.65 m  min 0.30 m     46%
-pieces         28     max 31        90%
+radius       1.77 m  max 1.90 m    93%     about the MEASURED volume centre
+height       1.45 m  max 2.32 m    63%     centre column; 1.85 m at full radius
+floor        0.65 m  min 0.30 m    46%
+pieces         28     max 31       90%
 ```
+
+The radius and height limits used to be printed here as 2.50 m and 2.00 m,
+the inherited pre-survey numbers, which made the show look like it was using
+58% of the room when it is at 93%. Most of that 1.77 m is the PARKING, not the
+figures -- the same point CONSTELLATION.md makes.
 
 Separation sits at 99% of budget because the counterflow's clearance is
 *designed*, not accidental — it is a static radial gap. The budget itself is
@@ -455,10 +463,18 @@ ros2 run crazyflie_shows swarm_show --ros-args \
     -p dry_run:=false \
     -p check_placement:=true \
     -p placement_tol:=0.25 \
-    -p scale:=1.0 \
-    -p arena_radius:=2.5 \
-    -p ceiling:=2.0
+    -p scale:=1.0
 ```
+
+`arena_radius` and `ceiling` are also parameters, and the example here used to
+pass `arena_radius:=2.5 ceiling:=2.0`. **Do not.** Those are the inherited,
+disproven numbers: the value reaches `safety.check_show` with no clamp, so
+raising `arena_radius` genuinely widens the only guard that keeps a drone
+inside the tracked volume -- 2.5 m is 0.26 m beyond `ARENA_RADIUS_LOST`, the
+radius at which a flying drone actually lost tracking on 2026-10-01. As
+`safety.py` puts it: a show checked against 2.5 m is not checked. The defaults
+(1.90 m / 2.32 m, both measured) are what you want; pass these only to make
+the envelope *tighter*.
 
 ---
 

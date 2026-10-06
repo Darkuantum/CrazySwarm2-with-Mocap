@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fly the constellation show: five drones drawing shapes, on a beat, with lights.
 
-A ~78 s arch through a pentagon, an arrow, a pyramid and a spiral staircase
+A ~76 s arch through a pentagon, an arrow, a pyramid and a spiral staircase
 and back, built from the research in reference/complex-shows-report.html.
 Every leg is verified in plan view before anything is armed.
 
@@ -38,7 +38,7 @@ Parameters (``--ros-args -p name:=value``)
 ``bpm``                 120.0    tempo of the beat grid (re-plans)
 ``check_placement``     true     compare live pose to initial_position
 ``placement_tol``       0.25     m, how far off a drone may be
-``scale``               1.0      grow the whole show (ConstellationConfig.scale)
+``scale``               0.95     grow the whole show (ConstellationConfig.scale)
 ``arena_radius``        1.90     m, = ARENA_RADIUS_PLAN (tested 2.00 less
                                  the 0.10 tracking margin), NOT the old 2.5
 ``ceiling``             2.32     m, = CEILING_CENTRE_TESTED 2.42 less the

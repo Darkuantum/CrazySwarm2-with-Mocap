@@ -62,7 +62,7 @@ check_placement   true       compare live pose to initial_position
 placement_tol     0.25   m   how far off that may be
 lights            true*      LED cues (*forced off under use_sim_time)
 bpm               120.0      tempo; re-times EVERY phase and re-runs every check
-scale             1.0        shrink/grow every figure about the room centre
+scale             0.95       shrink/grow every figure about the room centre
 arena_radius      1.90   m   plan limit = tested 2.00 - 0.10 tracking margin
 ceiling           2.32   m   centre ceiling 2.42 - 0.10 margin
 use_sim_time      false      REQUIRED in sim, NEVER on hardware
@@ -75,7 +75,11 @@ either**, and do not fly a plan that does not print PLAN OK.
 
 ```
 duration        76 s, every phase boundary on a beat (120 BPM = 0.5 s/beat)
-envelope        1.53 m used of the 1.90 m plan limit
+envelope        1.76 m used of the 1.90 m plan limit (2026-10-06 marks)
+                  -- and 1.53 m of that is the PARKING, not the figures.
+                  Park on the gather ring (R=1.10 at the slot angles) and the
+                  same show plans to 1.46 m. Re-run plan_constellation after
+                  every sync; this number moves with initial_position.
 room centre     [+0.03, +0.26]  -- centre of the tracked volume
 separation      hard floor 0.80 m; plans must hold 0.90 m
 fleet           5 drones. 6+ does not fit this room.

@@ -43,8 +43,12 @@ account ("Beyond the Carousel", "Crazyflie Swarm Replay").
   package shipped while it lived out of tree. Both now come from the
   `crazyflie` package. Historical note: its `robots:` block was synced from the
   workspace yaml
-  (cf1/cf2/cf3/cf5/cf8). Keep it in sync — `show_launch.py` hardcodes this file
-  and `plan_show` defaults to it.
+  (cf1/cf2/cf3/cf5/cf8). That copy was DELETED on 2026-10-02 — there is now
+  exactly one `crazyflies.yaml`, the `crazyflie` package's, and nothing to
+  keep in sync. ("Keep it in sync" survived here after its subject was gone,
+  which is an invitation to recreate the second-fleet drift: the two copies
+  had diverged, the show's lacking cf8 while the workspace's had it, so the
+  planner verified one fleet and the server flew another.)
 - `scripts/deck_check.py`: hardcoded the retired roster; now reads the enabled
   fleet from `crazyflies.yaml` (`--yaml` to override).
 - `scripts/mocap_diag.sh`: config found relative to the script instead of a

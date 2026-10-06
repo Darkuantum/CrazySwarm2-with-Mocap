@@ -270,7 +270,9 @@ key-release event.
 
 Four properties worth knowing, each of which is a deliberate refusal:
 
-* **A VIP target defaults to `escort.max_vip_speed`** (0.15 m/s as shipped),
+* **A VIP target defaults to `escort.max_vip_speed`** (0.30 m/s as shipped;
+  this page said 0.15 m/s, which was the value at the old `R = 1.5` ring --
+  see §"VIP speed" above, where the same document gets it right),
   not to something that feels responsive. That is the speed budget the ring
   actually has after turning; steering a virtual person faster tests whether
   the defenders fall behind, which is a fine thing to test **on purpose** with

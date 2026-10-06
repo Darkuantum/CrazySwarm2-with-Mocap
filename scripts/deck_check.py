@@ -37,8 +37,11 @@ DEFAULT_YAML = os.path.normpath(os.path.join(
 def enabled_uris(yaml_path):
     """{name: uri} for every enabled drone, in the yaml's order.
 
-    `radio://*/...` (cf1's wildcard dongle) is pinned to dongle 0: the server
-    accepts the wildcard, cflib's SyncCrazyflie needs a concrete index.
+    A `radio://*/...` wildcard dongle is pinned to dongle 0: the server
+    accepts the wildcard, cflib's SyncCrazyflie needs a concrete index. No
+    drone currently uses the wildcard -- cf1 did until the yaml recorded that
+    `backend:=cflib` does `get_serials().index('*')` and raises ValueError, so
+    nothing comes up -- but the substitution is kept for when one does.
     """
     with open(yaml_path) as fh:
         robots = (yaml.safe_load(fh) or {}).get('robots') or {}

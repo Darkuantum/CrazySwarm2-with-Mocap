@@ -17,20 +17,27 @@ byte-for-byte copy of the rig. `setup.sh` only installs deps and builds — it d
 
 ```
 Motive/OptiTrack ──NatNet Multicast@50Hz──► motion_capture_tracking ──/poses──►
-  crazyflie_server ──Crazyradio #0 (radio://0/80/2M)──► cf1 cf2 cf3 cf5 cf8
-                    ▲ user scripts via crazyflie_py
+  crazyflie_server ──Crazyradio #0 (radio://0/80/2M)──► the enabled fleet
+                    ▲ user scripts via crazyflie_py    (./scripts/scan_fleet.sh --list)
                       (cf6 = DEAD on radio 2026-08-04, no longer in the yaml at all)
-Alt mocap path: Motive → natnet_ros2 → /<body>/pose → pose_bridge.py → /poses
+Alt mocap path: Motive → natnet_ros2 → /mocap/<body>/pose → pose_bridge.py → /poses
 ```
 
-Fleet = **cf1 + cf2 + cf3 + cf5 + cf8 enabled** (five drones), all on **ONE
-Crazyradio dongle** (`radio://0/80/2M`, addresses `0xE7E7E7E701/02/03/05/08`).
-**`crazyflies.yaml` is the ground truth for the fleet — re-read it rather than
-trusting this paragraph**; the roster was last re-flown in `9e23d8a` (2026-09-10),
+Fleet = five drones on **ONE Crazyradio dongle** (`radio://0/80/2M`).
+**`crazyflies.yaml` is the ground truth for the fleet, and this paragraph
+deliberately does not name it** — every prose copy of the roster in this repo
+had drifted by 2026-10-06 (four documents, three different address lists, two
+naming drones that do not exist while omitting one that flies). Print the live
+fleet, and the exact addresses to scan, with:
+
+```bash
+./scripts/scan_fleet.sh --list      # --all to include disabled drones
+```
+
+History worth keeping: the roster was last re-flown in `9e23d8a` (2026-09-10),
 which dropped cf10/cf12 and brought up cf4/cf8; cf4 was then swapped back to
 cf3 (2026-09-16) — same airframe slot/initial_position, address
-`0xE7E7E7E703`, so the Motive rigid body must be renamed to `cf3` too. (Note cf1's URI uses the
-`radio://*/…` wildcard dongle while the rest pin `radio://0/…`.) `cf6` is dead on
+`0xE7E7E7E703`, so the Motive rigid body must be renamed to `cf3` too. `cf6` is dead on
 radio 2026-08-04 (silent on full channel/datarate sweeps at its own AND the
 factory address; needs a physical check; do NOT re-add until
 `scan --address 0xE7E7E7E706` answers) and is no longer in the yaml.
@@ -48,7 +55,12 @@ the natnet_ros2 + `pose_bridge.py` path is an alternative, not the default.
 ```
 src/                # VENDORED source (committed)
   crazyswarm2/        # customized: configs, launch.py (foxglove node), scripts, examples
-    crazyflie_shows/  # TWO five-drone shows + ONE reactive demo, all verified
+    crazyflie_shows/  # abort.py + preflight.py hold the safety machinery EVERY
+                      #   show must call (signal handling + abort landing, and the
+                      #   supervisor-LOCKED go/no-go). Added 2026-10-06: before
+                      #   that they lived inside constellation_show, so the other
+                      #   shows simply did not have them.
+                      # TWO five-drone shows + ONE reactive demo, all verified
                       #   before anything arms:
                       #   * carousel, ~63 s (swarm_show / demo_show / plan_show) - SHOW_GUIDE.md
                       #   * constellation, 76 s (constellation_show / plan_constellation)
@@ -145,14 +157,13 @@ Key customized files inside `src/`:
   still flies it, unchanged) — instead a **formation waypoint tour**
   (3 waypoints + return: WAYPOINT_OFFSETS (0.6,0)/(−0.6,0.5)/(0,−0.6) then
   (0,0), each applied rigidly to EVERY drone's own start hover position, so
-  separation stays the 1.36 m start spacing; max excursion ~2.14 m from
-  ROOM_CENTER, inside the orbit clearance), then regular **n-gon gather**
+  separation stays the start spacing), then regular **n-gon gather**
   (pentagon at R=0.8; phase offset auto-optimized per initial positions, 1°
   sweep + min-distance assignment) → **ONE continuous smooth +360° rotation**
   (uploaded circle trajectory id 1, 10 s — NOT stepped goTos) →
   **triangle+tail-pair morph** (5 slots) → rigid **swarm ORBIT** around
-  ROOM_CENTER (0.0467, −0.1037) at R=1.2 (shared circle trajectory id 2, 12 s,
-  ~0.63 m/s tangential / ~0.33 m/s² centripetal, `relative=True` = rigid
+  `safety.ARENA_CENTRE` at R=0.80 (shared circle trajectory id 2, 12 s,
+  ~0.42 m/s tangential / ~0.22 m/s² centripetal, `relative=True` = rigid
   translation) → **expand back onto the gather pentagon** → **home**
   (a DIRECT return crossed paths at R=2.0 — 1 crossing verified — the
   pentagon intermediate step is kept at R=1.2 even though the direct
@@ -160,10 +171,21 @@ Key customized files inside `src/`:
   4.5 s land (~0.16 m/s descent). Long moves (waypoint legs, ring shift,
   both return legs) use distance-scaled goTo durations
   `max(2.0, longest_xy/0.5)` s (≤0.5 m/s avg); short morphs
-  keep TRANS_DURATION=2.0. Min separation 0.84 m; **orbit sweeps ~2.24 m
-  radius around ROOM_CENTER (keep clear — shrank from ~3.05 m at R=2.0)**;
-  ≈58.0 s takeoff→landed; formation altitude 1.0 m
-  (FORM_HEIGHT). Trajectory
+  keep TRANS_DURATION=2.0. Min separation 0.84 m. **It now PROVES its plan
+  before arming** (`check_plan_envelope`): hover columns, every rigid waypoint
+  leg, the gather n-gon, the rotation circle, the triangle, the orbit entry
+  and the orbit sweep, all against `safety.ARENA_RADIUS_PLAN` about
+  `safety.ARENA_CENTRE`. Until 2026-10-06 it had no envelope check at all and
+  carried its own pre-survey `ROOM_CENTER`, 0.359 m off the measured centre;
+  because each drone orbits ROOM_CENTER **plus its own triangle offset**, that
+  offset ADDED to the sweep and R=1.2 reached **2.418 m** — 0.52 m outside
+  ARENA_RADIUS_PLAN and 0.18 m outside ARENA_RADIUS_LOST. **Do not quote a
+  fixed excursion for this demo: its geometry depends on `initial_position`.**
+  On the 2026-10-05 marks it REFUSES, correctly — the hover columns alone
+  reach 1.76 m of 1.90 m, leaving 0.14 m for every figure, so the waypoint
+  tour cannot fit. Re-park onto the gather ring (R=1.10 m at the slot angles)
+  and the same demo plans to 1.84 m. ≈58.0 s takeoff→landed; formation
+  altitude 1.0 m (FORM_HEIGHT). Trajectory
   memory 12 pieces (6 rotation circle at pieceOffset 0 + 6 orbit at offset
   6; traj1's 16 dropped) ≈1.6 KB of the firmware's
   ~4 KB. docs/RUNNING.md Section B.
@@ -284,9 +306,16 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   the drones flying their last command. Verified failing in sim 2026-09-20.
   Fix: after `Crazyswarm()` returns, take the signal back with
   `signal.signal(signal.SIGINT, ...)` (and SIGTERM, which the console's Stop
-  sends) and raise your own exception — see `take_signals()` in
-  `crazyflie_shows/constellation_show.py`. Restore `SIG_DFL` once the abort
-  starts so a second Ctrl-C can still kill the process. Note `ros2 run` does
+  sends) and raise your own exception — `take_signals()` in
+  **`crazyflie_shows/abort.py`**, which every show that can arm must use.
+  (It lived in `constellation_show.py` until 2026-10-06, which is exactly why
+  `swarm_show` and `demo_show` had no abort path at all — grep for
+  `signal|try:|except` in either returned zero hits, and the carousel is the
+  show that has actually flown.) Restore `SIG_DFL` for **both** signals once
+  the abort starts, so a second Ctrl-C can still kill the process and the
+  console's SIGINT→SIGTERM escalation at 6 s cannot interrupt a slow landing's
+  own disarm loop. Set `armed = True` **before** the arm loop, not after, or a
+  signal mid-loop skips the abort and leaves part of the fleet armed. Note `ros2 run` does
   NOT forward a signal sent to it alone; a terminal Ctrl-C reaches the child
   because it goes to the whole foreground process group, so test an abort with
   `kill -INT <the script's own PID>`, not the wrapper's.
@@ -481,15 +510,24 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   one transition out of locked -- back to locked, blocker `supervisorAlways`
   (`supervisor_state_machine.c`). Battery out and in, per drone. Verified
   2026-10-02: all five sat locked with healthy batteries (4.10-4.22 V) after an
-  e-stop, and the only symptom was that nothing flew. `constellation_show` now
-  checks this BEFORE uploading (`check_supervisor`), because the upload is ~55 s
-  and the arming failure used to come after it.
+  e-stop, and the only symptom was that nothing flew. Every show now checks
+  this BEFORE uploading — `check_supervisor`/`report_supervisor` in
+  **`crazyflie_shows/preflight.py`** — because the upload is ~55 s and the
+  arming failure used to come after it. `arm()` is fire-and-forget
+  (`crazyflie_py` never inspects the response), so a refused arm is otherwise
+  invisible: the only positive confirmation a drone actually flew is its mocap
+  altitude. A silent `/cfX/status` is counted as a NOTE, not a refusal,
+  because that is also what the telemetry stall looks like — watch that drone
+  on takeoff.
 - **Server BLOCKS FOREVER on the first unreachable enabled drone.** The cpp
   server connects drones in lexicographic `std::map` order and hangs
   **silently** on the first enabled drone that doesn't answer radio — one
   unreachable drone kills the whole launch (no error, no `/all/*` services,
   needs SIGKILL). Go/no-go rule: **scan every enabled address before every
-  launch** (currently `0xE7E7E7E701/02/03/05/08` — confirm against the yaml).
+  launch** — `./scripts/scan_fleet.sh`, which derives the list from the yaml
+  and reports GO/NO-GO. Never scan a list written down in prose: the five
+  copies that used to exist in this repo had all drifted, and the drone none
+  of them named (cf4) is the one the yaml marks intermittent.
   cf6 died this way 2026-08-04 (silent on full channel/datarate
   sweeps at its own AND factory address — physical check needed).
 - **Two Crazyradios (when running two dongles — current rig is single-dongle):
@@ -613,10 +651,14 @@ it. These rules hold it together; keep them when editing:
   re-import that would clobber it. A clone reproduces exactly what's committed.
 - After editing `src/`, rebuild with `./scripts/build.sh` (or `build.sh <pkg>`),
   then re-source `install/setup.bash`. Rebuild dependents after `.msg`/`.srv` edits.
-- `pose_bridge.py` `DRONES` and `PUBLISH_HZ` must match `crazyflies.yaml` and the
-  Motive streaming rate (50 Hz). Currently STALE: it lists `cf1, cf2` but the
-  enabled fleet is `cf1, cf2, cf3, cf10, cf14` — fix `DRONES` before using the
-  alt mocap path.
+- `pose_bridge.py` reads its roster from `crazyflies.yaml` (2026-10-06) and
+  publishes at `PUBLISH_HZ = 50.0`, matching the Motive streaming rate — there
+  is nothing left to keep in sync by hand. It subscribes to
+  `/mocap/<name>/pose`, because `natnet_ros2.launch.py` now defaults to
+  `namespace:=mocap`: with the old empty namespace, natnet and
+  `crazyflie_server` both published `/<name>/pose`, so the bridge fed the
+  drones' own EKF estimates back into `/poses` as mocap truth. Stale poses are
+  dropped after 0.25 s instead of being republished frozen.
 - Keep scripts distro-parameterized (`ros-${ROS_DISTRO}-…`); never hardcode `jazzy`.
 - **NEVER push, merge or force anything to `upstream` (AI-DA-STC). FETCH ONLY.**
   This is the shared team repo; changes reach it by **Pull Request from the

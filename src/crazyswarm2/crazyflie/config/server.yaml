@@ -79,6 +79,10 @@
           fps: 1           # frames per second
           cycle_bg: false  # if true, pictures will cycle through different environemt background images (useful for synthetic image generation). Otherwise a single environment background image will be used
           cf_cameras:      # names of crazyflies with cameras on them if enabled in `crazyflies.yaml`
+            # cf231 is an UPSTREAM PLACEHOLDER, not a drone on this rig -- it
+            # exists nowhere in crazyflies.yaml. Harmless while blender is
+            # disabled above; it is listed in docs/TROUBLESHOOTING.md so the
+            # name does not send anyone hunting for a sixth drone.
             cf231:
               calibration:
                 tvec: [0,0,0]
