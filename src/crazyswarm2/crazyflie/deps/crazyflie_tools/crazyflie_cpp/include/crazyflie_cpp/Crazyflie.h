@@ -558,8 +558,14 @@ public:
     }
     m_cf->m_connection.send(req);
     using res = crtpLogControlResponse;
-    auto p = m_timeout_ms ? m_cf->waitForResponse(&res::valid, m_timeout_ms, 2)
-                          : m_cf->waitForResponse(&res::valid);
+    // Match the COMMAND and the BLOCK ID, not just the packet shape: every
+    // log-control reply is 3 bytes on port 5 / channel 1, so &res::valid also
+    // accepts a late answer to a different request. See crtp.h isAnswerTo().
+    const auto answers_create = [id = m_id](const bitcraze::crazyflieLinkCpp::Packet& q) {
+      return res::isAnswerTo(q, crtpLogControlCmdCreateBlockV2, id);
+    };
+    auto p = m_timeout_ms ? m_cf->waitForResponse(answers_create, m_timeout_ms, 2)
+                          : m_cf->waitForResponse(answers_create);
     if (!p) {
       throw std::runtime_error("No reply to log-block create!");
     }
@@ -583,13 +589,38 @@ public:
   //  bounded retries before a logReset() wipes the drone's log state anyway.
   void abandon() { m_abandoned = true; }
 
-  void start(uint8_t period)
+  //: Start this block, using whatever wait policy the object was built with.
+  //:
+  //: DO NOT give the two-arg overload a default argument, and do not collapse
+  //: this forwarder into it. m_timeout_ms is 0 for blocks built at CONNECT,
+  //: where an unbounded wait is the documented behaviour of this rig: the
+  //: server is relied upon to hang on an unreachable drone (that is what the
+  //: "scan every enabled address before every launch" rule rests on), and a
+  //: throw out of a builder is NOT caught at the CrazyflieROS construction
+  //: site, so bounding connect would take the whole fleet's launch down
+  //: instead of producing today's single-drone diagnosis.
+  void start(uint8_t period) { start(period, m_timeout_ms); }
+
+  //: Start with an explicit bound. timeout_ms == 0 means wait forever.
+  //:
+  //: The telemetry watchdog passes a real bound because it runs on
+  //: callback_group_cf_srv, which also carries this drone's land, takeoff, arm
+  //: and emergency services -- an unbounded wait there is the trap that an
+  //: upload already fell into once. It is reachable: the firmware runs
+  //: `logReset(); crtpReset();` after 1 s without receiving anything
+  //: (log.c:886-890, radiolink.c:48-50), and crtpReset() flushes the tx queue
+  //: that a log-control answer is sitting in -- the same mechanism that wedged
+  //: the memory-write wait.
+  void start(uint8_t period, unsigned int timeout_ms)
   {
     crtpLogStartRequest request(m_id, period);
     m_cf->m_connection.send(request);
     using res = crtpLogControlResponse;
-    auto p = m_timeout_ms ? m_cf->waitForResponse(&res::valid, m_timeout_ms, 2)
-                          : m_cf->waitForResponse(&res::valid);
+    const auto answers_start = [id = m_id](const bitcraze::crazyflieLinkCpp::Packet& q) {
+      return res::isAnswerTo(q, crtpLogControlCmdStartBlock, id);
+    };
+    auto p = timeout_ms ? m_cf->waitForResponse(answers_start, timeout_ms, 2)
+                        : m_cf->waitForResponse(answers_start);
     if (!p) {
       throw std::runtime_error("No reply to log-block start!");
     }
@@ -608,7 +639,13 @@ public:
     // Bounded wait: stop() runs from destructors; an unbounded wait on a lost
     // ack wedges teardown, and draining packets meanwhile fires data callbacks
     // into objects that may already be destroyed.
-    m_cf->waitForResponse(&res::valid, 500 /*ms*/, 3 /*tries*/);
+    // Matched on command+id so that a stop answer cannot be consumed by the
+    // start() that follows it in the watchdog's tier 1 (and vice versa).
+    m_cf->waitForResponse(
+        [id = m_id](const bitcraze::crazyflieLinkCpp::Packet& q) {
+          return res::isAnswerTo(q, crtpLogControlCmdStopBlock, id);
+        },
+        500 /*ms*/, 3 /*tries*/);
     /* intentionally no checking of result */
   }
 
@@ -688,8 +725,14 @@ public:
     }
     m_cf->m_connection.send(req);
     using res = crtpLogControlResponse;
-    auto p = m_timeout_ms ? m_cf->waitForResponse(&res::valid, m_timeout_ms, 2)
-                          : m_cf->waitForResponse(&res::valid);
+    // Match the COMMAND and the BLOCK ID, not just the packet shape: every
+    // log-control reply is 3 bytes on port 5 / channel 1, so &res::valid also
+    // accepts a late answer to a different request. See crtp.h isAnswerTo().
+    const auto answers_create = [id = m_id](const bitcraze::crazyflieLinkCpp::Packet& q) {
+      return res::isAnswerTo(q, crtpLogControlCmdCreateBlockV2, id);
+    };
+    auto p = m_timeout_ms ? m_cf->waitForResponse(answers_create, m_timeout_ms, 2)
+                          : m_cf->waitForResponse(answers_create);
     if (!p) {
       throw std::runtime_error("No reply to log-block create!");
     }
@@ -711,13 +754,38 @@ public:
   //: See LogBlock::abandon().
   void abandon() { m_abandoned = true; }
 
-  void start(uint8_t period)
+  //: Start this block, using whatever wait policy the object was built with.
+  //:
+  //: DO NOT give the two-arg overload a default argument, and do not collapse
+  //: this forwarder into it. m_timeout_ms is 0 for blocks built at CONNECT,
+  //: where an unbounded wait is the documented behaviour of this rig: the
+  //: server is relied upon to hang on an unreachable drone (that is what the
+  //: "scan every enabled address before every launch" rule rests on), and a
+  //: throw out of a builder is NOT caught at the CrazyflieROS construction
+  //: site, so bounding connect would take the whole fleet's launch down
+  //: instead of producing today's single-drone diagnosis.
+  void start(uint8_t period) { start(period, m_timeout_ms); }
+
+  //: Start with an explicit bound. timeout_ms == 0 means wait forever.
+  //:
+  //: The telemetry watchdog passes a real bound because it runs on
+  //: callback_group_cf_srv, which also carries this drone's land, takeoff, arm
+  //: and emergency services -- an unbounded wait there is the trap that an
+  //: upload already fell into once. It is reachable: the firmware runs
+  //: `logReset(); crtpReset();` after 1 s without receiving anything
+  //: (log.c:886-890, radiolink.c:48-50), and crtpReset() flushes the tx queue
+  //: that a log-control answer is sitting in -- the same mechanism that wedged
+  //: the memory-write wait.
+  void start(uint8_t period, unsigned int timeout_ms)
   {
     crtpLogStartRequest request(m_id, period);
     m_cf->m_connection.send(request);
     using res = crtpLogControlResponse;
-    auto p = m_timeout_ms ? m_cf->waitForResponse(&res::valid, m_timeout_ms, 2)
-                          : m_cf->waitForResponse(&res::valid);
+    const auto answers_start = [id = m_id](const bitcraze::crazyflieLinkCpp::Packet& q) {
+      return res::isAnswerTo(q, crtpLogControlCmdStartBlock, id);
+    };
+    auto p = timeout_ms ? m_cf->waitForResponse(answers_start, timeout_ms, 2)
+                        : m_cf->waitForResponse(answers_start);
     if (!p) {
       throw std::runtime_error("No reply to log-block start!");
     }
@@ -736,7 +804,13 @@ public:
     // Bounded wait: stop() runs from destructors; an unbounded wait on a lost
     // ack wedges teardown, and draining packets meanwhile fires data callbacks
     // into objects that may already be destroyed.
-    m_cf->waitForResponse(&res::valid, 500 /*ms*/, 3 /*tries*/);
+    // Matched on command+id so that a stop answer cannot be consumed by the
+    // start() that follows it in the watchdog's tier 1 (and vice versa).
+    m_cf->waitForResponse(
+        [id = m_id](const bitcraze::crazyflieLinkCpp::Packet& q) {
+          return res::isAnswerTo(q, crtpLogControlCmdStopBlock, id);
+        },
+        500 /*ms*/, 3 /*tries*/);
     /* intentionally no checking of result */
   }
 

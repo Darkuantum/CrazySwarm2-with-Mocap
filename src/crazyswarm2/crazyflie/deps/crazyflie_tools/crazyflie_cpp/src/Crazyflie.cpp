@@ -115,16 +115,33 @@ void Crazyflie::sendArmingRequest(bool arm)
   m_connection.send(req);
 }
 
+//: Matches a reset ANSWER by command only, never by block id.
+//:
+//: crtpLogResetRequest is Packet(5,1,1): the host writes data[0] and nothing
+//: else. The firmware answers by reusing its static receive packet and
+//: overwriting only data[2] (log.c:436-438), so data[1] of a reset reply is
+//: indeterminate -- matching an id there would reject the drone's own correct
+//: answer. See crtp.h isAnswerToCommand().
+static bool answersLogReset(const bitcraze::crazyflieLinkCpp::Packet& p)
+{
+  return crtpLogControlResponse::isAnswerToCommand(p, crtpLogControlCmdReset);
+}
+
+//: UNBOUNDED, deliberately. This is the FIRST radio handshake of a connect
+//: (crazyflie_server.cpp calls it before requestParamToc/requestLogToc), and
+//: hanging here on a drone that does not answer is the documented behaviour
+//: the "scan every enabled address before every launch" go/no-go rule rests
+//: on. Do not bound it; bound the recovery-path overload below instead.
 void Crazyflie::logReset()
 {
   crtpLogResetRequest request;
   m_connection.send(request);
   using res = crtpLogControlResponse;
-  auto p = waitForResponse(&res::valid);
+  auto p = waitForResponse(&answersLogReset);
   auto result = res::result(p);
   if (result != crtpLogControlResultOk)
   {
-    throw std::runtime_error("Could not start log block!");
+    throw std::runtime_error("Could not reset logging!");
   }
 }
 
@@ -133,7 +150,7 @@ bool Crazyflie::logReset(unsigned int timeout_ms, size_t numTries)
   crtpLogResetRequest request;
   m_connection.send(request);
   using res = crtpLogControlResponse;
-  auto p = waitForResponse(&res::valid, timeout_ms, numTries);
+  auto p = waitForResponse(&answersLogReset, timeout_ms, numTries);
   if (!p) {
     return false;             // the drone never answered: nothing else will work
   }

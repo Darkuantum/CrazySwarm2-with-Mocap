@@ -510,13 +510,64 @@ enum crtpLogControlResult : uint8_t {
 
 };
 
+//: Which log-control command an answer belongs to. Values verified against the
+//: firmware's own CONTROL_* defines (crazyflie-firmware 2025.02,
+//: src/modules/src/log.c:137-145).
+enum crtpLogControlCommand : uint8_t
+{
+  crtpLogControlCmdCreateBlock   = 0,
+  crtpLogControlCmdAppendBlock   = 1,
+  crtpLogControlCmdDeleteBlock   = 2,
+  crtpLogControlCmdStartBlock    = 3,
+  crtpLogControlCmdStopBlock     = 4,
+  crtpLogControlCmdReset         = 5,
+  crtpLogControlCmdCreateBlockV2 = 6,
+  crtpLogControlCmdAppendBlockV2 = 7,
+  crtpLogControlCmdStartBlockV2  = 8,
+};
+
 struct crtpLogControlResponse
 {
+  //: SHAPE ONLY -- this says "some log-control answer", never "the answer to
+  //: MY request". Every log-control reply on this port is 3 bytes, so a
+  //: create, start, stop and reset answer are indistinguishable by valid()
+  //: alone. Use isAnswerTo() at the wait site instead; see the comment there.
   static bool valid(const bitcraze::crazyflieLinkCpp::Packet &p)
   {
     return p.port() == 5 &&
            p.channel() == 1 &&
            p.payloadSize() == 3;
+  }
+
+  //: Does this packet answer command `cmd` for block `blockId`?
+  //:
+  //: The firmware answers a log-control request by REUSING the request packet:
+  //: logControlProcess() (log.c:388-439) overwrites only `p.data[2] = ret` and
+  //: `p.size = 3` before sending, so data[0] is the command we sent and data[1]
+  //: is the block id we sent. Matching both is therefore exact.
+  //:
+  //: Why this matters: without it, a LATE answer to one request satisfies the
+  //: wait for the NEXT one. Tier 1 of the telemetry watchdog is literally
+  //: `stop(); start(period);`, so a stop answer arriving during the start wait
+  //: was read as "start succeeded" -- making a mute drone look recovered,
+  //: logging "log blocks restarted", and stopping the watchdog from ever
+  //: escalating to the tier 2 that actually fixes it.
+  static bool isAnswerTo(const bitcraze::crazyflieLinkCpp::Packet &p,
+                         uint8_t cmd, uint8_t blockId)
+  {
+    return valid(p) && command(p) == cmd && requestByte1(p) == blockId;
+  }
+
+  //: Command-only match, for requests that carry NO block id.
+  //:
+  //: crtpLogResetRequest is Packet(5,1,1) -- the host writes data[0] only, so
+  //: data[1] of a reset ANSWER is whatever happened to be in the firmware's
+  //: static receive packet. Matching an id there would reject the drone's own
+  //: correct reply. Do not "tidy" this into isAnswerTo(p, cmd, 0).
+  static bool isAnswerToCommand(const bitcraze::crazyflieLinkCpp::Packet &p,
+                                uint8_t cmd)
+  {
+    return valid(p) && command(p) == cmd;
   }
 
   static uint8_t command(const bitcraze::crazyflieLinkCpp::Packet &p)

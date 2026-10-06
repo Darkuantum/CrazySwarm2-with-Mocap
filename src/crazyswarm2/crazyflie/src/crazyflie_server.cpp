@@ -1,4 +1,5 @@
 #include <memory>
+#include <atomic>
 #include <set>
 #include <vector>
 #include <regex>
@@ -713,6 +714,11 @@ public:
   //: Did trajectory `id` fail to upload to this drone? See upload_trajectory().
   bool trajectory_is_bad(uint8_t id) const { return bad_trajectories_.count(id) > 0; }
 
+  //: "This drone has been told to fly." Latched until mocap positively sees it
+  //: on the floor again, because a command's effect outlives the call and
+  //: /cfX/status is dead exactly when the watchdog would want to ask.
+  void note_commanded_flight() { commanded_flight_ = true; }
+
   void note_mocap_z(float z)
   {
     last_mocap_z_ = z;
@@ -893,6 +899,7 @@ private:
                    name_.c_str(), request->trajectory_id);
       return;
     }
+    note_commanded_flight();   // the watchdog must not touch it now
     cf_.startTrajectory(request->trajectory_id,
       request->timescale,
       request->reversed,
@@ -908,6 +915,7 @@ private:
                 request->height,
                 rclcpp::Duration(request->duration).seconds(),
                 request->group_mask);
+    note_commanded_flight();   // the watchdog must not touch it now
     cf_.takeoff(request->height, rclcpp::Duration(request->duration).seconds(), request->group_mask);
   }
 
@@ -931,6 +939,7 @@ private:
                 rclcpp::Duration(request->duration).seconds(),
                 request->relative,
                 request->group_mask);
+    note_commanded_flight();   // the watchdog must not touch it now
     cf_.goTo(request->goal.x, request->goal.y, request->goal.z, request->yaw, 
               rclcpp::Duration(request->duration).seconds(),
               request->relative, request->group_mask);
@@ -1207,11 +1216,17 @@ private:
   //: would want to ask the drone, so /cfX/status cannot be trusted here, and the
   //: shows take off with BROADCAST /all/takeoff, which no per-drone command handler
   //: ever observes - mocap altitude is the only signal that sees both cases.
+  //: commanded_flight_ is set by note_commanded_flight(), which every handler
+  //: that can put THIS drone in the air calls -- per-drone takeoff/go_to/
+  //: start_trajectory and the /all/* broadcast equivalents. Until 2026-10-06
+  //: nothing ever set it true (declared false, set false, read here), so the
+  //: comment above promised coverage the code did not provide and the gate was
+  //: the mocap test alone. Mocap is still the signal that CLEARS it.
   bool may_be_airborne() const
   {
+    if (commanded_flight_) return true;
     if (!last_mocap_z_valid_) return true;
     if (last_mocap_z_ > 0.10f) return true;
-    if (commanded_flight_) return true;
     return false;
   }
 
@@ -1223,15 +1238,26 @@ private:
   }
 
   //: Tier 1 - stop/start the blocks the drone is believed to still hold.
+  //  Every start() here passes RECOVERY_TIMEOUT_MS explicitly. The blocks were
+  //  BUILT at connect, where m_timeout_ms is 0 = wait forever, and the one-arg
+  //  start() forwards that -- so this used to be an UNBOUNDED wait running on
+  //  callback_group_cf_srv, which also carries this drone's land, takeoff, arm
+  //  and emergency services. That is the same trap an upload fell into, and it
+  //  is reachable from the firmware: 1 s without receiving anything makes the
+  //  drone run `logReset(); crtpReset();`, and crtpReset() flushes the tx queue
+  //  the log-control answer is waiting in. stop() has always been bounded.
+  //  A timeout now throws, which check_telemetry_watchdog() catches and
+  //  escalates to tier 2 -- the correct outcome.
   void restart_log_blocks()
   {
-    if (log_block_pose_   && period_pose_)   { log_block_pose_->stop();   log_block_pose_->start(period_pose_); }
-    if (log_block_scan_   && period_scan_)   { log_block_scan_->stop();   log_block_scan_->start(period_scan_); }
-    if (log_block_odom_   && period_odom_)   { log_block_odom_->stop();   log_block_odom_->start(period_odom_); }
-    if (log_block_status_ && period_status_) { log_block_status_->stop(); log_block_status_->start(period_status_); }
+    constexpr unsigned int T = RECOVERY_TIMEOUT_MS;
+    if (log_block_pose_   && period_pose_)   { log_block_pose_->stop();   log_block_pose_->start(period_pose_, T); }
+    if (log_block_scan_   && period_scan_)   { log_block_scan_->stop();   log_block_scan_->start(period_scan_, T); }
+    if (log_block_odom_   && period_odom_)   { log_block_odom_->stop();   log_block_odom_->start(period_odom_, T); }
+    if (log_block_status_ && period_status_) { log_block_status_->stop(); log_block_status_->start(period_status_, T); }
     size_t i = 0;
     for (auto& b : log_blocks_generic_) {
-      if (b && i < periods_generic_.size() && periods_generic_[i]) { b->stop(); b->start(periods_generic_[i]); }
+      if (b && i < periods_generic_.size() && periods_generic_[i]) { b->stop(); b->start(periods_generic_[i], T); }
       ++i;
     }
   }
@@ -1246,11 +1272,25 @@ private:
   //  healthy. This is the logging half of what a server restart does.
   void rebuild_log_blocks()
   {
-    // Destroy first: ~LogBlock frees its id, so the rebuild reuses the same
-    // ids and the drone's own log state is wiped by logReset() underneath.
-    // Abandon rather than stop(): the blocks are already gone from the drone,
-    // so the stop handshake can only burn its retries, and logReset() wipes the
-    // drone's log state anyway.
+    // PROBE FIRST, then destroy. Ordering matters and used to be the other way
+    // round: if logReset goes unanswered -- entirely possible at the ack ratios
+    // measured in data/linkstalls/ -- the old order had already abandoned and
+    // freed every host-side block, leaving this drone with NO telemetry
+    // dispatch at all while the aircraft may still hold live blocks, i.e.
+    // /cfX/pose, /cfX/status and /cfX/kalman_preflight dead plus "Received
+    // unrequested data for block" noise, until a later retry happened to
+    // succeed. A failed probe is now a no-op that changes nothing.
+    //
+    // Every wait on this path is bounded, because it runs in a timer sharing a
+    // mutually-exclusive callback group with this drone's land/emergency
+    // services.
+    if (!cf_.logReset(RECOVERY_TIMEOUT_MS, 2)) {
+      throw std::runtime_error("no reply to logReset");
+    }
+    // Now tear down our side. ~LogBlock frees its id, so the rebuild reuses the
+    // same ids and the drone's own log state has just been wiped by the
+    // logReset above. Abandon rather than stop(): the blocks are already gone
+    // from the drone, so the stop handshake can only burn its retries.
     if (log_block_pose_)   log_block_pose_->abandon();
     if (log_block_scan_)   log_block_scan_->abandon();
     if (log_block_odom_)   log_block_odom_->abandon();
@@ -1262,15 +1302,18 @@ private:
     log_block_status_.reset();
     log_blocks_generic_.clear();
     periods_generic_.clear();                 // the builders push these back
-    // Bail early if the drone will not even answer a reset: every wait on this
-    // path is bounded, because it runs in a timer sharing a mutually-exclusive
-    // callback group with this drone's land/emergency services.
-    if (!cf_.logReset(RECOVERY_TIMEOUT_MS, 2)) {
-      throw std::runtime_error("no reply to logReset");
-    }
     recovery_timeout_ms_ = RECOVERY_TIMEOUT_MS;   // builders pass it to the blocks
     try {
       for (auto& build : log_block_builders_) {
+        // Re-check between builders. The gate is evaluated once before tier 1,
+        // but the bounded worst case from there to here is seconds (logReset
+        // plus a create+start per block at RECOVERY_TIMEOUT_MS), and a drone
+        // can be commanded off the floor inside that window. Bail and let the
+        // retry path pick it up once it is down again.
+        if (may_be_airborne()) {
+          recovery_timeout_ms_ = 0;
+          throw std::runtime_error("drone left the floor mid-rebuild");
+        }
         build();
       }
     } catch (...) {
@@ -1297,7 +1340,8 @@ private:
       RCLCPP_ERROR(logger_, "[%s] NO TELEMETRY for %.1f s though the link is alive, and "
                    "this drone may be AIRBORNE (mocap z %s%.2f m) - NOT touching its "
                    "connection. Land it; recovery runs once it is down.", name_.c_str(),
-                   quiet, last_mocap_z_valid_ ? "" : "unknown, last ", last_mocap_z_);
+                   quiet, last_mocap_z_valid_.load() ? "" : "unknown, last ",
+                   last_mocap_z_.load());   // .load(): an atomic cannot go through varargs
       last_log_rx_ = now;               // once per window, not once per second
       return;
     }
@@ -1457,9 +1501,13 @@ private:
   bool rebuild_pending_{false};
   //: Trajectory ids whose upload did not complete - start_trajectory refuses them.
   std::set<uint8_t> bad_trajectories_;
-  bool commanded_flight_{false};
-  bool last_mocap_z_valid_{false};
-  float last_mocap_z_{0.0f};
+  //: Written from note_mocap_z() on callback_group_mocap_ and from the command
+  //: handlers, read by may_be_airborne() on callback_group_cf_srv -- different
+  //: threads, so atomic. They were plain bool/float, which is a data race on
+  //: the one guard that decides whether to touch a possibly-airborne drone.
+  std::atomic<bool> commanded_flight_{false};
+  std::atomic<bool> last_mocap_z_valid_{false};
+  std::atomic<float> last_mocap_z_{0.0f};
   uint8_t period_pose_{0}, period_scan_{0}, period_odom_{0}, period_status_{0};
   std::vector<uint8_t> periods_generic_;
   std::chrono::steady_clock::time_point last_rebuild_attempt_{std::chrono::steady_clock::now()};
@@ -1643,6 +1691,17 @@ public:
 
 
 private:
+  //: Latch "may be airborne" on EVERY drone, for the /all/* broadcast commands.
+  //: A broadcast goes out on the broadcast connection and no per-drone command
+  //: handler ever observes it -- which is exactly how the shows take off -- so
+  //: without this the telemetry watchdog's only airborne evidence is mocap.
+  void note_commanded_flight_all()
+  {
+    for (auto& cf : crazyflies_) {
+      if (cf.second) cf.second->note_commanded_flight();
+    }
+  }
+
   void emergency(const std::shared_ptr<Empty::Request> request,
             std::shared_ptr<Empty::Response> response)
   {
@@ -1665,6 +1724,7 @@ private:
                 request->timescale,
                 request->reversed,
                 request->group_mask);
+    note_commanded_flight_all();   // the watchdog must not touch them now
 
     // REFUSE if this trajectory failed to upload to ANY drone. The per-drone
     // handler's check is not enough: the shows start trajectories over this
@@ -1706,6 +1766,7 @@ private:
                 request->height,
                 rclcpp::Duration(request->duration).seconds(),
                 request->group_mask);
+    note_commanded_flight_all();   // the watchdog must not touch them now
     for (int i = 0; i < broadcasts_num_repeats_; ++i) {
       for (auto& bc : broadcaster_) {
         auto& cfbc = bc.second;
@@ -1738,6 +1799,7 @@ private:
                 request->goal.x, request->goal.y, request->goal.z, request->yaw,
                 rclcpp::Duration(request->duration).seconds(),
                 request->group_mask);
+    note_commanded_flight_all();   // the watchdog must not touch them now
     for (int i = 0; i < broadcasts_num_repeats_; ++i) {
       for (auto &bc : broadcaster_) {
         auto &cfbc = bc.second;
