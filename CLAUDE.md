@@ -437,21 +437,62 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   `/cf5/status` and `/cf5/kalman_preflight` were all back **~1.0 s** after the
   stall was declared -- no server restart, no power cycle. Note the stall
   RECURS on the same drone, so the watchdog treats it as an ongoing condition,
-  not a one-off. Every wait on the recovery path is **bounded** (300 ms x 2 per
-  request, and it bails out entirely if `logReset` goes unanswered) because the
-  link timer shares a mutually-exclusive callback group with that drone's
-  `land` and `emergency` services -- an unbounded wait there would be worse
-  than the stall. The connect path still waits unbounded, unchanged. It
-  **refuses to act unless mocap positively shows the drone on the floor** (`z <= 0.10 m`): the shows take off with broadcast `/all/takeoff`,
-  which no per-drone command handler ever observes, and `/cfX/status` is dead
-  exactly when it would be asked, so mocap altitude is the only signal that sees
-  both cases. Unknown altitude counts as airborne. Set to 0 to disable.
+  not a one-off. Every wait on the recovery path is **bounded**
+  (`RECOVERY_TIMEOUT_MS` = **1000 ms x 2** per request -- an earlier version of
+  this note said 300 ms, which the code raised after a real start answered
+  later than that; it bails out entirely if `logReset` goes unanswered) because
+  the link timer shares a mutually-exclusive callback group with `land` and
+  `emergency` -- an unbounded wait there would be worse than the stall. **That
+  group is FLEET-WIDE, not per drone** (created once in the `CrazyflieServer`
+  constructor and handed to every `CrazyflieROS`), and it also carries the 1 ms
+  `spin_once` that is the only place log data is dispatched -- so a stuck wait
+  costs ALL drones' per-drone services and ALL telemetry. See the open item
+  below. The connect path still waits unbounded, deliberately, unchanged.
+  **THREE CORRECTNESS FIXES 2026-10-06, found by reading the firmware rather
+  than the host:**
+  (1) **tier 1's `start()` was still unbounded.** Blocks built at connect carry
+  `m_timeout_ms = 0`, and the one-arg `start()` forwards it, so tier 1 ran the
+  unbounded wait -- the trap `627ab55` closed for uploads, left open one
+  function away. `stop()` was already bounded; only `start()` was missed. There
+  is now a two-arg `start(period, timeout_ms)` with **no default argument**,
+  and tier 1 passes the bound. Do not give it a default or collapse the
+  forwarder: bounding CONNECT would make one busy link kill all five drones'
+  launch, because a throw out of a log-block builder is not caught at the
+  `CrazyflieROS` construction site.
+  (2) **a log-control answer could satisfy the wrong wait.**
+  `crtpLogControlResponse::valid()` tests only port 5 / channel 1 / 3-byte
+  payload, which EVERY log-control reply satisfies -- and tier 1 is literally
+  `stop(); start(p);`, so a late stop answer was read as "start succeeded".
+  Tier 1 then "worked", logged `log blocks restarted`, and the watchdog never
+  escalated to the tier 2 that actually fixes it. Waits now match on the
+  command byte and the block id, which works because the firmware answers by
+  REUSING the request packet (`log.c` `logControlProcess` overwrites only
+  `data[2]` and `size`). **`logReset` is matched on the command ONLY** --
+  `crtpLogResetRequest` is `Packet(5,1,1)`, so `data[1]` of a reset reply is
+  indeterminate and matching an id there would reject the drone's own answer.
+  (3) **the rebuild destroyed our own log blocks BEFORE probing the drone.** An
+  unanswered `logReset` left that drone with zero host-side blocks while the
+  aircraft may still have held live ones. The probe now comes first, so a
+  failed probe is a no-op.
+  It **refuses to act unless the drone may not be airborne**: mocap must
+  positively show it on the floor (`z <= 0.10 m`), unknown altitude counts as
+  airborne, AND `commanded_flight_` must be clear. That flag was dead code
+  until 2026-10-06 -- declared false, set false, read once, **never set true**
+  -- so the gate was the mocap test alone despite a comment implying more. It
+  is now set by every handler that can put a drone in the air, the `/all/*`
+  broadcasts included, and cleared by mocap. The gate is also re-checked
+  between builders, because it used to be evaluated once while the bounded
+  worst case to the last builder is several seconds. Set `telemetry_watchdog_s`
+  to 0 to disable.
   **Packet tracing** (`ros2 launch crazyflie launch.py trace_cf:=all`, or a
   comma-separated subset) prints ONE summary per second per drone from the link
   layer and from `processPacket`, plus per-packet lines only for anomalies. It
   is a launch argument, NOT `--ros-args` (`ros2 launch` has no such flag), and
   is read at connect because this rig's `/parameter_events` never loop back.
-  Backups of every traced file: `data/patch-backups/trace-<sha>/REVERT.sh`.
+  (`data/patch-backups/trace-627b499/` is GONE: its `REVERT.sh` would have
+  copied a pre-watchdog `crazyflie_server.cpp` over the current one and
+  rebuilt, and all seven saved files were byte-identical to
+  `git show 627b499:<path>`. Use git to revert traced files.)
 - **An UPLOAD can wedge the server permanently -- the worst failure on this
   rig, and the watchdog above cannot save you from it.** Seen 2026-10-05
   mid-show: all five drones stopped publishing telemetry during the trajectory
@@ -479,13 +520,97 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   up to 3 times) and `uploadTrajectory` throws if it still gets nothing. The
   server catches that, logs FATAL, and records the id in `bad_trajectories_` --
   **`start_trajectory` then REFUSES that id** until it uploads cleanly, because
-  `UploadTrajectory.srv` has no success field and the caller otherwise flies a
-  partially written trajectory. Do not "simplify" that refusal away.
+  the caller otherwise flies a partially written trajectory. Do not "simplify"
+  that refusal away. (`UploadTrajectory.srv` DOES carry `success`/`message` and
+  `crazyflie_py` raises on it -- an earlier note here and a comment in the
+  server both said otherwise. `StartTrajectory.srv` is the one with no response
+  fields, which is why `bad_trajectories_` still matters on the broadcast path.
+  That set is now mutex-guarded: it is written on `callback_group_cf_srv` and
+  read from the broadcast handler on `callback_group_all_srv_`, and a
+  concurrent read/write of a `std::set` is UB.)
+  **ALSO FIXED 2026-10-06 -- the reply was matched by SHAPE, not identity.**
+  `crtpMemoryWriteResponse::valid()` checks only port 4 / channel 2 / 6-byte
+  payload, so the chunk RESEND that `627ab55` introduced could leave the host
+  one reply out of phase for the rest of the upload, and a chunk whose request
+  was then lost counted as written -- `success = true` for a trajectory with a
+  24-byte hole. `sizeof(poly4d)` is 132 and 132 % 24 != 0, so the hole lands
+  mid coefficient array and the drone flies a hybrid of two polynomials;
+  `piecewise_eval` applies whatever bytes are there with **no validation, no
+  clamp and no finiteness check**, and the supervisor only reacts to TUMBLED
+  and battery. The wait now matches the memory id and the 32-bit address
+  (the firmware echoes both -- `crtp_mem.c` `memWriteProcess`, whose own
+  comment reads *"Dont' touch the first 5 bytes, they will be the same."*), and
+  a non-zero status THROWS instead of being logged, because it can only mean
+  `(offset + length) <= sizeof(trajectories_memory)` failed -- deterministic,
+  so not retried. Tightening the predicate removed an accidental latency
+  absorber, so a stale reply now counts as proof the drone is alive-but-
+  backlogged and buys more time, under a 10 s per-chunk and 90 s per-call cap.
   **Still unbounded, same trap:** most other `waitForResponse()` calls in
-  `crazyflie_cpp` (params, log TOC, memory TOC). They run at connect, where
-  blocking is the documented behaviour, but any of them reached while the rig is
-  saturated can wedge a drone's services the same way. Bound them before calling
-  them from a service handler.
+  `crazyflie_cpp` (params, log TOC). They run at connect, where blocking is the
+  documented behaviour, but any of them reached while the rig is saturated can
+  wedge a drone's services the same way. Bound them before calling them from a
+  service handler.
+- **`requestMemoryToc` ALREADY matches ids -- do not "fix" it.** An audit
+  reported that it consumes GetInfo replies positionally with no id check, so a
+  late reply would shift every later entry and a trajectory write could go to
+  the wrong memory. **That reading is inverted**, and the mistake is easy to
+  repeat: `Crazyflie.cpp:19` is an unconditional `#define FIRMWARE_BUGGY` with
+  no `#undef` anywhere, so the `#ifndef FIRMWARE_BUGGY` branch -- the one that
+  would consume positionally -- is **preprocessed away**. The compiled function
+  is a single send-wait ping-pong whose LIVE branch is
+  `if (res::id(p) != i) { warn; --i; }`; the `assert` is the dead `#else`. The
+  drone cannot reorder these anyway: `memTask` is one FreeRTOS task draining
+  one FIFO and replying synchronously with a blocking send, and it echoes the
+  requested id. Two further traps if you do edit it: dropping the `--i` removes
+  the only absorber for a duplicated request, and
+  `m_memoryTocEntries[res::id(p)]` would be an unbounded indexed write driven
+  by a byte the drone chose, into a vector sized from an earlier packet --
+  heap corruption in the process that owns the only radio. The ping-pong also
+  has a firmware reason: `crtpRxTask` blocks **forever** on a full port queue
+  ("we should never drop a packet"), so keeping one GetInfo outstanding keeps
+  at most one MEM packet in that 16-deep queue.
+- **OPEN: `callback_group_cf_srv` is ONE fleet-wide mutually-exclusive group.**
+  Created once in the `CrazyflieServer` constructor and handed to every
+  `CrazyflieROS`, it carries each drone's `land`/`takeoff`/`arm`/`emergency`/
+  `go_to`/`start_trajectory`/`upload_trajectory`, the telemetry watchdog timer,
+  AND the 1 ms `spin_once` that is the only place log data is dispatched. A
+  `MultiThreadedExecutor` does not help: rclcpp runs one callback at a time from
+  a mutually-exclusive group. So a stuck wait on ONE drone costs all five
+  drones' per-drone services and ALL telemetry -- which explains the measured
+  2026-10-05 "all five stopped publishing during the upload" with no firmware
+  involvement needed. Worst-case tier-2 rebuild is a ~14 s fleet-wide freeze.
+  **Not changed, deliberately**: per-drone groups are the only safe
+  granularity, and that is a concurrency refactor of the binary that owns the
+  radio. `Crazyflie::processAllPackets` and `Crazyflie::waitForResponse` pop the
+  **same per-connection receive queue** and match replies by shape, and the
+  `Crazyflie` object has no mutex -- so splitting only `spin_once`, or only
+  `upload_trajectory`, out of the group makes `spin_once` eat the reply a
+  service is blocked on. **Measure before refactoring:** time
+  `restart_log_blocks()`/`rebuild_log_blocks()` on the bench with five drones,
+  props off, on the floor. If the freeze stays ~1.0 s (as measured 2026-10-05),
+  take the cheap fix instead -- lower `RECOVERY_TIMEOUT_MS` toward 300-500,
+  which shrinks the worst case to ~4-7 s at zero concurrency risk. If it goes
+  ahead, the acceptance criterion is that **while one drone rebuilds, the other
+  four keep publishing `/cfX/pose` at 10.0 Hz and their `land`/`arm` still
+  answer**; and it needs a server-level recovery gate (the shared group is
+  currently a de-facto "one recovery at a time" lock) plus an upload mutex
+  (today's sequencing is accidental -- `crazyflie_py` happens to spin until each
+  upload future completes).
+  **Mitigating, and verified:** `/all/emergency`, `/all/land` and `/all/takeoff`
+  are on `callback_group_all_srv_` and go through `broadcaster_`, which never
+  touches a stuck drone's `Crazyflie` object -- so the fleet e-stop, the
+  console's E-STOP and the preflight GUI's `e` key keep working through all of
+  this. That is why these are "high", not "critical".
+- **STILL OPEN: what causes the >= 1 s receive gap in the first place.** The
+  firmware's reaction is fully explained (`radiolink.c` -> `log.c`
+  `logReset(); crtpReset();`) and a healthy drone here sees ~168 unicast rx/s,
+  so tripping it takes a genuine outage. The live candidate, UNMEASURED, is the
+  broadcast-priority skip in `crazyflie-link-cpp/src/CrazyradioThread.cpp`: if
+  ANY broadcast connection has a queued packet or a pending retry, every
+  non-broadcast connection is `continue`d for the whole pass -- and
+  `posesChanged` feeds the broadcast connection continuously at the 50 Hz mocap
+  rate. That is upstream code; it deserves its own measurement, not a drive-by
+  edit.
 - **A second Crazyradio is the best diagnostic probe on this rig.** With the
   server holding one dongle, a second one lets another process talk to the same
   drone: the link library **skips any radio whose serial it cannot query**
