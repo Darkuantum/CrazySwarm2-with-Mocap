@@ -1295,7 +1295,11 @@ window.__copy = (id) => {
 
 function sendStdin() {
   const el = $('#stdin');
-  if (!S.selProc || !el.value) return;
+  /* An EMPTY line is a legitimate message: a paced show gates on a bare
+     Enter, so refusing to send one made every gate unreachable from here and
+     operators typed a stray letter to get past it. Only a missing process is
+     a reason not to send. */
+  if (!S.selProc) return;
   post('/api/input', { proc: S.selProc, text: el.value + '\n' })
     .then(() => { el.value = ''; })
     .catch((e) => toast(e.message, 'err'));
