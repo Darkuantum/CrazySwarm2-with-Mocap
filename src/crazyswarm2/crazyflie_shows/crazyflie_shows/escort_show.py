@@ -179,8 +179,29 @@ LED_ADVERSARY = LIGHT['red']         # the threat
 # drone doing the blocking and the drone being blocked read as the same
 # colour. Reported from the first hardware flight, 2026-10-06. Cyan is the
 # only cue in the palette with no red channel at all.
-LED_BLOCKING = LIGHT['cyan']         # the LEAD, standing on the threat bearing
+LED_BLOCKING = LIGHT['blocker']      # the LEAD, standing on the threat bearing
 LED_WING = LIGHT['violet']           # the other two, closed up beside the lead
+
+#: STAGE cues, as opposed to the ROLE cues above.
+#:
+#: The role colours say what each drone is doing; these say where the SCRIPT
+#: is, so the operator can see at a glance that the drones and the script
+#: agree. On an operator-paced show that cross-check is the thing you cannot
+#: get any other way: the console says which stage it thinks it is on, and
+#: until now the drones only ever said which role they held.
+#:
+#: The adversary carries it, because it is the one drone whose role does not
+#: change through the run and the one the audience is already watching:
+#:   amber   = taking station, not pressing
+#:   red     = ATTACKING
+#:   magenta = stood down, withdrawing
+LED_ADV_STAGE = (LIGHT['amber'], LIGHT['red'], LIGHT['magenta'])
+
+#: Everything goes amber while the show is WAITING ON A HUMAN -- the two DJI
+#: legs, where the ring is pinned high and nothing moves until the pilot says
+#: the aircraft is up or down. A fleet that has gone uniformly amber means
+#: "your move", which is exactly when an operator is least sure.
+LED_STAGE_WAIT = LIGHT['amber']
 
 TAKEOFF_HEIGHT = 0.6
 TAKEOFF_DURATION = 3.0
@@ -772,6 +793,7 @@ def main():
         leg_i = 0
         leg_done = {'v': False}      # announced completion of the current leg?
         stood_said = {'v': False}    # announced the attacker giving up?
+        stage_cued = {'v': None}     # which stage the lights currently show
         # Where the adversary's CURRENT leg is measured from.
         #
         # AdversaryScript resolves a leg against the VIP's position RIGHT NOW,
@@ -810,10 +832,20 @@ def main():
             print(f'\n  ring CLIMBING to {cfg.height:.2f} m to clear the DJI '
                   f'(show altitude is {show_height:.2f} m) -- it will not '
                   'follow the VIP until you say so')
+            # Whole fleet amber: the show is waiting on the pilot, and a
+            # uniformly amber fleet is the one state an operator can read
+            # from across the room without looking at the console.
+            if lights_on:
+                cue(allcfs, flying, [LED_STAGE_WAIT] * len(flying))
             operator_gate('PILOT: wait for the ring to settle high, THEN take '
                           'off the DJI, climb to your hover height under the '
                           'ring and hold steady. Enter once it is up and settled.',
                           pump=_hold)
+            if lights_on:
+                # back to roles; the loop re-cues the adversary's stage because
+                # stage_cued is cleared.
+                cue(allcfs, dcfs, [LED_DEFENDER] * len(dcfs))
+                stage_cued['v'] = None
             cfg.height = show_height
             cfg.vip_airborne = track_vip      # now the ring rides with the VIP
             phase = 'encounter'
@@ -1085,6 +1117,17 @@ def main():
                       f'{d_sd:.2f} m. It is withdrawing to its station.\n',
                       flush=True)
 
+            # STAGE cue: the adversary's colour tracks which leg the script is
+            # on, so the drones and the console can be compared at a glance.
+            # Only on CHANGE -- a setParam per drone per step would be radio
+            # traffic the rig cannot spare (see the link-stall gotcha).
+            stage_now = (leg_i if paced
+                         else int(t / max(script.duration / script.n_legs, 1e-6)))
+            stage_now = max(0, min(stage_now, len(LED_ADV_STAGE) - 1))
+            if lights_on and acf is not None and stage_cued['v'] != stage_now:
+                stage_cued['v'] = stage_now
+                cue(allcfs, [acf], [LED_ADV_STAGE[stage_now]])
+
             if info['engaged'] != was_engaged:
                 was_engaged = info['engaged']
                 what = ('BLOCKING - wall closing on the adversary' if was_engaged
@@ -1163,6 +1206,8 @@ def main():
             cfg.height = cfg.dji_clear_height
             print(f'\n  ring CLIMBING to {cfg.height:.2f} m to clear the DJI '
                   '-- it will NOT follow the DJI down')
+            if lights_on:
+                cue(allcfs, flying, [LED_STAGE_WAIT] * len(flying))
             operator_gate('PILOT: wait for the ring to lift clear, THEN bring '
                           'the DJI DOWN and land it. The defenders hold high '
                           'until you confirm it is on the ground.', pump=_hold)

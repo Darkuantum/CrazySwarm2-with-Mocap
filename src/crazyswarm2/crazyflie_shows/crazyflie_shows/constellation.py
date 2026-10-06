@@ -108,6 +108,14 @@ LIGHT = {
     'amber':     wrgb(r=0xFF, g=0x50),
     'white':     wrgb(w=0x70),
     'cyan':      wrgb(g=0xC0, b=0xFF),  # the ONLY cue with no red in it
+    #: Dedicated blocker cue. The W channel is a separate physical LED, so
+    #: this reads as WHITE across a room rather than as a shade of another
+    #: colour -- which cyan did not: against the resting ring's deep_blue
+    #: both are blue-dominant and the two were reported indistinguishable
+    #: in flight (2026-10-06), the same failure amber had against red.
+    #: 0x7F is the brightest wrgb() allows -- the white channel is capped
+    #: below 0x80 on purpose (top bit clear through the int32 param).
+    'blocker':   wrgb(w=0x7F),
     'red':       wrgb(r=0xFF),          # = crazyswarm_py LED_SCRIPT_RUNNING
 }
 #: Low-to-high gradient for the staircase, one colour per step.
