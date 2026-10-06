@@ -11,25 +11,25 @@ robots:
     # more Crazyflies can not be found", so NOTHING comes up (2026-10-02).
     # This rig has one dongle, so the wildcard bought nothing.
     uri: radio://0/80/2M/E7E7E7E701
-    initial_position: [0.8356, -0.9873, 0.0]
+    initial_position: [1.1241, -0.6677, 0.0]
     type: cf21  # see robot_types
 
   cf2:
     enabled: true
     uri: radio://0/80/2M/E7E7E7E702
-    initial_position: [-1.1581, -1.0394, 0.0]
+    initial_position: [-1.4547, 0.1876, 0.0]
     type: cf21  # see robot_types
 
   cf3:
     enabled: true
     uri: radio://0/80/2M/E7E7E7E703
-    initial_position: [0.8311, 0.9646, 0.0]
+    initial_position: [1.1638, 1.0895, 0.0]
     type: cf21  # see robot_types
 
   cf5:
     enabled: true
     uri: radio://0/80/2M/E7E7E7E705
-    initial_position: [-0.1549, -0.01, 0.0]
+    initial_position: [-0.3546, 0.1747, 0.0]
     type: cf21  # see robot_types
 
   cf8:
@@ -44,7 +44,7 @@ robots:
     type: cf21  # see robot_types
 
   cf4:
-    enabled: true
+    enabled: false
     uri: radio://0/80/2M/E7E7E7E704
     # Answered at 2M on 2026-10-02 (1 of 3 passes -- the scan is intermittent,
     # see HANDOVER; it IS alive). It is therefore the drone most likely to
