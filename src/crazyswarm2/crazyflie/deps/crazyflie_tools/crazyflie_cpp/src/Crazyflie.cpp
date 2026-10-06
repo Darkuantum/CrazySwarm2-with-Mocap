@@ -1163,13 +1163,29 @@ uint8_t Crazyflie::registerLogBlock(
       return id;
     }
   }
+  // No free id. 255 is NOT inserted, so unregisterLogBlock(255) is a no-op and
+  // the caller's create will be refused by the host side before it reaches the
+  // drone. Left as a return rather than a throw: with the constructor rollback
+  // below the map holds only the handful of blocks a drone actually uses, so
+  // this is unreachable, and an abort path upstream never had would be a worse
+  // failure than a loud log line.
+  m_logger.error("registerLogBlock: no free log block id (255 in use)!");
   return 255;
 }
 
 bool Crazyflie::unregisterLogBlock(
   uint8_t id)
 {
-  m_logBlockCb.erase(m_logBlockCb.find(id));
+  // find() may legitimately miss: the 255 "no free id" sentinel returned by
+  // registerLogBlock() is never inserted, and a LogBlock whose constructor
+  // threw now rolls its own registration back. erase(end()) is undefined
+  // behaviour -- in practice it corrupts the map's red-black tree inside the
+  // process that owns the only radio.
+  auto it = m_logBlockCb.find(id);
+  if (it == m_logBlockCb.end()) {
+    return false;
+  }
+  m_logBlockCb.erase(it);
   return true;
 }
 

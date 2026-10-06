@@ -535,44 +535,75 @@ public:
     , m_id(0)
     , m_timeout_ms(timeout_ms)
   {
+    // registerLogBlock FIRST -- the callback must be in place before the create
+    // request goes out, or the drone's first data packet has nowhere to go. But
+    // several statements below can throw (an unknown variable, the 26-byte
+    // budget, no reply, a refused create), and a constructor that throws never
+    // runs the destructor -- the only caller of unregisterLogBlock. So the id
+    // leaked, permanently, on a path the telemetry watchdog RETRIES on a timer.
+    //
+    // The rollback is safe because a leaked id always belongs to a block whose
+    // ctor threw, so start() was never called, and the FIRMWARE proves an
+    // unstarted block is silent: both routes into logRunBlock are armed
+    // exclusively inside logStartBlock (log.c:689-693), while logCreateBlockV2
+    // creates the timer without starting it (log.c:484-486). Nothing ever
+    // arrives for a leaked id, so re-handing it out next cycle cannot
+    // misdeliver -- the firmware's EEXIST on a duplicate create (log.c:472-474),
+    // which this ctor deliberately tolerates, plus the logReset the rebuild now
+    // performs first, cover the reuse.
+    //
+    // THIS INVARIANT HOLDS ONLY WHILE start() STAYS OUTSIDE THE CTOR. Move it
+    // in and a lost start ack would throw with the drone's block RUNNING; the
+    // id would be freed, reused, and the old block's packets dispatched into
+    // the new block's handleData, where a payload-size mismatch throws out of
+    // processPacket and kills the server that owns all five drones' radio.
     m_id = m_cf->registerLogBlock([=](const bitcraze::crazyflieLinkCpp::Packet& p, uint8_t s) { this->handleData(p, s); });
-    crtpLogCreateBlockV2Request req(m_id);
-    size_t s = 0;
-    for (auto&& pair : variables) {
-      const Crazyflie::LogTocEntry* entry = m_cf->getLogTocEntry(pair.first, pair.second);
-      if (entry) {
-        s += Crazyflie::size(entry->type);
-        if (s > 26) {
-          std::stringstream sstr;
-          sstr << "Can't configure that many variables in a single log block!"
-                << " Ignoring " << pair.first << "." << pair.second << std::endl;
-          throw std::runtime_error(sstr.str());
+    try {
+      crtpLogCreateBlockV2Request req(m_id);
+      size_t s = 0;
+      for (auto&& pair : variables) {
+        const Crazyflie::LogTocEntry* entry = m_cf->getLogTocEntry(pair.first, pair.second);
+        if (entry) {
+          s += Crazyflie::size(entry->type);
+          if (s > 26) {
+            std::stringstream sstr;
+            sstr << "Can't configure that many variables in a single log block!"
+                  << " Ignoring " << pair.first << "." << pair.second << std::endl;
+            throw std::runtime_error(sstr.str());
+          } else {
+            req.add(entry->type, entry->id);
+          }
         } else {
-          req.add(entry->type, entry->id);
+          std::stringstream sstr;
+          sstr << "Could not find " << pair.first << "." << pair.second << " in log toc!";
+          throw std::runtime_error(sstr.str());
         }
-      } else {
-        std::stringstream sstr;
-        sstr << "Could not find " << pair.first << "." << pair.second << " in log toc!";
-        throw std::runtime_error(sstr.str());
       }
-    }
-    m_cf->m_connection.send(req);
-    using res = crtpLogControlResponse;
-    // Match the COMMAND and the BLOCK ID, not just the packet shape: every
-    // log-control reply is 3 bytes on port 5 / channel 1, so &res::valid also
-    // accepts a late answer to a different request. See crtp.h isAnswerTo().
-    const auto answers_create = [id = m_id](const bitcraze::crazyflieLinkCpp::Packet& q) {
-      return res::isAnswerTo(q, crtpLogControlCmdCreateBlockV2, id);
-    };
-    auto p = m_timeout_ms ? m_cf->waitForResponse(answers_create, m_timeout_ms, 2)
-                          : m_cf->waitForResponse(answers_create);
-    if (!p) {
-      throw std::runtime_error("No reply to log-block create!");
-    }
-    auto result = res::result(p);
-    if (result != crtpLogControlResultOk && result != crtpLogControlResultBlockExists)
-    {
-      throw std::runtime_error("Could not create log block (" + std::to_string((int)result) + ")!");
+      m_cf->m_connection.send(req);
+      using res = crtpLogControlResponse;
+      // Match the COMMAND and the BLOCK ID, not just the packet shape: every
+      // log-control reply is 3 bytes on port 5 / channel 1, so &res::valid also
+      // accepts a late answer to a different request. See crtp.h isAnswerTo().
+      const auto answers_create = [id = m_id](const bitcraze::crazyflieLinkCpp::Packet& q) {
+        return res::isAnswerTo(q, crtpLogControlCmdCreateBlockV2, id);
+      };
+      auto p = m_timeout_ms ? m_cf->waitForResponse(answers_create, m_timeout_ms, 2)
+                            : m_cf->waitForResponse(answers_create);
+      if (!p) {
+        throw std::runtime_error("No reply to log-block create!");
+      }
+      auto result = res::result(p);
+      if (result != crtpLogControlResultOk && result != crtpLogControlResultBlockExists)
+      {
+        throw std::runtime_error("Could not create log block (" + std::to_string((int)result) + ")!");
+      }
+    } catch (...) {
+      // MANDATORY RETHROW. Swallowing here would make a failed create look
+      // successful: rebuild_log_blocks() would return normally, the server
+      // would log "log blocks RECREATED", clear rebuild_pending_, and leave
+      // the drone with a missing block and no further retry.
+      m_cf->unregisterLogBlock(m_id);
+      throw;
     }
   }
 
@@ -688,58 +719,89 @@ public:
     , m_id(0)
     , m_timeout_ms(timeout_ms)
   {
+    // registerLogBlock FIRST -- the callback must be in place before the create
+    // request goes out, or the drone's first data packet has nowhere to go. But
+    // several statements below can throw (an unknown variable, the 26-byte
+    // budget, no reply, a refused create), and a constructor that throws never
+    // runs the destructor -- the only caller of unregisterLogBlock. So the id
+    // leaked, permanently, on a path the telemetry watchdog RETRIES on a timer.
+    //
+    // The rollback is safe because a leaked id always belongs to a block whose
+    // ctor threw, so start() was never called, and the FIRMWARE proves an
+    // unstarted block is silent: both routes into logRunBlock are armed
+    // exclusively inside logStartBlock (log.c:689-693), while logCreateBlockV2
+    // creates the timer without starting it (log.c:484-486). Nothing ever
+    // arrives for a leaked id, so re-handing it out next cycle cannot
+    // misdeliver -- the firmware's EEXIST on a duplicate create (log.c:472-474),
+    // which this ctor deliberately tolerates, plus the logReset the rebuild now
+    // performs first, cover the reuse.
+    //
+    // THIS INVARIANT HOLDS ONLY WHILE start() STAYS OUTSIDE THE CTOR. Move it
+    // in and a lost start ack would throw with the drone's block RUNNING; the
+    // id would be freed, reused, and the old block's packets dispatched into
+    // the new block's handleData, where a payload-size mismatch throws out of
+    // processPacket and kills the server that owns all five drones' radio.
     m_id = m_cf->registerLogBlock([=](const bitcraze::crazyflieLinkCpp::Packet& p, uint8_t s) { this->handleData(p, s); });
-    crtpLogCreateBlockV2Request req(m_id);
-    int i = 0;
-    size_t s = 0;
-    for (auto&& var : variables) {
-      auto pos = var.find(".");
-      std::string first = var.substr(0, pos);
-      std::string second = var.substr(pos+1);
-      const Crazyflie::LogTocEntry* entry = m_cf->getLogTocEntry(first, second);
-      if (entry) {
-        s += Crazyflie::size(entry->type);
-        if (s > 26) {
-          std::stringstream sstr;
-          sstr << "Can't configure that many variables in a single log block!"
-                << " Ignoring " << first << "." << second << std::endl;
-          throw std::runtime_error(sstr.str());
-        } else {
-          if (i < 9) {
-            req.add(entry->type, entry->id);
-            ++i;
-            m_types.push_back(entry->type);
-          } else {
+    try {
+      crtpLogCreateBlockV2Request req(m_id);
+      int i = 0;
+      size_t s = 0;
+      for (auto&& var : variables) {
+        auto pos = var.find(".");
+        std::string first = var.substr(0, pos);
+        std::string second = var.substr(pos+1);
+        const Crazyflie::LogTocEntry* entry = m_cf->getLogTocEntry(first, second);
+        if (entry) {
+          s += Crazyflie::size(entry->type);
+          if (s > 26) {
             std::stringstream sstr;
-            sstr << "Can only log up to 9 variables at a time!"
+            sstr << "Can't configure that many variables in a single log block!"
                   << " Ignoring " << first << "." << second << std::endl;
             throw std::runtime_error(sstr.str());
+          } else {
+            if (i < 9) {
+              req.add(entry->type, entry->id);
+              ++i;
+              m_types.push_back(entry->type);
+            } else {
+              std::stringstream sstr;
+              sstr << "Can only log up to 9 variables at a time!"
+                    << " Ignoring " << first << "." << second << std::endl;
+              throw std::runtime_error(sstr.str());
+            }
           }
         }
+        else {
+          std::stringstream sstr;
+          sstr << "Could not find " << first << "." << second << " in log toc!";
+          throw std::runtime_error(sstr.str());
+        }
       }
-      else {
-        std::stringstream sstr;
-        sstr << "Could not find " << first << "." << second << " in log toc!";
-        throw std::runtime_error(sstr.str());
+      m_cf->m_connection.send(req);
+      using res = crtpLogControlResponse;
+      // Match the COMMAND and the BLOCK ID, not just the packet shape: every
+      // log-control reply is 3 bytes on port 5 / channel 1, so &res::valid also
+      // accepts a late answer to a different request. See crtp.h isAnswerTo().
+      const auto answers_create = [id = m_id](const bitcraze::crazyflieLinkCpp::Packet& q) {
+        return res::isAnswerTo(q, crtpLogControlCmdCreateBlockV2, id);
+      };
+      auto p = m_timeout_ms ? m_cf->waitForResponse(answers_create, m_timeout_ms, 2)
+                            : m_cf->waitForResponse(answers_create);
+      if (!p) {
+        throw std::runtime_error("No reply to log-block create!");
       }
-    }
-    m_cf->m_connection.send(req);
-    using res = crtpLogControlResponse;
-    // Match the COMMAND and the BLOCK ID, not just the packet shape: every
-    // log-control reply is 3 bytes on port 5 / channel 1, so &res::valid also
-    // accepts a late answer to a different request. See crtp.h isAnswerTo().
-    const auto answers_create = [id = m_id](const bitcraze::crazyflieLinkCpp::Packet& q) {
-      return res::isAnswerTo(q, crtpLogControlCmdCreateBlockV2, id);
-    };
-    auto p = m_timeout_ms ? m_cf->waitForResponse(answers_create, m_timeout_ms, 2)
-                          : m_cf->waitForResponse(answers_create);
-    if (!p) {
-      throw std::runtime_error("No reply to log-block create!");
-    }
-    auto result = res::result(p);
-    if (result != crtpLogControlResultOk
-        && result != crtpLogControlResultBlockExists) {
-      throw std::runtime_error("Could not create log block (" + std::to_string((int)result) + ")!");
+      auto result = res::result(p);
+      if (result != crtpLogControlResultOk
+          && result != crtpLogControlResultBlockExists) {
+        throw std::runtime_error("Could not create log block (" + std::to_string((int)result) + ")!");
+      }
+    } catch (...) {
+      // MANDATORY RETHROW. Swallowing here would make a failed create look
+      // successful: rebuild_log_blocks() would return normally, the server
+      // would log "log blocks RECREATED", clear rebuild_pending_, and leave
+      // the drone with a missing block and no further retry.
+      m_cf->unregisterLogBlock(m_id);
+      throw;
     }
   }
 
