@@ -68,6 +68,7 @@ class Watch(Node):
                                  m.pose.position.z])),
                     self.cmd_t.__setitem__(n, time.monotonic())), 10)
         self.t0 = time.monotonic()
+        self.streaming = None        # is the show commanding anyone?
         self.create_timer(0.25, self._tick)
 
     def _poses(self, msg):
@@ -105,6 +106,18 @@ class Watch(Node):
                                    f'(show lands at {c.self_stale_land_s:.1f})')
             elif gap > c.self_stale_s:
                 self._say('stale', f'{name}: no mocap for {gap:.2f} s')
+
+        # Is the show actually flying? Without this a dropout cannot be told
+        # apart from "nothing was running", which is exactly the question the
+        # 2026-10-07 DJI dropout left open: a 10.2 s VIP loss that should have
+        # landed the fleet, with no way to know whether the show was up.
+        live_cmd = sorted(n for n in self.fleet
+                          if now - self.cmd_t.get(n, 0.0) <= 0.5)
+        if bool(live_cmd) != bool(self.streaming):
+            self.streaming = live_cmd
+            self._say('show ', (f'STREAMING to {", ".join(live_cmd)}'
+                                if live_cmd else 'stopped streaming'))
+        self.streaming = live_cmd
 
         trip = c.arena_radius + c.contain_margin
         for n in flying:

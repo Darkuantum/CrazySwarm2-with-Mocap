@@ -220,8 +220,29 @@ class EscortConfig:
     #: phase -- and the next engagement starts from wherever it already is.
     hold_phase_on_clear: bool = True
 
-    alert_radius: float = 1.88     # m, adversary-to-VIP distance that engages
-    release_radius: float = 2.0    # m, and the larger one that disengages
+    #: 2.10 / 2.22, raised from 1.88 / 2.00 on 2026-10-07 after the attacker
+    #: punched through to the DJI on a live run.
+    #:
+    #: The lever is TIME, not geometry. The ring has to translate after a
+    #: hand-flown DJI and rotate a defender onto the threat bearing at the
+    #: same time, and engaging later leaves it too little of the second.
+    #: Measured against a DJI drifting at 0.20 m/s, closest the attacker got
+    #: to it: 0.98 m at alert 1.88 (inside the ring -- through), 1.74 m at
+    #: 2.00, 1.82 m at 2.10. A STATIC DJI holds it at 1.68 m either way,
+    #: which is why this never showed up in sim until the VIP was moved.
+    #:
+    #: Things that measured as NOT the answer, so they are not tried again:
+    #: closing the wall tighter (46 to 58 deg -- identical 1.68/1.69 m, and
+    #: engagement drops), spreading the ring out instead (0.98 m, worse), and
+    #: turning the ring faster (0.55 -> 0.80 rad/s made it WORSE at 0.80 m,
+    #: apparently by overshooting the bearing).
+    #:
+    #: 2.10 and not higher: it must stay below ReactiveAdversary.stand_off
+    #: (2.30 m) or the attacker is engaged while still parked at its station
+    #: and the demo never shows a clear->blocking transition at all. At 2.10
+    #: the ring is engaged 58% of the run; at 2.25 it is 79% for 0.04 m.
+    alert_radius: float = 2.10     # m, adversary-to-VIP distance that engages
+    release_radius: float = 2.22   # m, and the larger one that disengages
 
     # -- speed / acceleration ---------------------------------------------
     v_max: float = 0.6             # m/s, hard cap on a defender setpoint
