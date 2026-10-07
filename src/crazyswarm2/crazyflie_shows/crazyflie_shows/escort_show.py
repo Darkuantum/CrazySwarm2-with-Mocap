@@ -781,6 +781,12 @@ def main():
             # encounter while a gate is open, it just has to stay airborne.
             if acf is not None and streaming:
                 _stream(acf, adv_guard.sp, np.zeros(3))
+            # A gate can be open for as long as a human takes, which is
+            # exactly when nobody is watching the drones.
+            if streaming:
+                act_h, msg_h = containment(now_h, dt_h)
+                if act_h == 'land':
+                    raise ShowAborted(f'CONTAINMENT: {msg_h}')
             timeHelper.sleepForRate(cfg.rate_hz)
 
         # last_good must START valid: if the VIP is already outside on the very
@@ -789,11 +795,39 @@ def main():
         # safe fallback -- it is where the ring was planned to sit.
         _home = np.asarray([*escort.vip_home(cfg)[:2], cfg.height], float)
         fence = {'on': True, 'centre': _home.copy(), 'last_good': _home.copy(),
-                 'was_airborne': cfg.vip_airborne}
+                 'was_airborne': cfg.vip_airborne, 'show_height': cfg.height}
         leg_i = 0
         leg_done = {'v': False}      # announced completion of the current leg?
         stood_said = {'v': False}    # announced the attacker giving up?
         stage_cued = {'v': None}     # which stage the lights currently show
+
+        # ---- containment, every drone --------------------------------------
+        # The VIP had a geofence and a staleness watchdog; the Crazyflies had
+        # neither, and self_stale_s was dead config. A drone that lost tracking
+        # was commanded from a model that could not see it while its own
+        # estimator drifted -- the 2026-10-07 fly-away. This watches each
+        # flying drone's ACTUAL pose, because clamping a setpoint proves
+        # nothing about the aircraft.
+        _watch = {n: {} for n in defenders + ([adv_drone] if acf else [])}
+        last_contain = [0.0]         # throttles the 'holding' line
+
+        def containment(now_c, dt_c):
+            """Worst verdict over all flying drones: (action, message)."""
+            worst, msg = 'ok', None
+            pairs = [(defenders[i], ctrl.guards[i].sp) for i in range(len(dcfs))]
+            if acf is not None:
+                pairs.append((adv_drone, adv_guard.sp))
+            for name, sp_c in pairs:
+                if name not in poses.stamp:
+                    continue        # never tracked: sim, or reported elsewhere
+                act, why = escort.contain_check(
+                    cfg, poses.pos.get(name), poses.age(name, now_c),
+                    sp_c, dt_c, _watch[name])
+                if act == 'land':
+                    return 'land', f'{name}: {why}'
+                if act == 'hold' and worst == 'ok':
+                    worst, msg = 'hold', f'{name}: {why}'
+            return worst, msg
         # Where the adversary's CURRENT leg is measured from.
         #
         # AdversaryScript resolves a leg against the VIP's position RIGHT NOW,
@@ -898,6 +932,21 @@ def main():
                 break
             step = max(now - last, 1e-3)
             last = now
+
+            # Containment BEFORE anything is computed from these poses.
+            act_c, msg_c = containment(now, step)
+            if act_c == 'land':
+                raise RuntimeError(f'CONTAINMENT: {msg_c}')
+            if act_c == 'hold':
+                if now - last_contain[0] > 2.0:
+                    last_contain[0] = now
+                    print(f'  [t+{t:5.1f}s] holding -- {msg_c}', flush=True)
+                for cf, g in zip(dcfs, ctrl.guards):
+                    _stream(cf, g.sp, np.zeros(3))
+                if acf is not None:
+                    _stream(acf, adv_guard.sp, np.zeros(3))
+                timeHelper.sleepForRate(cfg.rate_hz)
+                continue
 
             p_vip = vip_now(now)
             if p_vip is None:
@@ -1006,6 +1055,20 @@ def main():
                     fence['on'] = False
                     fence['centre'] = np.asarray(fence['last_good'], float).copy()
                     fence['was_airborne'] = cfg.vip_airborne
+                    # Hold the altitude the ring is AT, not cfg.height.
+                    #
+                    # vip_airborne=False makes ring_height() return cfg.height,
+                    # which is the FLOOR-VIP show altitude (1.20 m) and has
+                    # nothing to do with where the ring currently is. With the
+                    # ring riding vip_height_offset above a DJI at 1.3-1.5 m it
+                    # sits at 1.6-1.8 m, so tripping the fence DROPPED it to
+                    # 1.20 m -- level with or BELOW the DJI, which is the one
+                    # geometry this file calls unsurvivable, and it happened
+                    # exactly when the DJI was already misbehaving. Reported
+                    # from a live run, 2026-10-07: "the drones just drop to the
+                    # DJI level during the attack phase".
+                    fence['show_height'] = cfg.height
+                    cfg.height = escort.ring_height(cfg, p_vip)
                     cfg.vip_airborne = False          # hold altitude too
                     print(f'\n  [t+{t:5.1f}s] GEOFENCE: the VIP is {stray:.2f} m '
                           f'out, past {keep_in:.2f} m -- the ring STOPS following '
@@ -1020,11 +1083,21 @@ def main():
                 if in_arena and in_ring:
                     fence['on'] = True
                     cfg.vip_airborne = fence['was_airborne']
+                    cfg.height = fence['show_height']
                     fence['last_good'] = np.asarray(p_vip, float).copy()
                     print(f'\n  [t+{t:5.1f}s] GEOFENCE cleared: the VIP is back '
                           'inside the arena and inside the ring -- following '
                           'again', flush=True)
             # what the ring is actually centred on
+            #
+            # NOT slewed, and that is a measured decision. Switching this point
+            # on a fence transition looked like the cause of a separation dip
+            # to 0.67 m; gliding it at 0.60 m/s changed the measurement to
+            # 0.68 m, i.e. not at all. The dip tracks VIP MOTION, not fence
+            # transitions -- it is the same walking-case compression
+            # plan_escort already refuses to clear (0.81 m defender-defender
+            # at a 0.30 m/s walk). Do not re-add a slew here expecting it to
+            # help separations; fix the walking case instead.
             p_track = p_vip if fence['on'] else fence['centre']
 
             live = [_live(poses, n, cf, now) for n, cf in zip(defenders, dcfs)]

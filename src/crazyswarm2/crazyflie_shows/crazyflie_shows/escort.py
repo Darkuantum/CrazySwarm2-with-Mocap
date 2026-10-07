@@ -294,7 +294,26 @@ class EscortConfig:
     #: by 45 deg sector the first sustained dropout sits at 2.15 m (270-315),
     #: 2.25 m (0-45), 2.31 m (225-270) and never in 180-225, which held to
     #: 2.46 m. 2.1 is the worst sector, so it is the one that binds.
-    arena_radius: float = 2.0      # m, from room centre (crazyflie_shows.safety)
+    #: ARENA_RADIUS_PLAN (1.90 m), not the tested edge.
+    #:
+    #: This clamps every commanded setpoint, and it used to sit at
+    #: ARENA_RADIUS_TESTED (2.00 m) -- the radius a drone was FLOWN to
+    #: cleanly, with no margin at all, while the ceiling in this same config
+    #: already kept the 0.10 m tracking margin. The radius should keep it too:
+    #: a setpoint is commanded, the aircraft follows it with error, and
+    #: tracking was actually lost at 2.24 m.
+    #:
+    #: It costs almost nothing, because the clamp was never the binding
+    #: constraint. Measured (plan_escort, 2026-10-07) the geometry only ever
+    #: reaches 1.60 m for a defender and 1.84 m for the attacker, and the
+    #: encounter is unchanged: held at 1.68 m vs 1.67, separations 0.78 vs
+    #: 0.79, engaged 39% vs 40%. The whole price is 0.10 m of the DJI pilot
+    #: box (vip_keep_in = arena - ring, so 0.90 m instead of 1.00).
+    #:
+    #: What it buys: containment now trips at arena + contain_margin = 2.15 m,
+    #: which is INSIDE the 2.24 m where tracking was lost. The show reacts
+    #: while it can still see the drone, instead of after.
+    arena_radius: float = safety.ARENA_RADIUS_PLAN   # 1.90 m from room centre
     #: 1.85 m, not 2.0: this clamps ring_height, and the ring reaches 1.60 m
     #: from the arena centre where safety.CEILING_TESTED is 1.95 m. 2.0 would
     #: let a high-hovering DJI drag the ring above altitude anyone has proven
@@ -360,7 +379,32 @@ class EscortConfig:
     # -- staleness (mocap dropout) ----------------------------------------
     vip_stale_hold_s: float = 0.4  # no VIP pose this long -> stop moving
     vip_stale_land_s: float = 2.0  # ...this long -> land, uninvited
-    self_stale_s: float = 0.3      # no pose for a defender -> hold its setpoint
+    #: Per-drone mocap watchdog. Until 2026-10-07 self_stale_s was DEAD
+    #: CONFIG -- defined, documented as "hold its setpoint", read nowhere --
+    #: so the only drone with any mocap protection was the VIP. A Crazyflie
+    #: that lost tracking kept being commanded from a model that could not
+    #: see it, while its own estimator drifted; that is how the attacker flew
+    #: away on 2026-10-07.
+    self_stale_s: float = 0.3      # no pose for a drone -> hold its setpoint
+    self_stale_land_s: float = 1.0  # ...this long -> land, uninvited
+
+    #: CONTAINMENT, checked against each drone's ACTUAL pose rather than the
+    #: setpoint. Clamping a setpoint proves nothing about the aircraft: the
+    #: commanded point stayed inside the arena for the whole fly-away.
+    #:
+    #: contain_margin is how far past arena_radius a real drone may be before
+    #: the show lands everything. 0.25 m puts the trip at 2.25 m, which is
+    #: essentially safety.ARENA_RADIUS_LOST (2.24 m) -- past there tracking is
+    #: gone anyway, so there is nothing to be gained by waiting.
+    contain_margin: float = 0.25   # m beyond arena_radius
+
+    #: A drone that is NOT FOLLOWING is the earliest symptom there is, and it
+    #: shows up while the drone is still inside the room -- before staleness,
+    #: before containment. Both must hold for track_error_s so a single bad
+    #: frame or a hard slew cannot trip it.
+    track_error_m: float = 0.60    # m, actual vs commanded
+    track_error_s: float = 0.80    # s it must persist
+
 
 
 def vip_home(cfg):
@@ -425,6 +469,41 @@ def ring_height(cfg, p_vip):
         return cfg.height
     z = float(np.asarray(p_vip, float)[2]) + cfg.vip_height_offset
     return float(np.clip(z, cfg.floor, cfg.ceiling))
+
+
+def contain_check(cfg, p_live, age, sp, dt, state):
+    """One drone's containment verdict: ``(action, reason)``.
+
+    ``action`` is ``'ok'``, ``'hold'`` or ``'land'``; ``reason`` is None when
+    ok. ``state`` is a per-drone dict the caller keeps between calls (timers).
+
+    Pure: no ROS, no drones. The order is deliberate -- staleness first,
+    because a stale pose makes the other two meaningless, and there is no
+    point reporting "outside the arena" from a reading that is a second old.
+    """
+    bad = float(age) > cfg.self_stale_land_s
+    if bad:
+        return 'land', f'no mocap for {age:.1f} s'
+    if float(age) > cfg.self_stale_s:
+        state['drift'] = 0.0          # cannot judge tracking without a pose
+        return 'hold', f'no mocap for {age:.1f} s'
+
+    p = np.asarray(p_live, float)
+    r = float(np.linalg.norm(p[:2] - np.array(cfg.room_center)))
+    if r > cfg.arena_radius + cfg.contain_margin:
+        return 'land', (f'{r:.2f} m from room centre, outside the '
+                        f'{cfg.arena_radius + cfg.contain_margin:.2f} m '
+                        'containment')
+    if sp is not None:
+        err = float(np.linalg.norm(p[:2] - np.asarray(sp, float)[:2]))
+        if err > cfg.track_error_m:
+            state['drift'] = state.get('drift', 0.0) + float(dt)
+            if state['drift'] >= cfg.track_error_s:
+                return 'land', (f'{err:.2f} m from where it was commanded for '
+                                f'{state["drift"]:.1f} s -- not following')
+        else:
+            state['drift'] = 0.0
+    return 'ok', None
 
 
 def vip_keep_in(cfg):
