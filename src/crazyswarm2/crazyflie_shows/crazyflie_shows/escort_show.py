@@ -1074,6 +1074,14 @@ def main():
                           f'out, past {keep_in:.2f} m -- the ring STOPS following '
                           'and holds. Fly it back INTO the ring to resume.',
                           flush=True)
+                    # Amber the defenders: the fence is the same condition the
+                    # DJI legs use that colour for -- the show is parked and
+                    # waiting on a human. Without it the ring looks like it is
+                    # escorting normally while it is in fact holding a point
+                    # the DJI has left, which is the one state an operator most
+                    # needs to see from the floor. Cued on the TRANSITION only.
+                    if lights_on:
+                        cue(allcfs, dcfs, [LED_STAGE_WAIT] * len(dcfs))
                 else:
                     fence['last_good'] = np.asarray(p_vip, float).copy()
             else:
@@ -1088,6 +1096,18 @@ def main():
                     print(f'\n  [t+{t:5.1f}s] GEOFENCE cleared: the VIP is back '
                           'inside the arena and inside the ring -- following '
                           'again', flush=True)
+                    # Back to role colours. The engaged-transition cue only
+                    # fires when engagement CHANGES, so without this the ring
+                    # would stay amber until the next block or release.
+                    # ctrl.engaged / ctrl.lead, NOT info[...]: the geofence
+                    # block runs BEFORE ctrl.step in this loop, so `info` here
+                    # is the previous iteration's and does not exist on the
+                    # first pass. The controller's own attributes always do.
+                    if lights_on:
+                        cue(allcfs, dcfs,
+                            [LED_BLOCKING if ctrl.slot_of(i) == ctrl.lead
+                             else LED_WING for i in range(len(dcfs))]
+                            if ctrl.engaged else [LED_DEFENDER] * len(dcfs))
             # what the ring is actually centred on
             #
             # NOT slewed, and that is a measured decision. Switching this point
