@@ -139,6 +139,7 @@ it does not, so re-run it after changing either radius.
 
 import select
 import sys
+import time
 
 import numpy as np
 import rclpy
@@ -319,6 +320,47 @@ def _cfg_from_params(node):
 #: gate to get past it. ``operator_said`` has always treated ANY non-'q' line
 #: as "continue", so the hint now says so instead of leaving people guessing.
 CONTINUE_HINT = '[Enter] (or any text) continue   [q] land'
+
+
+def _clock(when=None):
+    """Local wall-clock HH:MM:SS, for matching a log line against a video.
+
+    Show-relative ``t+`` is the right axis for reasoning about the run and the
+    wrong one for reviewing it: after the 2026-10-07 flight the defenders'
+    colour changes could not be matched to geofence events, because the only
+    timestamps printed were relative to a t0 nobody had recorded. Anything an
+    operator may need to find again in a recording carries both.
+    """
+    return time.strftime('%H:%M:%S', time.localtime(when))
+
+
+def _fence_report(fence):
+    """Every geofence episode, with wall clock, as a table to lay on a video.
+
+    Printed on every exit path that had a fence dict, including aborts -- a
+    run that ended badly is the one whose timeline matters most.
+    """
+    holds = list(fence.get('holds', ()))
+    if fence.get('since') and not fence.get('on'):
+        # Still held when the show ended: report it as an open episode rather
+        # than dropping it, which is what the first version of this did.
+        holds.append((fence.get('since_t', 0.0), fence['since'],
+                      time.time() - fence['since']))
+        open_last = True
+    else:
+        open_last = False
+    if not holds:
+        print('  geofence: never tripped -- the VIP stayed inside keep-in\n',
+              flush=True)
+        return
+    print(f'\n  GEOFENCE EPISODES ({len(holds)})')
+    print('    #   show time   wall clock   held')
+    for i, (t_show, wall, held) in enumerate(holds, 1):
+        tail = '  (still held at exit)' if open_last and i == len(holds) else ''
+        print(f'    {i:<3} t+{t_show:6.1f}s   {_clock(wall)}     '
+              f'{held:5.1f} s{tail}')
+    print('    the defenders were CYAN for exactly these windows\n',
+          flush=True)
 
 #: When a paced leg counts as FINISHED, so the operator is told rather than
 #: having to guess from a picture that stops moving. Both must hold: the
@@ -626,6 +668,10 @@ def main():
     # ------------------------------------------------------------------ fly
     armed = False
     streaming = False
+    # Declared out here so the abort handlers can still print the fence
+    # timeline: the real initialisation is inside the try, and an abort before
+    # it would otherwise raise NameError inside an except clause.
+    fence = {'on': True, 'holds': []}
     try:
         take_signals()
         # BEFORE the arm loop below: in paced mode operator_gate() sits inside
@@ -760,8 +806,10 @@ def main():
                                 script.duration if adv_mode == 'scripted' else 120.0))
         adv_guard = escort.SetpointGuard(cfg, script.target(0.0, p_vip)) \
             if acf is not None else None
+        # The wall clock goes in the banner so every later "t+" in this run
+        # can be converted to a video timecode without guessing t0.
         print(f'  ESCORT LIVE - {duration:.0f} s, streaming at '
-              f'{cfg.rate_hz:g} Hz\n')
+              f'{cfg.rate_hz:g} Hz   t0 = {_clock()}\n')
         streaming = True
         was_engaged = None
         last_clamp = ''
@@ -817,8 +865,16 @@ def main():
         # there is a crash at the worst possible moment. The VIP home is the
         # safe fallback -- it is where the ring was planned to sit.
         _home = np.asarray([*escort.vip_home(cfg)[:2], cfg.height], float)
+        # 'holds' is the episode log: one (t_show, wallclock, duration) per
+        # trip, printed as a table when the show ends. The LED cue tells an
+        # operator the fence is ON right now; it cannot tell them WHEN, and
+        # after the 2026-10-07 run the colour changes could not be matched to
+        # fence events at all -- there was no timestamp to match them to.
+        # Every fence line therefore carries wall-clock as well as show time,
+        # because the thing being matched against is a video recording.
         fence = {'on': True, 'centre': _home.copy(), 'last_good': _home.copy(),
-                 'was_airborne': cfg.vip_airborne, 'show_height': cfg.height}
+                 'was_airborne': cfg.vip_airborne, 'show_height': cfg.height,
+                 'since': None, 'since_t': 0.0, 'holds': []}
         leg_i = 0
         leg_done = {'v': False}      # announced completion of the current leg?
         stood_said = {'v': False}    # announced the attacker giving up?
@@ -1093,10 +1149,13 @@ def main():
                     fence['show_height'] = cfg.height
                     cfg.height = escort.ring_height(cfg, p_vip)
                     cfg.vip_airborne = False          # hold altitude too
-                    print(f'\n  [t+{t:5.1f}s] GEOFENCE: the VIP is {stray:.2f} m '
+                    fence['since'] = time.time()
+                    fence['since_t'] = t
+                    print(f'\n  [t+{t:5.1f}s {_clock()}] GEOFENCE HOLD #'
+                          f'{len(fence["holds"]) + 1}: the VIP is {stray:.2f} m '
                           f'out, past {keep_in:.2f} m -- the ring STOPS following '
-                          'and holds. Fly it back INTO the ring to resume.',
-                          flush=True)
+                          'and holds, defenders go CYAN. Fly it back INTO the '
+                          'ring to resume.', flush=True)
                     # Cue the defenders to LED_FENCE: without it the ring
                     # looks like it is escorting normally while it is in fact
                     # holding a point the DJI has left, which is the one state
@@ -1117,9 +1176,13 @@ def main():
                     cfg.vip_airborne = fence['was_airborne']
                     cfg.height = fence['show_height']
                     fence['last_good'] = np.asarray(p_vip, float).copy()
-                    print(f'\n  [t+{t:5.1f}s] GEOFENCE cleared: the VIP is back '
-                          'inside the arena and inside the ring -- following '
-                          'again', flush=True)
+                    held = (time.time() - fence['since']
+                            if fence['since'] else 0.0)
+                    fence['holds'].append((fence['since_t'], fence['since'],
+                                           held))
+                    print(f'\n  [t+{t:5.1f}s {_clock()}] GEOFENCE CLEARED after '
+                          f'{held:.1f} s: the VIP is back inside the arena and '
+                          'inside the ring -- following again', flush=True)
                     # Back to role colours. The engaged-transition cue only
                     # fires when engagement CHANGES, so without this the ring
                     # would stay amber until the next block or release.
@@ -1338,7 +1401,8 @@ def main():
         for cf in flying:
             cf.arm(False)
         armed = False
-        print('\n  defenders landed and disarmed -- done\n')
+        print('\n  defenders landed and disarmed -- done')
+        _fence_report(fence)
         return 0
 
     except ShowAborted as e:
@@ -1355,11 +1419,13 @@ def main():
                   '  (paced mode reads a LINE from stdin -- run it from a '
                   'terminal, or use the console\'s stdin box; stdin closed or '
                   '/dev/null counts as "land now".)\n', flush=True)
+        _fence_report(fence)
         return 130
     except BaseException as e:                        # noqa: BLE001
         if armed:
             _stop_stream(dcfs, acf, streaming)
             abort_land(allcfs, cfs, timeHelper, LAND_HEIGHT, repr(e))
+        _fence_report(fence)
         raise
 
 

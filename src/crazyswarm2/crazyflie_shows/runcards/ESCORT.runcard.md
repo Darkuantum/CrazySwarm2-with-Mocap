@@ -139,6 +139,36 @@ VIP speed       0.30 m/s worst case; --sweep clears the run only to 0.20 m/s
 Marks move whenever `ring_radius` or `vip_offset` does — **print them, do not
 copy them from here.**
 
+## Reviewing a run against the video
+
+Every line the show prints carries show time **and** wall clock, and the
+`ESCORT LIVE` banner prints `t0`, so `t+` converts to a timecode without
+guessing. On exit — including aborts — the show prints a table:
+
+```
+  GEOFENCE EPISODES (2)
+    #   show time   wall clock   held
+    1   t+  12.3s   14:32:07       6.4 s
+    2   t+  48.9s   14:32:44      10.2 s
+    the defenders were CYAN for exactly these windows
+```
+
+That is the table to lay against the recording. The LED tells the operator the
+fence is on *now*; this is what tells you *when*, afterwards — and matching the
+colour changes to fence events was impossible after the 2026-10-07 run because
+nothing printed an absolute time.
+
+For an independent check, run the monitor in a second terminal. It recomputes
+the same fence predicate from `/poses` alone and commands nothing, so its
+timeline can be diffed against the show's own claim:
+
+```bash
+python3 scripts/watch_escort.py --log ~/escort-$(date +%F-%H%M).jsonl
+```
+
+It prints a hold table of its own at exit, and the JSONL carries `wall` and
+`clock` on every entry.
+
 ## Abort
 
 | situation | do |

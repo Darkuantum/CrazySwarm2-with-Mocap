@@ -73,8 +73,8 @@ class Watch(Node):
                     self.cmd_t.__setitem__(n, time.monotonic())), 10)
         self.t0 = time.monotonic()
         self.streaming = None        # is the show commanding anyone?
-        self.fence = {'on': True, 'since': None, 'centre': None,
-                      'last_good': None, 'holds': []}
+        self.fence = {'on': True, 'since': None, 'wall': None,
+                      'centre': None, 'last_good': None, 'holds': []}
         self.create_timer(0.25, self._tick)
 
     def _poses(self, msg):
@@ -87,13 +87,21 @@ class Watch(Node):
             self.stamp[p.name] = now
 
     def _say(self, level, text):
+        # Wall clock on EVERY line, not just elapsed. The point of this
+        # monitor is to be laid against a video recording, and after the
+        # 2026-10-07 run the LED changes could not be matched to geofence
+        # events because nothing printed an absolute time.
         t = time.monotonic() - self.t0
-        line = f'  [{t:7.1f}s] {level}: {text}'
+        wall = time.time()
+        line = f'  [{t:7.1f}s {time.strftime("%H:%M:%S", time.localtime(wall))}] {level}: {text}'
         print(line, flush=True)
         self.alerts.append(line)
         if self.logf:
-            self.logf.write(json.dumps({'t': t, 'level': level,
-                                        'msg': text}) + '\n')
+            self.logf.write(json.dumps(
+                {'t': round(t, 3), 'wall': wall,
+                 'clock': time.strftime('%Y-%m-%dT%H:%M:%S',
+                                        time.localtime(wall)),
+                 'level': level, 'msg': text}) + '\n')
             self.logf.flush()
 
     def _tick(self):
@@ -214,6 +222,7 @@ class Watch(Node):
                 # not on where the DJI has got to.
                 f['centre'] = (f['last_good'] if f['last_good'] is not None
                                else p).copy()
+                f['wall'] = time.time()
                 self._say('FENCE', f'HOLD -- DJI {stray:.2f} m from centre, '
                                    f'past keep-in {keep_in:.2f}; ring should '
                                    'stop following and hold altitude')
@@ -226,7 +235,7 @@ class Watch(Node):
                 held = now - f['since']
                 f['on'] = True
                 f['last_good'] = p.copy()
-                f['holds'].append(held)
+                f['holds'].append((f['wall'], held))
                 self._say('FENCE', f'RESUME after {held:.1f} s -- DJI back '
                                    f'{stray:.2f} m from centre and inside the '
                                    'parked ring')
@@ -261,11 +270,15 @@ def main():
     print(f'  least clearance over DJI {"-" if g > 1e8 else f"{g:+.2f} m"}')
     print(f'  alerts: {len(w.alerts)}')
     h = w.fence['holds']
+    if not w.fence['on'] and w.fence.get('wall'):
+        h = h + [(w.fence['wall'], time.time() - w.fence['since'])]
     if h:
-        print(f'  fence holds: {len(h)} -- ' + ', '.join(f'{x:.1f}s' for x in h)
-              + f' (longest {max(h):.1f}s)')
-    elif not w.fence['on']:
-        print('  fence holds: 1, STILL HELD at exit')
+        print(f'  fence holds: {len(h)}')
+        for i, (wall, held) in enumerate(h, 1):
+            clock = time.strftime('%H:%M:%S', time.localtime(wall))
+            tail = ('  (still held at exit)'
+                    if not w.fence['on'] and i == len(h) else '')
+            print(f'    {i:<3} {clock}   held {held:5.1f} s{tail}')
     else:
         print('  fence holds: none -- the DJI stayed inside keep-in')
     if logf:
