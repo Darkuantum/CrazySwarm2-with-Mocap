@@ -38,6 +38,9 @@ from crazyflie_shows import escort, safety
 
 YAML = 'src/crazyswarm2/crazyflie/config/crazyflies.yaml'
 VIP_BODY = 'operator'
+#: Only call a drone "below the DJI" when it is within this horizontal
+#: distance of it. Outside that the altitude difference is irrelevant.
+DOWNWASH_RXY = 0.80
 
 
 def enabled_fleet(path):
@@ -51,6 +54,7 @@ class Watch(Node):
         self.cfg, self.fleet, self.logf = cfg, fleet, logf
         self.pos, self.stamp = {}, {}
         self.cmd = {}
+        self.cmd_t = {}          # when each command last arrived
         self.alerts = deque(maxlen=400)
         self.worst = {'gap': 0.0, 'radius': 0.0, 'track': 0.0,
                       'sep': 9e9, 'ringgap': 9e9}
@@ -59,9 +63,10 @@ class Watch(Node):
         for n in fleet:
             self.create_subscription(
                 FullState, f'/{n}/cmd_full_state',
-                lambda m, n=n: self.cmd.__setitem__(
+                lambda m, n=n: (self.cmd.__setitem__(
                     n, np.array([m.pose.position.x, m.pose.position.y,
-                                 m.pose.position.z])), 10)
+                                 m.pose.position.z])),
+                    self.cmd_t.__setitem__(n, time.monotonic())), 10)
         self.t0 = time.monotonic()
         self.create_timer(0.25, self._tick)
 
@@ -115,7 +120,15 @@ class Watch(Node):
             elif r > c.arena_radius:
                 self._say('edge ', f'{n}: {r:.2f} m from centre, past the '
                                    f'{c.arena_radius:.2f} m clamp')
+            # Only against a LIVE command. The show stops streaming when it
+            # lands, and comparing a landed drone against the last setpoint it
+            # ever got produces a large CONSTANT error that looks exactly like
+            # a drone failing to follow orders. Measured 2026-10-07: a 1.21 m
+            # "tracking error" that ran for 180 s straight through a stack
+            # shutdown, and which I reported as a real flight problem.
             sp = self.cmd.get(n)
+            if sp is not None and now - self.cmd_t.get(n, 0.0) > 0.5:
+                sp = None
             if sp is not None:
                 err = float(np.linalg.norm(p[:2] - sp[:2]))
                 self.worst['track'] = max(self.worst['track'], err)
@@ -135,11 +148,21 @@ class Watch(Node):
             vz = float(self.pos[VIP_BODY][2])
             if vz > 0.25:                      # only once the DJI is actually up
                 for n in flying:
+                    # Horizontal distance matters: a drone 6 cm lower than the
+                    # DJI but 1.8 m away from it is in nobody's downwash, and
+                    # flagging that produced a 28 s "BELOW" episode for a run
+                    # that was visibly fine. Only complain when it is actually
+                    # underneath.
+                    dxy = float(np.linalg.norm(self.pos[n][:2]
+                                               - self.pos[VIP_BODY][:2]))
                     dz = float(self.pos[n][2]) - vz
+                    if dxy > DOWNWASH_RXY:
+                        continue
                     self.worst['ringgap'] = min(self.worst['ringgap'], dz)
                     if dz < 0.05:
-                        self._say('BELOW', f'{n} is {abs(dz):.2f} m BELOW the '
-                                           'DJI -- downwash geometry')
+                        self._say('BELOW', f'{n} is {abs(dz):.2f} m below the '
+                                           f'DJI and {dxy:.2f} m from it '
+                                           '-- downwash geometry')
                 stray = float(np.linalg.norm(self.pos[VIP_BODY][:2] - C))
                 if stray > escort.vip_keep_in(c):
                     self._say('fence', f'DJI {stray:.2f} m from centre, past '
