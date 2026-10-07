@@ -11,25 +11,25 @@ robots:
     # more Crazyflies can not be found", so NOTHING comes up (2026-10-02).
     # This rig has one dongle, so the wildcard bought nothing.
     uri: radio://0/80/2M/E7E7E7E701
-    initial_position: [1.1241, -0.6677, 0.0]
+    initial_position: [0.862, -1.0007, 0.0]
     type: cf21  # see robot_types
 
   cf2:
     enabled: true
     uri: radio://0/80/2M/E7E7E7E702
-    initial_position: [-1.4547, 0.1876, 0.0]
+    initial_position: [-1.1652, -1.0852, 0.0]
     type: cf21  # see robot_types
 
   cf3:
     enabled: true
     uri: radio://0/80/2M/E7E7E7E703
-    initial_position: [1.1638, 1.0895, 0.0]
+    initial_position: [-1.0643, 1.029, 0.0]
     type: cf21  # see robot_types
 
   cf5:
     enabled: true
     uri: radio://0/80/2M/E7E7E7E705
-    initial_position: [-0.3546, 0.1747, 0.0]
+    initial_position: [-0.105, -0.0076, 0.0]
     type: cf21  # see robot_types
 
   cf8:
@@ -55,7 +55,7 @@ robots:
     # claimed 0.89 m and "every planner will refuse"; both were wrong, and a
     # comment that tells the operator a passing check is failing trains them
     # to distrust the file that IS ground truth.)
-    initial_position: [-1.1371, 1.0309, 0.0]
+    initial_position: [0.8817, 0.9189, 0.0]
     type: cf21  # see robot_types
 
 robot_types:
