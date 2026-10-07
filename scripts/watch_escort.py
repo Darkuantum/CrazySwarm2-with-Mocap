@@ -41,6 +41,10 @@ VIP_BODY = 'operator'
 #: Only call a drone "below the DJI" when it is within this horizontal
 #: distance of it. Outside that the altitude difference is irrelevant.
 DOWNWASH_RXY = 0.80
+#: Must match escort_show.FENCE_HYST -- this file re-derives the fence
+#: timeline independently, so a different hysteresis would report trips the
+#: show did not take.
+FENCE_HYST = 0.25
 
 
 def enabled_fleet(path):
@@ -69,6 +73,8 @@ class Watch(Node):
                     self.cmd_t.__setitem__(n, time.monotonic())), 10)
         self.t0 = time.monotonic()
         self.streaming = None        # is the show commanding anyone?
+        self.fence = {'on': True, 'since': None, 'centre': None,
+                      'last_good': None, 'holds': []}
         self.create_timer(0.25, self._tick)
 
     def _poses(self, msg):
@@ -176,10 +182,54 @@ class Watch(Node):
                         self._say('BELOW', f'{n} is {abs(dz):.2f} m below the '
                                            f'DJI and {dxy:.2f} m from it '
                                            '-- downwash geometry')
-                stray = float(np.linalg.norm(self.pos[VIP_BODY][:2] - C))
-                if stray > escort.vip_keep_in(c):
-                    self._say('fence', f'DJI {stray:.2f} m from centre, past '
-                                       f'keep-in {escort.vip_keep_in(c):.2f}')
+                self._fence(now, C)
+
+    def _fence(self, now, C):
+        """An INDEPENDENT fence timeline, computed from mocap alone.
+
+        The show prints its own GEOFENCE lines, but those are the show's
+        claim about itself; this is the same predicate evaluated from /poses
+        by a process that commands nothing, so the two can be diffed. It
+        exists because of a question a live run could not answer
+        (2026-10-07): the defenders changed colour several times and nobody
+        could say which of those were fence trips. Transitions only, with
+        durations -- the previous version re-reported the same stray four
+        times a second for as long as the DJI was out.
+
+        Mirrors escort_show's predicate deliberately, including its
+        asymmetry: it trips on stray > keep_in, and clears only once the DJI
+        is back inside keep_in - FENCE_HYST *and* within ring_radius of the
+        point the ring parked on. Drift here from escort_show is a bug in
+        this file; keep them together.
+        """
+        c, f = self.cfg, self.fence
+        keep_in = escort.vip_keep_in(c)
+        p = self.pos[VIP_BODY]
+        stray = float(np.linalg.norm(p[:2] - C))
+        if f['on']:
+            if stray > keep_in:
+                f['on'] = False
+                f['since'] = now
+                # The ring parks on the last position it was still following,
+                # not on where the DJI has got to.
+                f['centre'] = (f['last_good'] if f['last_good'] is not None
+                               else p).copy()
+                self._say('FENCE', f'HOLD -- DJI {stray:.2f} m from centre, '
+                                   f'past keep-in {keep_in:.2f}; ring should '
+                                   'stop following and hold altitude')
+            else:
+                f['last_good'] = p.copy()
+        else:
+            in_arena = stray <= keep_in - FENCE_HYST
+            in_ring = float(np.linalg.norm(p[:2] - f['centre'][:2])) <= c.ring_radius
+            if in_arena and in_ring:
+                held = now - f['since']
+                f['on'] = True
+                f['last_good'] = p.copy()
+                f['holds'].append(held)
+                self._say('FENCE', f'RESUME after {held:.1f} s -- DJI back '
+                                   f'{stray:.2f} m from centre and inside the '
+                                   'parked ring')
 
 
 def main():
@@ -210,6 +260,14 @@ def main():
     g = w.worst['ringgap']
     print(f'  least clearance over DJI {"-" if g > 1e8 else f"{g:+.2f} m"}')
     print(f'  alerts: {len(w.alerts)}')
+    h = w.fence['holds']
+    if h:
+        print(f'  fence holds: {len(h)} -- ' + ', '.join(f'{x:.1f}s' for x in h)
+              + f' (longest {max(h):.1f}s)')
+    elif not w.fence['on']:
+        print('  fence holds: 1, STILL HELD at exit')
+    else:
+        print('  fence holds: none -- the DJI stayed inside keep-in')
     if logf:
         logf.close()
     return 0

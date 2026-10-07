@@ -203,6 +203,29 @@ LED_ADV_STAGE = (LIGHT['amber'], LIGHT['red'], LIGHT['magenta'])
 #: "your move", which is exactly when an operator is least sure.
 LED_STAGE_WAIT = LIGHT['amber']
 
+#: The geofence hold has its OWN colour, and must keep one.
+#:
+#: It was amber, on the reasoning that a fence hold is also "parked, waiting
+#: on a human". That reasoning is wrong in practice and the flight proved it
+#: (2026-10-07): the operator saw the defenders go amber several times and
+#: could not tell which of those were fence trips, because the operator gates
+#: turn them amber too. A cue that cannot be told from another cue is not a
+#: cross-check, which is the entire reason the stage cues exist.
+#:
+#: Worse, a fence trip happens mid-ATTACK, when the adversary is red -- and
+#: amber is wrgb(r=0xFF, g=0x50), i.e. red with a little green, which this
+#: file already records as unreadable against red across a room. So the old
+#: cue turned all three defenders the colour of the attacker at the one
+#: moment the operator most needs to read roles.
+#:
+#: Cyan, despite cyan having failed as the BLOCKER cue against the resting
+#: ring's deep_blue. That failure was two colours on different drones at the
+#: same time; this cue goes on all three defenders at once and so never
+#: appears beside deep_blue -- and the adversary stays red throughout, as a
+#: fixed reference. Cyan is also the only entry in the palette with no red
+#: channel, so it cannot be confused with the attacker.
+LED_FENCE = LIGHT['cyan']
+
 TAKEOFF_HEIGHT = 0.6
 TAKEOFF_DURATION = 3.0
 LAND_HEIGHT = 0.04
@@ -1074,14 +1097,15 @@ def main():
                           f'out, past {keep_in:.2f} m -- the ring STOPS following '
                           'and holds. Fly it back INTO the ring to resume.',
                           flush=True)
-                    # Amber the defenders: the fence is the same condition the
-                    # DJI legs use that colour for -- the show is parked and
-                    # waiting on a human. Without it the ring looks like it is
-                    # escorting normally while it is in fact holding a point
-                    # the DJI has left, which is the one state an operator most
-                    # needs to see from the floor. Cued on the TRANSITION only.
+                    # Cue the defenders to LED_FENCE: without it the ring
+                    # looks like it is escorting normally while it is in fact
+                    # holding a point the DJI has left, which is the one state
+                    # an operator most needs to see from the floor. Cued on
+                    # the TRANSITION only. See LED_FENCE for why this is not
+                    # the amber the operator gates use -- sharing that colour
+                    # made the two indistinguishable in flight.
                     if lights_on:
-                        cue(allcfs, dcfs, [LED_STAGE_WAIT] * len(dcfs))
+                        cue(allcfs, dcfs, [LED_FENCE] * len(dcfs))
                 else:
                     fence['last_good'] = np.asarray(p_vip, float).copy()
             else:

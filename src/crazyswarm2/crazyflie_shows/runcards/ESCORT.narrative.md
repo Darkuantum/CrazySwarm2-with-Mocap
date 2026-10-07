@@ -101,9 +101,16 @@ demonstration that nothing is pre-planned.*
 | **white** | the defender currently blocking |
 | **violet** | the other two defenders, closed up beside the blocker |
 | **deep blue** | the resting ring, nothing to do |
+| **cyan** | all three defenders: the geofence has tripped, the ring is parked and waiting for the DJI to come back |
 
 A fleet that has gone uniformly amber means "your move" — the operator or the
 pilot owes it an action.
+
+Cyan is the one you most want to recognise, because it is the only cue that
+means the show has stopped doing what the script says. The defenders go cyan
+*together*, and the attacker keeps its own colour throughout — so "the ring
+turned cyan" is unambiguous. Fly the DJI back towards the middle of the arena
+and they resume on their own.
 
 ## If they ask
 

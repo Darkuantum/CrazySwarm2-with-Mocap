@@ -129,7 +129,10 @@ VIP mark        [+0.63, +0.26]   (room centre + 0.60 m on +x, toward the operato
 defender marks  [+1.13, +1.12]  [-0.37, +0.26]  [+1.13, -0.61]
 adversary mark  [-1.47, +0.26]
 arena           2.00 m around [+0.03, +0.26]; ring reaches 1.60 m
-geofence        VIP may stray 1.00 m from room centre, then the ring HOLDS
+geofence        VIP may stray 0.90 m from room centre (arena 1.90 - ring 1.00),
+                then the ring HOLDS and all three defenders go CYAN. It
+                resumes once the DJI is back within 0.65 m AND inside the
+                parked ring -- so fly it to the MIDDLE, not just back in.
 VIP speed       0.30 m/s worst case; --sweep clears the run only to 0.20 m/s
 ```
 
