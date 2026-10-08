@@ -400,7 +400,18 @@ class EscortConfig:
     #: Symmetric placement does not fit at all: with the VIP at the centre the
     #: adversary mark lands at ring + min_adv_sep + 0.3 = 2.10 m from room
     #: centre, outside the 2.00 m arena and in the weakest sector (2.15 m).
-    vip_offset: tuple = (0.60, 0.0)
+    #: ROTATED 2026-10-08 with the recalibrated world frame. This is a
+    #: DIRECTION ("0.60 m toward the operator"), not just a distance, so
+    #: carrying ARENA_CENTRE into the new frame was only half the job: the
+    #: offset had to turn with it. Left alone it pointed at +0.0 deg while the
+    #: operator and the DJI were measured at +86.5 deg -- the VIP mark ended up
+    #: 90 deg from the aircraft it describes, which is how role assignment
+    #: came to nominate the drone that was NOT furthest from the DJI.
+    #: Rotated it points at +91.6 deg, within 5 deg of the measured DJI
+    #: bearing, and that agreement is a check on the frame fit: the operator
+    #: did not move, so "toward the operator" must still point at them.
+    #: Any future frame change must rotate this AND AdversaryScript.legs.
+    vip_offset: tuple = (-0.017, 0.600)
 
     # -- loop / estimation -------------------------------------------------
     rate_hz: float = 20.0          # setpoint stream rate per drone
@@ -914,9 +925,21 @@ class AdversaryScript:
     #: without showing anything the first had not, and a demo you have to
     #: narrate twice is harder to narrate once. The remaining three are the
     #: whole story -- arrive, commit, be turned away.
-    legs: tuple = ((6.0, 145.0, 2.30),   # rise and sit off to one side
-                   (8.0, 145.0, 1.80),   # the probe = ring_radius + min_adv_sep
-                   (6.0, 145.0, 2.30))   # turned away, backs off past release
+    #: ROTATED 2026-10-08 with the world frame, from 145 deg. These bearings
+    #: are ABSOLUTE, so they are frame-dependent in exactly the way
+    #: vip_offset is, and the two are COUPLED -- the invariant is that the
+    #: adversary stands opposite the VIP offset, across the open floor, not
+    #: that the number is near 180 deg.
+    #:
+    #: MEASURED, and the reason this is not optional: with the offset rotated
+    #: and the bearing left at 145 deg, the 2.30 m stand-off lands 2.701 m
+    #: from the arena centre -- outside the 1.90 m clamp AND outside the
+    #: 2.24 m radius where a drone actually lost tracking. Rotating both puts
+    #: it back at 1.841 m, identical to what flew before, because the whole
+    #: encounter is then the same physical geometry turned with the frame.
+    legs: tuple = ((6.0, 236.59, 2.30),   # rise and sit off to one side
+                   (8.0, 236.59, 1.80),   # the probe = ring_radius + min_adv_sep
+                   (6.0, 236.59, 2.30))   # turned away, backs off past release
 
     #: One label per leg, for the operator-paced mode: what the NEXT press of
     #: Enter is about to make the adversary do. Kept beside the legs rather
@@ -1316,7 +1339,16 @@ class ReactiveAdversary:
     v_max: float = 0.80             # m/s
     #: Where it waits before committing and after standing down.
     stand_off: float = 2.30         # m from the VIP
-    bearing: float = 145.0          # deg, which side it enters from
+    #: ROTATED 2026-10-08 with the world frame, from 145 deg -- the THIRD
+    #: frame-dependent direction in this file, after cfg.vip_offset and
+    #: AdversaryScript.legs, and the one that is easy to miss because the
+    #: scripted and reactive adversaries carry separate copies of it.
+    #: plan_escort caught it: with the offset and the script rotated but this
+    #: left behind, the reactive attacker's waiting station sat 2.70 m from
+    #: room centre, outside both the 1.90 m arena and the 2.24 m radius where
+    #: tracking is actually lost, and the static case was REFUSED. Rotating it
+    #: returns the station to 1.84 m.
+    bearing: float = 236.59         # deg, which side it enters from
     #: Gradient weights. Only their RATIO matters -- the sum is saturated to
     #: v_max -- but the repulsion must win inside ``repel_range`` or the
     #: attacker drives through the ring and leans on the guard instead.
