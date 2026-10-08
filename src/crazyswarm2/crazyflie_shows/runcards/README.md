@@ -10,9 +10,13 @@ exist so a show can be flown by someone who is not going to read 25 KB first.
 | constellation | [CONSTELLATION.runcard.md](CONSTELLATION.runcard.md) | `../CONSTELLATION.md` | 76 s |
 | escort | [ESCORT.runcard.md](ESCORT.runcard.md) | `../ESCORT.md` | script length, or 120 s |
 
-The escort also has a presenter's script for guests:
+The escort also has two guest-facing documents:
 [ESCORT.narrative.md](ESCORT.narrative.md) — what to say at each stage, a
-light legend, the likely questions, and which claims to keep honest.
+light legend, and which claims to keep honest — and
+[ESCORT.qna.md](ESCORT.qna.md) for everything asked that the script does not
+cover: answers by audience, what to say when a run fails in front of someone,
+the honest list of limits, and a numbers card to read off instead of
+remembering.
 
 Every show follows the same spine, and skipping a step is how the known
 accidents happened:
