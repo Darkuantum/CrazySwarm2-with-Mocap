@@ -4,7 +4,7 @@ Activate the workspace in every terminal first:
 
 ```bash
 source /opt/ros/$ROS_DISTRO/setup.bash
-source ~/CrazySwarm2/install/setup.bash
+source ~/CrazySwarm2-with-Mocap/install/setup.bash
 ```
 
 > Config files referred to below as `config/<name>.yaml` live at
@@ -61,6 +61,11 @@ driver or bridge for this path.
 ### Fly
 
 ```bash
+# terminal 0 — go/no-go BEFORE the server. The server blocks silently and forever
+# on the first enabled drone that does not answer; this scan derives its address
+# list from crazyflies.yaml and prints GO or NO-GO per drone.
+./scripts/scan_fleet.sh
+
 # terminal 1 — start the Crazyflie server (also starts mocap tracking, RViz,
 # the preflight GUI and the Foxglove bridge — all on by default)
 ros2 launch crazyflie launch.py
@@ -130,7 +135,7 @@ cause on this rig). See [TROUBLESHOOTING](TROUBLESHOOTING.md#mocap-pipeline).
 > **Alternative (open NatNet driver).** If you stream via the open-source
 > `natnet_ros2` driver instead of the closed-source direct client, start it and
 > the bridge separately: `ros2 launch natnet_ros2 natnet_ros2.launch.py` then
-> `python3 ~/CrazySwarm2/pose_bridge.py` (republishes per-body poses to `/poses`
+> `python3 ~/CrazySwarm2-with-Mocap/pose_bridge.py` (republishes per-body poses to `/poses`
 > at 50 Hz). The flight steps above are otherwise identical.
 
 ### Multi-drone trajectory demos
@@ -168,10 +173,8 @@ ros2 run crazyflie_examples multi_trajectory_formation --ros-args -p use_sim_tim
      the same xy offset (`WAYPOINT_OFFSETS` = (0.6, 0), (−0.6, 0.5),
      (0, −0.6), then back to (0, 0)) is applied to **every** drone's own
      start hover position, so the group translates rigidly and the
-     separation stays exactly the start spacing (1.36 m with the current
-     yaml) on all four legs. Legs are distance-scaled
-     (`max(2.0, leg / 0.5)` s → 2.0/2.6/2.5/2.0 s); max excursion ~2.14 m
-     from `ROOM_CENTER`, inside the ~2.24 m orbit clearance.
+     separation stays exactly the start spacing on all four legs. Legs are
+     distance-scaled (`max(2.0, leg / 0.5)` s).
   2. **Gather** onto a regular **n-gon** (a pentagon with the 5-drone fleet)
      of radius 0.8 m around the swarm center. The n-gon's phase offset is
      auto-optimized before takeoff (1° sweep plus min-distance slot
@@ -184,15 +187,13 @@ ros2 run crazyflie_examples multi_trajectory_formation --ros-args -p use_sim_tim
      stepped `goTo`s.
   4. **Morph** onto a **triangle + tail-pair** formation (5 slots: apex, two
      rear corners, two tail drones; min-distance assignment, no crossings).
-  5. **Orbit**: the whole formation translates rigidly onto a **1.2 m-radius
-     circle around the room center** `ROOM_CENTER` **(0.0467, −0.1037)** and
-     flies one full revolution (shared uploaded circle, id 2, **12 s**,
-     ~0.63 m/s tangential, ~0.33 m/s² centripetal — well inside the 1.3 m/s
-     envelope) — every drone flies the *same* circle with `relative=True`,
-     which makes it a rigid translation of the swarm. The shift onto the
-     ring is a long move, so its `goTo` duration is **distance-scaled**:
-     `max(2.0, longest_xy / 0.5)` s, i.e. ≤ 0.5 m/s average (~0.9 m/s
-     rest-to-rest peak); ~2.36 s with the current yaml starts.
+  5. **Orbit**: the whole formation translates rigidly onto a circle of
+     radius `ORBIT_R` (0.80 m, read from the script) around `safety.ARENA_CENTRE`
+     and flies one full revolution (shared uploaded circle, id 2, **12 s**,
+     ~0.42 m/s tangential, ~0.22 m/s² centripetal, per CLAUDE.md) — every
+     drone flies the *same* circle with `relative=True`, which makes it a
+     rigid translation of the swarm. The shift onto the ring is a long move,
+     so its `goTo` duration is **distance-scaled**: `max(2.0, longest_xy / 0.5)` s.
   6. **Return home via the pentagon**: a DIRECT return from the ring
      crossed paths at R=2.0 (1 route crossing; at R=1.2 it happens to be
      crossing-free, but the safe two-leg return is kept), so each drone
@@ -203,16 +204,20 @@ ros2 run crazyflie_examples multi_trajectory_formation --ros-args -p use_sim_tim
      own `initial_position` + 0.75 m, then a slow **4.5 s** land
      (~0.16 m/s descent from the 0.75 m hover).
 
-  Verified numbers: **min separation 0.84 m** (tail-to-tail in the
-  triangle+tail formation); **CLEARANCE: the orbit sweeps up to ~2.24 m
-  from `ROOM_CENTER`** (1.2 m orbit radius + ~1.04 m formation extent;
-  shrank from ~3.05 m at the old 2.0 m ring) — keep the full
-  ~2.24 m-radius circle clear of people and obstacles; **≈ 58.0 s
-  takeoff → landed per trial**;
-  formation altitude a constant **1.0 m** (`FORM_HEIGHT`). Per drone the demo
-  uploads **12 trajectory pieces (6 rotation circle + 6 orbit circle;
-  traj1's 16 dropped with the opening pattern)** ≈ 1.6 KB of the firmware's
-  ~4 KB trajectory memory. Constants at the top of the script.
+  **Do not quote a fixed excursion for this demo: its geometry depends on
+  `initial_position`.** Since 2026-10-06 the script PROVES its plan before it
+  arms (`check_plan_envelope`: hover columns, every waypoint leg, the gather
+  n-gon, the rotation circle, the triangle, the orbit entry and the orbit
+  sweep, all against `safety.ARENA_RADIUS_PLAN` about `safety.ARENA_CENTRE`)
+  and prints the budget it used, or REFUSES with the figure that does not fit.
+  Run it and read the banner. (Before that fix it carried its own pre-survey
+  room centre, 0.359 m off, and the orbit reached 2.418 m — outside even
+  `ARENA_RADIUS_LOST`; on the 2026-10-05 marks the hover columns alone reach
+  1.76 m of 1.90 m and the demo refuses, correctly. Re-park onto the gather
+  ring and it plans.) Formation altitude is a constant **1.0 m**
+  (`FORM_HEIGHT`); it is ≈58 s takeoff → landed. Per drone the demo uploads
+  **12 trajectory pieces (6 rotation circle + 6 orbit circle)** ≈ 1.6 KB of the
+  firmware's ~4 KB trajectory memory. Constants at the top of the script.
 
   Demo footage: see [`video/formation_demo_1.gif`](../video/formation_demo_1.gif)
   and [`video/formation_demo_2.gif`](../video/formation_demo_2.gif) (second
@@ -326,6 +331,11 @@ ros2 launch crazyflie launch.py teleop:=False
 ros2 run crazyflie_examples teleop_xbox
 ```
 
+> The teleop fence is centred on the world origin `(0, 0)` (`FENCE_RADIUS`
+> and `TARGET_RADIUS` at the top of `teleop_xbox.py`), **not** on
+> `safety.ARENA_CENTRE`, which the shows use. The two envelopes differ by the
+> offset between those points (print `safety.ARENA_CENTRE` for today's value).
+
 Controls (Xbox layout): **A** = take off (to 0.5 m), **Back/View** = land,
 **B** = **EMERGENCY** — cuts motors instantly, the drone drops and needs a
 physical reset. Left stick moves horizontally, right stick Y is up/down,
@@ -363,29 +373,41 @@ takeoff = start, land = back, emergency = red, arm = yellow.
 
 ## E. Shows (crazyflie_shows)
 
-Three verified multi-drone shows. Each has a **runcard** — the commands in
+Three multi-drone shows (what each has actually done is in the table in [`runbooks/README.md`](../runbooks/README.md); in short: the carousel and the escort have flown on hardware, the constellation is sim-verified only). Each has a **runcard** — the commands in
 order with every argument — and a design document explaining why the numbers
 are what they are.
 
 | show | runcard | why | run |
 |---|---|---|---|
-| carousel, ~63 s | [CAROUSEL](../src/crazyswarm2/crazyflie_shows/runcards/CAROUSEL.runcard.md) | `SHOW_GUIDE.md` | `swarm_show` |
-| constellation, 76 s | [CONSTELLATION](../src/crazyswarm2/crazyflie_shows/runcards/CONSTELLATION.runcard.md) | `CONSTELLATION.md` | `constellation_show` |
-| escort, reactive | [ESCORT](../src/crazyswarm2/crazyflie_shows/runcards/ESCORT.runcard.md) | `ESCORT.md` | `escort_show` |
+| carousel, ~63 s | [CAROUSEL](../runbooks/CAROUSEL.runcard.md) | `SHOW_GUIDE.md` | `swarm_show` |
+| constellation, 76 s | [CONSTELLATION](../runbooks/CONSTELLATION.runcard.md) | `CONSTELLATION.md` | `constellation_show` |
+| escort, reactive | [ESCORT](../runbooks/ESCORT.runcard.md) | `ESCORT.md` | `escort_show` |
 
 Start at
-[`runcards/README.md`](../src/crazyswarm2/crazyflie_shows/runcards/README.md),
+[`runbooks/README.md`](../runbooks/README.md),
 which carries the rules common to all three: deriving the address scan from the
 yaml, and what an E-STOP costs.
 
 Every show follows `plan -> sim -> dry_run -> fly`, and each has a planner that
 needs **no radio, no mocap and no drones** (`plan_show`, `plan_constellation`,
 `plan_escort`). **Re-run the planner after every `sync_initial_positions.py`** —
-the carousel sits at 99 % of its separation budget.
+the planner prints the separation and radius budget for the current yaml; the
+carousel's margin is thin enough that one moved mark can flip it to refuse.
 
-One difference worth knowing before you fly any of them: `constellation_show`
-and `escort_show` handle Ctrl-C and land; **`swarm_show` does not** — stopping
-the carousel in flight means the E-STOP.
+All four show scripts (`swarm_show`, `demo_show`, `constellation_show`,
+`escort_show`) take SIGINT and SIGTERM back through
+`crazyflie_shows/abort.py` and land staged, so **Ctrl-C is the first response**;
+the E-STOP is for a drone that is misbehaving, because it latches the
+supervisor LOCKED until a battery is pulled. A second Ctrl-C kills the
+process. (Until 2026-10-06 only the constellation had this; `swarm_show` and
+`demo_show` were wired to `abort.py` that day. The wiring is confirmed by
+reading `swarm_show.py`; no doc records a sim abort test of it, so test with
+`kill -INT <script pid>` in sim before relying on it. See
+[WRITING-A-SHOW §1.1](WRITING-A-SHOW.md).)
+
+> The runbooks under `runbooks/` were written when `swarm_show` had no abort
+> path and still say "Ctrl-C will not land it" for the carousel. That text is
+> out of date; see the open patch list in the 2026-10-08 documentation audit.
 
 
 ## F. Useful checks
@@ -662,3 +684,7 @@ correction (`colorLedBot.brightCorr = 1`) on connect.
 | `gui` | `True` \| `False` | Start the swarm GUI (default **`False`**) |
 | `foxglove` | `True` \| `False` | Start the foxglove bridge (default `True`; needs `ros-$ROS_DISTRO-foxglove-bridge`) |
 | `debug` | `True` \| `False` | Launch the C++ server under gdb (default `False`) |
+| `server` | `True` \| `False` | `False` = mocap + RViz + preflight GUI and **no server**: no radio owner, nothing armable. The state `scripts/sync_initial_positions.py` wants (default `True`) |
+| `mocap_hostname` | IPv4 literal | Motive PC address; overrides `hostname: "auto"` in `motion_capture.yaml`. Also read from env `CRAZYSWARM_MOCAP_HOST` |
+| `trace_cf` | `all` \| `cf1,cf3` \| empty | Per-second packet-trace summaries per drone (read at connect). A **launch** argument, not `--ros-args` |
+| `crazyflies_yaml_file`, `motion_capture_yaml_file`, `rviz_config_file`, `teleop_yaml_file` | path | One-off config overrides. A fleet override desyncs the file the server reads from the file `sync_initial_positions.py` writes; prefer editing `enabled:` in the one yaml |

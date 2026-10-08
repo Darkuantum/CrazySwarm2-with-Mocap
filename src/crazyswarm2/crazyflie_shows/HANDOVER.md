@@ -1,5 +1,36 @@
 # HANDOVER — crazyflie_shows
 
+> **HISTORICAL RECORD, largely superseded (audited 2026-10-08).** This is the
+> 2026-09-07 hand-over, kept because its reasoning is evidence. **Do not follow
+> its instructions.** Specifically, and in order of danger:
+>
+> * **Never run `sudo ip addr add 141.23.110.162/32 ...`.** §0, §4a and §8 item 1
+>   below instruct it. It was a workaround for the apt `motion_capture_tracking`
+>   1.0.9, which hard-coded that IP. The driver is now **vendored** and has no
+>   such address; the apt package must never be installed
+>   (`src/motion_capture_tracking/VENDORED.md`). §4b's claim that
+>   `motion_capture_tracking` "is only installed from apt" is the opposite of
+>   current fact.
+> * **"Nothing has flown on hardware" is false.** The carousel flew 2026-09-17
+>   (all five drones, landed t+63.8 s, `PROVENANCE.md`); the escort flew
+>   2026-10-07/08 (`ESCORT.md`). The constellation is still sim-only.
+> * The fleet named here (cf1, cf2, cf3, cf10, cf12) is not the fleet. Print it:
+>   `./scripts/scan_fleet.sh --list`.
+> * §4c's list of `CLAUDE.md` errors (cf14 vs cf12, `origin` = jeremyCHH,
+>   `pose_bridge DRONES`) is moot: those drones are gone from the yaml, `origin`
+>   is the Darkuantum fork, and `pose_bridge.py` reads the yaml. Loose ends 1-5,
+>   6, 8 and 10-13 in §8 are dead or done.
+> * The ~27 Hz `/poses` problem is obsolete (Motive streams 50 Hz).
+> * `ShowConfig`'s arena guesses were replaced by the measured arena
+>   (`safety.py`) on 2026-10-01.
+> * This package no longer has a `config/` directory, and its tree below omits
+>   `abort.py`, `preflight.py`, `constellation*.py`, `escort*.py`,
+>   `plan_escort.py`; see `docs/ARCHITECTURE.md` for the current tree.
+>
+> Still current and worth reading: §4b (apt shadowing of `crazyflie`), §4d (sim
+> arity; the probe in `crazyflie_sil.py`), §5 (`reference/`) and §6 (safety
+> rules). The 2026-09-07 mocap story in §4a is history.
+
 **Written 2026-09-07.** Read with `CLAUDE.md` in the main repo, which describes
 the rig in general. This file records what is *specific to this package* and
 what is *still unresolved on the rig*.

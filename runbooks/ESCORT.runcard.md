@@ -4,7 +4,7 @@ Three defenders ring a VIP; a fourth drone attacks; the ring rotates so a
 defender sits on the threat bearing. **Reactive, not choreographed** — the
 only show here whose path is not known before takeoff.
 
-Why any of it is the way it is: [`../ESCORT.md`](../ESCORT.md).
+Why any of it is the way it is: [`src/crazyswarm2/crazyflie_shows/ESCORT.md`](../src/crazyswarm2/crazyflie_shows/ESCORT.md).
 Shared rules (address scan, E-STOP, LOCKED): [`README.md`](README.md).
 
 ---
@@ -125,10 +125,16 @@ already moving makes the gather refuse (`gather legs close to 0.00 m`) and land.
 
 ```
 ring            1.00 m radius, 1.20 m altitude, 3 defenders 120 deg apart
-VIP mark        [+0.63, +0.26]   (room centre + 0.60 m on +x, toward the operator)
-defender marks  [+1.13, +1.12]  [-0.37, +0.26]  [+1.13, -0.61]
-adversary mark  [-1.47, +0.26]
-arena           2.00 m around [+0.03, +0.26]; ring reaches 1.60 m
+                (+0.30 m above the DJI when it is airborne)
+
+MARKS AND THE ARENA CENTRE ARE NOT WRITTEN HERE ON PURPOSE. Print them:
+    ros2 run crazyflie_shows plan_escort --marks
+Every coordinate in this block was in the pre-2026-10-08 world frame. Motive
+was recalibrated that day and the frame rotated ~91.6 deg, so the numbers that
+used to sit here became wrong in a way that still LOOKED plausible -- which is
+exactly how a drone gets stood on the wrong mark. The marks also move whenever
+ring_radius or vip_offset changes. The planner reads the live config; prose
+does not.
 geofence        VIP may stray 0.90 m from room centre (arena 1.90 - ring 1.00),
                 then the ring HOLDS and all three defenders go CYAN. It
                 resumes once the DJI is back within 0.65 m AND inside the

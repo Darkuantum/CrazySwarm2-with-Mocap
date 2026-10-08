@@ -1,4 +1,4 @@
-# CONSTELLATION — a 5-drone, 76 s shape show on a beat
+# CONSTELLATION — a 76 s shape show on a beat (designed for five drones, plans with four)
 
 **Written 2026-09-20. Refitted to the measured arena 2026-10-02** (§1a): the
 figures are now built at the centre of the *tracked volume*, and the staircase
@@ -6,7 +6,7 @@ switches back instead of running out towards the wall.
 
 The second show in this package. `SHOW_GUIDE.md`
 describes the first one (the carousel show) *and* everything rig-specific —
-config, mocap address, the scan-every-address rule, the tracking margin. All
+config, the scan-every-address rule, the tracking margin. All
 of that applies here unchanged and is **not** repeated. This file covers only
 what is different about the constellation show.
 
@@ -26,7 +26,8 @@ ros2 run crazyflie_shows plan_constellation          # no radio, no mocap, no dr
 ros2 launch crazyflie_shows show_launch.py backend:=sim
 ros2 run crazyflie_shows constellation_show --ros-args -p use_sim_time:=true
 
-# hardware, after SHOW_GUIDE §5d's checklist and a fresh position sync:
+# hardware, after runbooks/README.md's checklist (SHOW_GUIDE §5d is the
+# carousel's, reconciled 2026-10-08) and a fresh position sync:
 ros2 run crazyflie_shows constellation_show --ros-args -p dry_run:=true   # rehearsal
 ros2 run crazyflie_shows constellation_show
 ```
@@ -35,7 +36,7 @@ ros2 run crazyflie_shows constellation_show
 
 ## 1. What it is, and why it is not the carousel show
 
-The carousel show keeps one pentagon for 62 s and varies what the pentagon
+The carousel show keeps one pentagon for ~63 s and varies what the pentagon
 *does*. This show changes the **shape itself** — pentagon, arrow, pyramid,
 spiral staircase — and uses figures to animate whichever shape is standing.
 The vocabulary comes from `reference/complex-shows-report.html`.
@@ -105,48 +106,42 @@ fleet size. Figure durations are fixed and the legs between them are stretched
 onto the beat grid, so the wall clock is **76.0 s, 38 bars at 120 BPM** either
 way.
 
-| bar.beat | t | dur | phase | what you see |
-|---|---|---|---|---|
-| 1.1 | 0.0 s | 2.8 s | takeoff | all of them to 1.00 m over their own start marks |
-| 2.3 | 2.8 s | 1.8 s | settle | hold while the Kalman filter settles |
-| 3.3 | 4.5 s | 2.8 s | gather | converge into a regular pentagon, R = 1.10 m |
-| 5.1 | 7.2 s | 7.8 s | **swashplate** | the ring spins while riding a tilted plane — a wobbling disc |
-| 9.1 | 15.0 s | 2.8 s | morph → arrow | the ring folds into an arrowhead |
-| 10.3 | 17.8 s | 2.8 s | **dart** | the whole arrow thrusts 0.50 m forward, rigidly |
-| 12.1 | 20.5 s | 2.8 s | **recoil** | and draws back |
-| 13.3 | 23.2 s | 2.8 s | morph → pyramid | four arms out, one drone raised at the centre |
-| 15.1 | 26.0 s | 6.8 s | **turbine** | the arms revolve around the still, raised centre |
-| 18.3 | 32.8 s | 2.8 s | morph → staircase | into the switchback stair |
-| 20.1 | 35.5 s | 9.8 s | **staircase** | five steps climb 0.60 → 1.40 m, turning a full circle |
-| 25.1 | 45.2 s | 3.8 s | retrace → pyramid | the staircase leg run backwards — same paths, same clearance |
-| 27.1 | 49.0 s | 6.8 s | **turbine (reversed)** | the same figure backwards; costs no extra memory |
-| 30.3 | 55.8 s | 2.8 s | morph → pentagon | an intermediate chosen so the flight home is also safe |
-| 32.1 | 58.5 s | 6.8 s | **starburst** | finale: fling out, alternately up and down, spinning |
-| 35.3 | 65.2 s | 2.8 s | return home | back over each drone's own `initial_position` |
-| 37.1 | 68.0 s | 3.8 s | land | 0.25 m/s descent, then disarm |
+**Timings are printed, not tabled here.** An earlier version of this section
+carried a `bar.beat` / `t` table that contradicted itself (at 120 BPM in 4/4 a
+bar is 2.0 s, so bar 5 is at 8.0 s, not the 7.2 s the `t` column said, and bar
+37.1 is 72.0 s, not 68.0 s): it predated `scale 0.95` and the retime. The
+planner's cue sheet is the source (it printed 8.0 s ... 72.0 s and landed at
+76.0 s on 2026-10-08). In order, the phases are:
 
-### Measured budgets (`plan_constellation`, five drones)
+takeoff, settle (Kalman), gather into a regular n-gon (R = 1.10 m), **swashplate**
+(the ring spins riding a tilted plane), morph to **arrow**, **dart** (rigid
+0.50 m thrust), **recoil**, morph to **pyramid**, **turbine** (arms revolve
+around a raised centre), morph to **staircase**, **staircase** (steps climb
+0.60 to 1.40 m, turning a full circle), retrace to pyramid, **turbine
+reversed**, morph to an intermediate n-gon chosen so the flight home is also
+safe, **starburst** (finale), return home over each drone's own
+`initial_position`, land (0.25 m/s descent), disarm. With four drones the
+n-gon is a 4-gon and the shapes follow the fleet size.
+
+### Measured budgets (`plan_constellation`)
 
 Re-run `plan_constellation` yourself after every position sync — these numbers
-depend on `initial_position`, and the block below was stale for four days
-(pre-`scale 0.95`, naming cf3/cf8 as the binding pair while cf8 is disabled).
-As of 2026-10-06, on the five enabled marks:
+depend on `initial_position` and on the enabled fleet. Quoted figures, with
+their dates, so they cannot be mistaken for today's:
 
-```
-separation   0.97 m  min 0.90 m    93%    (cf2/cf5 at t=24.2 s)
-speed        1.71 m/s  max 2.00    86%
-accel        2.27 m/s2 max 3.00    76%
-radius       1.76 m  max 1.90 m    93%    about the MEASURED volume centre
-height       1.45 m  max 2.32 m    63%    centre column; 1.85 m at full radius
-pieces         25     max 31       81%
-```
+* 2026-10-06, five marks: separation 0.97 m (budget 0.90), radius 1.76 m of
+  1.90 m, speed 1.71 m/s, accel 2.27 m/s2, 25 of 31 pieces.
+* 2026-10-08, four enabled drones (cf1, cf3, cf4, cf5): radius 1.44 m,
+  separation 0.97 m.
+
+The radius is measured about the arena centre
+(`safety.ARENA_CENTRE`, the centre of the tracked volume), as it should be.
 
 **That 1.76 m is the parking, not the figures.** The figures never reach past
 ~1.53 m; the envelope is set by where the drones are standing. Park on the
 gather ring (R = 1.10 m at the slot angles) and the same show plans to 1.46 m.
 
-At four drones it is the same show one drone lighter: radius 1.51 m,
-separation 1.02 m.
+At four drones it is the same show one drone lighter (numbers above).
 
 The radius budget is 1.90 m because tracking held to 2.00 m and the drones fly
 the plan with up to `TRACKING_MARGIN` (0.10 m) of error — the same reasoning
@@ -204,7 +199,8 @@ handler inside `Crazyswarm()`, and it shuts the ROS context down *before* the
 exception reaches the script — so the landing call failed with *"the given
 context is not valid"* at exactly the moment it was needed. Verified failing
 in sim on 2026-09-20, then fixed: `take_signals()` takes SIGINT and SIGTERM
-back after `Crazyswarm()` has initialised, so the context is still alive when
+back after `Crazyswarm()` has initialised (it now lives in `abort.py`, shared
+by every show; it was inside `constellation_show.py` until 2026-10-06), so the context is still alive when
 the landing is commanded. A second Ctrl-C during the abort restores the
 default handler and kills the process outright.
 
@@ -264,20 +260,17 @@ above bound the *planning*, not the rig.
 
 ## 5. Before the first hardware flight
 
-Everything in `SHOW_GUIDE.md` §5d applies unchanged — mocap address, `/poses`
+`SHOW_GUIDE.md` §5d (reconciled 2026-10-08) applies unchanged: `/poses`
 alive, **scan every enabled address**, overlay check. On top of it, for this
 show specifically:
 
-0. **Stand five drones on five marks ≥1 m apart, inside the tracked volume**
+0. **Stand the enabled drones on marks ≥1 m apart, inside the tracked volume**
    (1.90 m of `safety.ARENA_CENTRE`). Read the roster from the yaml —
-   `./scripts/scan_fleet.sh --list` — rather than from this page: as of
-   2026-10-06 it enables cf1/cf2/cf3/cf4/cf5, and cf8 is DISABLED, so an
-   earlier version of this step had you standing a drone on a mark that was
-   never written to the yaml while omitting cf4, which flies. cf8's old
-   recorded spot sits 0.164 m from where cf3 now stands, so it cannot be used
-   as-is if cf8 is re-enabled. Any well-spread spot works, because the figures
-   are built at the arena centre, not at the marks — but see the radius note
-   above: the parking is what sets the envelope.
+   `./scripts/scan_fleet.sh --list` — rather than from this page; earlier
+   versions of this step named drones that were not in the yaml and omitted
+   one that flies. Any well-spread spot works, because the figures are built
+   at the arena centre, not at the marks — but see the radius note above: the
+   parking is what sets the envelope.
 1. `ros2 launch crazyflie launch.py server:=False` (mocap and the GUIs, no
    radio), then `python3 scripts/sync_initial_positions.py` with the drones on
    their marks. Start the real stack afterwards — the yaml is read only at

@@ -2,13 +2,25 @@
 
 A reactive demo, not a choreographed show: three drones hold a ring around a
 VIP and turn that ring to put a defender between the VIP and an approaching
-adversary. Built for the area-denial demo due **8 Oct 2026**.
+adversary. Built for the area-denial demo of **8 Oct 2026**, which took place:
+see [What flew, and what broke](#what-flew-and-what-broke-as-of-2026-10-08).
+
+> **Frame warning.** The 2026-10-08 Motive recalibration rotated the world frame
+> by +91.59 degrees ([MOCAP.md 2c](../../../docs/MOCAP.md#2c-the-world-frame-the-measured-arena-and-what-a-recalibration-breaks)).
+> Some worked numbers below were written in the OLD frame and say so where they
+> are known to be stale; **for any current mark, offset or radius, print it**
+> (`plan_escort --marks`, `plan_escort`, the `EscortConfig` source) rather than
+> trusting this prose.
 
 | File | What it is |
 |---|---|
 | `crazyflie_shows/escort.py` | the whole control law, pure Python, no ROS |
 | `crazyflie_shows/plan_escort.py` | offline verification — simulates the encounter and refuses bad numbers |
 | `crazyflie_shows/escort_show.py` | the flight script (mocap + radio) |
+| `crazyflie_shows/escort_teleop.py` | keyboard-steered virtual VIP or adversary, for testing with nobody in the room |
+| `crazyflie_shows/escort_viz.py` | RViz markers for the ring and the threat |
+| `scripts/place_drones.py` | floor-placement helper for the marks |
+| `scripts/watch_escort.py` | read-only run monitor (see "Monitoring") |
 
 ```bash
 python3 -m crazyflie_shows.plan_escort --marks       # where to stand the drones
@@ -77,6 +89,70 @@ Deliberately not used: the equal-spacing orbit law flown on Crazyflies under
 Vicon (arXiv 2103.11574). It assumes the agents are much faster than the
 target, which for a walking person means defender speeds above ~3 m/s.
 
+## What flew, and what broke (as of 2026-10-08)
+
+Sourced from commit messages, the code comments they left, the runbooks and
+the maintainer's notes; **there is no flight log document**, so treat dates
+and outcomes as the best available record, not a data set.
+
+* **2026-10-07, hardware.** The escort flew, with a hand-flown DJI as the VIP. That day's fixes name what went
+  wrong: `be27585` "engage earlier, because the attacker was getting through"
+  (`alert_radius` 1.88 -> 2.10 m, `release_radius` 2.00 -> 2.22 m); `bc24892` added
+  per-drone containment after a **fly-away of the attacker**: the VIP had a geofence and a
+  staleness watchdog, the Crazyflies had neither, and `self_stale_s` was dead
+  config (declared, never read). The geofence was timestamped so the LED
+  colour changes could be matched to events afterwards, which had been
+  impossible after that run.
+* **2026-10-08, hardware, shown to guests.** Several runs; the last was clean.
+  The same morning Motive was recalibrated and the frame rotated 91.59
+  degrees, which silently broke `vip_offset`, the adversary's absolute bearings
+  and a private copy of the arena centre ([WRITING-A-SHOW §5.6](../../../docs/WRITING-A-SHOW.md)).
+  The fixes are `f6ab833` and `c38f0ab` (both 2026-10-08).
+* **Not cleared:** the walking VIP. With the shipped numbers `plan_escort`
+  measures the ring holding only to a 0.20 m/s walk (and the runcard states the
+  failing margins). The demo flew with a hand-piloted DJI as the VIP.
+* **Open:** adversary tracking near the arena edge. The adversary's waiting
+  station is about 1.84 m from the arena centre, the setpoint clamp is
+  1.90 m and tracking was lost at 2.24 m (`ARENA_RADIUS_LOST`); the
+  maintainer's notes list four candidate explanations that are confounded with
+  each other, and none has been isolated.
+* **Never measured on hardware:** a separation margin for the escort; mocap
+  occlusion rate of a head-worn rigid body.
+
+## Reactive adversary, geofence, containment, lights
+
+Added after this document's first draft; the code comments in `escort.py` and
+`escort_show.py` are the detailed source and the runcard is the operator view.
+
+* **`ReactiveAdversary`** (default adversary) replaces the fixed script with a
+  potential field: pulled toward the VIP, pushed by the nearest defender, held
+  inside the room, and it STANDS DOWN when blocked. `v_max` 0.80 m/s is
+  deliberately FASTER than a defender's 0.60: the race is angular and the
+  defenders are on the inside track, so the ring (turning at
+  `engaged_phase_rate` 0.55 rad/s) only loses beyond 0.55 x 1.80 = 0.99 m/s.
+  Making it slower made the demo look unaggressive. It cannot be proven like a
+  script; `SetpointGuard` still enforces the separations. `defenders_yield`
+  (default False) and `defender_yield_floor` govern whether defenders give way
+  to it.
+* **Geofence.** The VIP is held inside `arena_radius - ring_radius` of room
+  centre (with hysteresis, `FENCE_HYST`); beyond it the ring HOLDS and the
+  defenders go CYAN until the VIP comes back. Every episode is printed with
+  wall clock at the end so the LEDs can be laid against the video.
+* **Containment, every drone** (`escort.contain_check`, `bc24892`): per-drone
+  stale watchdog (`self_stale_s` / `self_stale_land_s`) and a trip when a
+  drone's ACTUAL pose passes `arena_radius + contain_margin` (0.25 m), or when
+  it stays `track_error_m` off its own command for `track_error_s`. It
+  covers the adversary and an `adversary:=external` drone too.
+* **Lights.** Colours are `LED_*` constants in `escort_show.py`; the legend an
+  audience is told is in `runbooks/ESCORT.narrative.md`. Cyan is reserved for
+  the geofence hold. Cues are sent after motion commands, may never stop the
+  show, and are off under `use_sim_time`.
+* **Monitoring.** `scripts/watch_escort.py` is read-only by construction
+  (subscriptions only) and reports mocap gaps per body including the DJI,
+  radius against clamp / containment / lost-tracking, commanded versus actual
+  position, minimum pair separation and any defender at or below the DJI's
+  altitude.
+
 ## Decisions still open
 
 Each of these has a working default, and each is someone's call, not the
@@ -100,20 +176,25 @@ code's. `plan_escort` prints the consequences of whatever is chosen.
    slowly; slow the ring (a lazier block); shrink `R` (less room between the
    drones and the person); raise `v_max` (a real safety decision about flying
    faster next to a human, and the one that needs a written justification).
-2. **Where the VIP stands.** `vip_offset = (+0.60, 0)` from room centre —
-   the **+x** side, nearest the operator, who stands on +x looking down −x. The
-   adversary therefore runs at the VIP from −x, across the far half of the
-   room, so the encounter happens facing the audience instead of behind the
-   VIP. Centring the VIP does not work: it leaves
-   `arena_radius - (ring_radius + min_adv_sep) = 0.20 m` of stand-off, so the
-   arena clamp drags the adversary inside the alert radius immediately and the
-   demo begins already blocked (that is exactly what the first sim run did).
-   The offset also constrains the adversary's approach bearings to the open
-   side — `AdversaryScript.check` verifies every leg against the arena and
-   refuses the ones that would end up in a wall. The cost of the offset is the
-   pilot box: the geofence measures the VIP's stray from **room centre**, so
-   the DJI gets `arena - ring - offset = 0.40 m` further toward the operator
-   and `arena - ring + offset = 1.60 m` away from them.
+2. **Where the VIP stands.** `vip_offset` is a *direction and distance* from
+   room centre, shipped as `(-0.017, +0.600)` since the 2026-10-08 frame
+   rotation (it was `(+0.60, 0)`, "the +x side, nearest the operator", in the
+   old frame; rotated by +91.59 degrees it points at +91.6 degrees and still
+   points at the operator and the DJI, which were measured at +86.5 degrees).
+   The adversary starts on the opposite side, so it runs at the VIP across the
+   far half of the room and the encounter happens facing the audience. In the
+   new frame that is from -y, not -x. Do not reason from "+x" or "-x" here:
+   print `plan_escort --marks`. Centring the VIP does not work: it leaves
+   `arena_radius - (ring_radius + min_adv_sep)` of stand-off, so the arena clamp
+   drags the adversary inside the alert radius immediately and the demo
+   begins already blocked (that is exactly what the first sim run did). The
+   offset also constrains the adversary's approach bearings to the open side —
+   `AdversaryScript.check` verifies every leg against the arena and refuses
+   the ones that would end up in a wall. The cost of the offset is the pilot
+   box: the geofence measures the VIP's stray from **room centre**, so the DJI
+   gets `arena - ring - offset` further toward the operator and
+   `arena - ring + offset` away from them (with `vip_offset` 0.60 m: 0.30 m
+   and 1.50 m at the current arena and ring; derived, not printed by a tool).
 3. **Ring radius and altitude.** `R = 1.0 m`, down from 1.5 via 1.2. Each step
    was paid for by the measured volume (see *The arena* below) and the last one
    was asked for on sight: a 1.2 m ring reads as a loose circle rather than an
@@ -126,9 +207,14 @@ code's. `plan_escort` prints the consequences of whatever is chosen.
    **If a HUMAN ever stands in as the VIP, put `R` back to 1.5 m** and accept
    that the demo then does not fit this room.
 4. **The arena — MEASURED 2026-10-01, no longer open.**
-   `arena_radius = 2.0 m`, `ceiling = 2.0 m`, centred on
-   `room_center = (0.033, 0.255)` — the centroid of the tracked space, not the
-   room's middle. Walking cf1 through the volume
+   The tested radius is 2.00 m. The escort PLANS to
+   `arena_radius = safety.ARENA_RADIUS_PLAN` (1.90 m, tested minus the tracking
+   margin), `ceiling = 1.85 m`, and `room_center = safety.ARENA_CENTRE`,
+   derived rather than copied (a private copy of the old centre sat 0.41 m
+   from the real one after the 2026-10-08 recalibration and the planner
+   passed anyway). The centre is the centroid of the tracked space, not the
+   room's middle. (The 2026-10-01 survey was expressed in the frame of that
+   date; the radii are frame-invariant, the centre was carried across.) Walking cf1 through the volume
    (`scripts/measure_arena.py`, 8067 samples) then flying it
    (`scripts/arena_flight_sweep.py`) put the first sustained dropout at 2.24 m
    and verified 72 waypoints inside 2.00 m with zero stale poses at both
@@ -144,7 +230,8 @@ code's. `plan_escort` prints the consequences of whatever is chosen.
    BYTE_ARRAY and rejects string values) — but run it with `dry_run:=true`
    first, because an override is exactly how you get an adversary parked
    inside the ring.
-6. **The DJI adversary.** Out of scope for 8 Oct. Nothing in the survey
+6. **The DJI adversary.** Out of scope for the 8 Oct demo as an ADVERSARY (the
+   DJI flew as the VIP, hand-piloted). Nothing in the survey
    verified its prop-wash risk to 30 g drones, its indoor stability without
    GPS, or the netting it would need. A Tello tracks as an ordinary rigid body
    and would arrive on `/poses` like any other, so `adversary:=external`
@@ -183,18 +270,24 @@ script's banner:
   longer fits in the arena and the far slots get clamped.
 * **VIP speed** = `max_vip_speed` = `v_max - ring_radius * phase_rate`.
 
-With the shipped config that is **1.00 m of room centre and 0.30 m/s** in the
-worst case, and `--sweep` clears the whole run only to **0.20 m/s** — a hover
+With the shipped config that is **`arena_radius - ring_radius` = 0.90 m of
+room centre** (the runcard's "pilot box"; the earlier 1.00 m here was computed
+at arena 2.0) **and 0.30 m/s** in the worst case, and `--sweep` clears the whole run only to **0.20 m/s** — a hover
 with small drifts, not a flight. That is the honest state of it, and the knobs
 trade against each other (keep-in = `arena - R`, VIP max = `v_max - R*rate`):
 
 | arena | ring R | phase_rate | v_max | keep-in | VIP max |
 |---|---|---|---|---|---|
-| 2.0 m | 1.0 m | 0.30 | 0.6 | 1.00 m | 0.30 m/s | ← shipped
-| 2.0 m | 1.0 m | 0.15 | 0.6 | 1.00 m | 0.45 m/s |
-| 2.0 m | 1.2 m | 0.30 | 0.6 | 0.80 m | 0.24 m/s |
-| 2.0 m | 1.5 m | 0.30 | 0.6 | 0.50 m | 0.15 m/s |
-| 2.0 m | 1.0 m | 0.15 | 1.0 | 1.00 m | 0.85 m/s |
+| 1.9 m | 1.0 m | 0.30 | 0.6 | 0.90 m | 0.30 m/s | ← shipped arena and ring
+| 1.9 m | 1.0 m | 0.15 | 0.6 | 0.90 m | 0.45 m/s |
+| 1.9 m | 1.2 m | 0.30 | 0.6 | 0.70 m | 0.24 m/s |
+| 1.9 m | 1.5 m | 0.30 | 0.6 | 0.40 m | 0.15 m/s |
+| 1.9 m | 1.0 m | 0.15 | 1.0 | 0.90 m | 0.85 m/s |
+
+(`phase_rate` and `v_max` rows are the plain formulas; the table was re-based
+from arena 2.0 to 1.9 on 2026-10-08 by recomputing `arena - R`. The shipped
+`phase_rate` is 0.30 rad/s while blocking is idle and `engaged_phase_rate`
+0.55 rad/s once it engages -- see the code.)
 
 Halving `phase_rate` buys the most for the least: the wall then closes in
 about 8 s instead of 4 s, which is slower to watch but costs no separation.
@@ -237,7 +330,9 @@ what it is. `q` lands.
 
 **What pacing does NOT slow down.** Show time still runs. The ring still turns
 at `phase_rate`, every `SetpointGuard` clamp is still enforced per setpoint,
-and the mocap staleness watchdogs (0.4 s hold, 2.0 s land) are real-time. Only
+and the mocap staleness watchdogs are real-time (the VIP's: 0.4 s hold,
+2.0 s land; each drone's own, `self_stale_s` 0.3 s hold and
+`self_stale_land_s` 1.0 s land, added 2026-10-07). Only
 the attacker's place in its script is yours. The defence stays automatic
 because it is the thing being demonstrated and the thing that must not wait
 for a human.
@@ -300,15 +395,15 @@ mark, not the other way round.
 `plan_escort --marks` prints the marks and then checks the yaml against them:
 
 ```
-VIP mark        [+0.63, +0.26]   room centre + vip_offset -- NOT inferred
-defender 1      [+1.13, +1.12]   on the ring, 1.00 m from the VIP mark
-defender 2      [-0.37, +0.26]
-defender 3      [+1.13, -0.61]
-adversary       [-1.47, +0.26]   2.10 m out, on the far side of the VIP
+VIP mark        [x, y]   room centre + vip_offset -- NOT inferred
+defender 1..3   [x, y]   on the ring, ring_radius from the VIP mark
+adversary       [x, y]   adversary_start_dist out, on the far side of the VIP
 ```
 
-(Shipped config, 2026-10-01. These move whenever `ring_radius` or `vip_offset`
-does — print them, do not copy them from here.)
+(Placeholders on purpose. Marks moved twice in this document's life: when
+`vip_offset`/`ring_radius` changed, and again on 2026-10-08 when the world
+frame rotated, which left every number that used to be printed here wrong.
+**Run `plan_escort --marks`; do not copy numbers from prose.**)
 
 Three rules behind those numbers:
 
@@ -323,8 +418,9 @@ Three rules behind those numbers:
    crosses the defenders.
 3. **Everything stays inside the arena and at least 1 m apart** — the sync tool
    refuses to write marks closer than 1 m, and the phase `--marks` picks is the
-   one that keeps the ring furthest from the walls (1.40 m of the 2.00 m arena
-   with the shipped config).
+   one that keeps the ring furthest from the walls (it prints
+   how far the ring reaches; the figure quoted here earlier was in the old
+   frame).
 
 ## The gather is checked, as of 2026-09-24
 
@@ -366,7 +462,7 @@ first leg out goes through the defenders' slots.
 | 1 | sim, static VIP point, scripted adversary | the block reads clearly in RViz |
 | 2 | hardware, static VIP point, no person in the volume | separations match `plan_escort` |
 | 3 | hat on a pole, carried, then worn; walk slowly | hat never drops out of Motive for > 0.4 s |
-| 4 | scripted adversary Crazyflie, red LED | the blocker gets between them every time |
+| 4 | adversary Crazyflie (reactive by default, or scripted), red LED | the blocker gets between them every time |
 | 5 | teleoperated Crazyflie adversary (`adversary:=external`) | operator can fly it without chasing the ring |
 | 6 | dress rehearsals | — |
 
@@ -397,22 +493,23 @@ and the `_live` path get their first real exercise on hardware, at stage 2.
 
 ## Known gaps
 
-* **Flown in sim, never on hardware.** The full sequence (takeoff, gather,
-  40 s of streamed escort with a scripted adversary, land, disarm) ran clean
-  against `backend:=sim` on 2026-09-23. That run is also what found the
-  gather/resync bug and the arena squeeze above — but sim is not a substitute:
-  `plan_escort`'s drone model is a first-order lag, not the real controller.
-  `plan_show` carries a measured 0.10 m `TRACKING_MARGIN` because flown
-  separations came out tighter than planned; the escort has no such measured
-  margin yet. Fly it in sim, compare `/tf` against the plan, and add one.
+* **Hardware status is in the next section, not here.** The sim sequence of
+  2026-09-23 (takeoff, gather, 40 s of streamed escort with a scripted
+  adversary, land, disarm) ran clean and found the gather/resync bug and the
+  arena squeeze; `plan_escort`'s drone model is a first-order lag, not the real
+  controller. `plan_show` carries a measured 0.10 m `TRACKING_MARGIN`; the
+  escort now has `contain_margin` and real flight data, but no separately
+  measured separation margin.
 * **Mocap occlusion of the hat is unaddressed.** The stale-pose behaviour
   (hold at 0.4 s, land at 2.0 s) is implemented, but how often a head-worn
   rigid body actually drops out here is unknown — and it is the most likely
   thing to end a demo.
-* **The radio budget is assumed, not measured.** Four drones at 20 Hz is
-  80 packets/s of setpoints, comfortable against ~600–1200 packets/s shared
-  across the link, but which dongle and firmware this rig has was never
-  confirmed (no Crazyradio was plugged in on 2026-09-23).
+* **The radio budget** was assumed on 2026-09-23 (no Crazyradio plugged in
+  then). Since then it has been measured on the rig: a healthy drone shows
+  ~175 packets/s sent and ~168 unicast received (CLAUDE.md, 2026-10-05, a
+  Crazyradio 2.0), so four drones at 20 Hz of setpoints on top is a real
+  fraction of the link, not a rounding error. Whether the setpoint stream
+  contributed to any telemetry stall is unmeasured.
 * **Yaw is commanded as 0 for every drone.** Defenders do not turn to face
   the VIP or the threat. It would look better if they did; it is also more to
   go wrong, so it was left out.

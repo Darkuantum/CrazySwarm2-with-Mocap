@@ -3,7 +3,7 @@
 Five drones, 76 s, shape changes on a 120 BPM beat grid with light cues.
 Fully choreographed — the whole path is known before takeoff.
 
-Why any of it is the way it is: [`../CONSTELLATION.md`](../CONSTELLATION.md).
+Why any of it is the way it is: [`src/crazyswarm2/crazyflie_shows/CONSTELLATION.md`](../src/crazyswarm2/crazyflie_shows/CONSTELLATION.md).
 Shared rules (address scan, E-STOP, LOCKED): [`README.md`](README.md).
 
 ---
@@ -75,12 +75,20 @@ either**, and do not fly a plan that does not print PLAN OK.
 
 ```
 duration        76 s, every phase boundary on a beat (120 BPM = 0.5 s/beat)
-envelope        1.76 m used of the 1.90 m plan limit (2026-10-06 marks)
-                  -- and 1.53 m of that is the PARKING, not the figures.
+envelope        1.76 m used of the 1.90 m plan limit (2026-10-06 marks).
+                  THE PARKING SETS IT, NOT THE FIGURES -- the figures never
+                  reach past 1.53 m; the 1.76 m was one drone's MARK sitting
+                  that far from the arena centre. (This card had those two
+                  the wrong way round until 2026-10-08, which made the show
+                  look like the problem when the placement was.)
                   Park on the gather ring (R=1.10 at the slot angles) and the
                   same show plans to 1.46 m. Re-run plan_constellation after
                   every sync; this number moves with initial_position.
-room centre     [+0.03, +0.26]  -- centre of the tracked volume
+room centre     printed by the planner -- NOT written here. Motive was
+                  recalibrated 2026-10-08 and the frame rotated ~91.6 deg, so
+                  the coordinate that used to sit on this line is now wrong
+                  while still looking plausible. safety.ARENA_CENTRE is the
+                  single source of truth.
 separation      hard floor 0.80 m; plans must hold 0.90 m
 fleet           5 drones. 6+ does not fit this room.
 ```

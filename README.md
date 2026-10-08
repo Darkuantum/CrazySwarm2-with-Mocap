@@ -9,6 +9,30 @@ byte-for-byte copy of the rig — no upstream fetching. One command installs the
 dependencies and builds it on **Ubuntu 22.04 + ROS 2 Humble** or
 **Ubuntu 24.04 + ROS 2 Jazzy**.
 
+> **This repo is a fork.** `origin` is
+> [`Darkuantum/CrazySwarm2-with-Mocap`](https://github.com/Darkuantum/CrazySwarm2-with-Mocap),
+> the working trunk; the shared team repo it was forked from is
+> [`AI-DA-STC/CrazySwarm2-with-Mocap`](https://github.com/AI-DA-STC/CrazySwarm2-with-Mocap)
+> (`upstream`, fetch-only — never push to it). The fork carries a lot that
+> upstream does not (the show package, the console, the server's telemetry
+> watchdog and bounded uploads); [`WORKSPACE-NOTES.md`](WORKSPACE-NOTES.md) says
+> how the two relate and [`docs/CONTRIBUTING-UPSTREAM.md`](docs/CONTRIBUTING-UPSTREAM.md)
+> how work goes back. **Clone the fork, not upstream**, or you get a rig that is
+> ~100 files behind this README.
+
+### Start here
+
+| You want to… | Go to |
+|---|---|
+| Install and smoke-test in the simulator | [Section 3](#3-software-setup) (Steps 1–5), no hardware needed |
+| Fly one drone for the first time | [Section 5](#5-preflight-checks) (preflight), then [Section 6](#6-flying) (`hello_world`) |
+| Run a show (carousel, constellation, escort) | [`runbooks/README.md`](runbooks/README.md) |
+| Know what is what in this repo | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (file tree + functional graph) |
+| Write your own show | [`docs/WRITING-A-SHOW.md`](docs/WRITING-A-SHOW.md) |
+| Use the browser GUI instead of typing `ros2` commands | [`docs/CONSOLE.md`](docs/CONSOLE.md) |
+| Something is broken | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) |
+| The full document list, one line each | [Section 10](#10-documentation-index) |
+
 ## Table of contents
 
 1. [Overview and architecture](#1-overview-and-architecture)
@@ -25,13 +49,14 @@ dependencies and builds it on **Ubuntu 22.04 + ROS 2 Humble** or
 7. [Color LED control](#7-color-led-control)
 8. [Mission console — optional GUI](#8-mission-console--optional-gui)
 9. [Repo layout](#9-repo-layout)
-10. [Documentation and troubleshooting](#10-documentation-and-troubleshooting)
+10. [Documentation index](#10-documentation-index)
 
 ## 1. Overview and architecture
 
 ![CrazySwarm2 with Motion Capture — system architecture: Motive streams NatNet multicast at 50 Hz to motion_capture_tracking, which publishes /poses to crazyflie_server; the server drives the Crazyflie fleet over Crazyradio #0 (radio://0/80/2M); user scripts (crazyflie_py) and the preflight GUI + RViz command and monitor it; alternative open-driver path: Motive → natnet_ros2 → /<body>/pose → pose_bridge.py → /poses](Pics/Crazyswarm_mocap_architecture.jpg)
 
-> **Single-dongle fleet.** Five drones, **all on ONE Crazyradio dongle**
+> **Single-dongle fleet.** The enabled drones (a subset of the five or six
+> airframes in the yaml) are **all on ONE Crazyradio dongle**
 > (`radio://0/80/2M`). **`config/crazyflies.yaml` is the only roster** — do not
 > trust a list written in prose, including this one. Print the live fleet with:
 >
@@ -122,8 +147,8 @@ echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> ~/.bashrc
 ### Step 2 — Clone and run the one-shot setup
 
 ```bash
-git clone https://github.com/AI-DA-STC/CrazySwarm2-with-Mocap.git ~/CrazySwarm2
-cd ~/CrazySwarm2
+git clone https://github.com/Darkuantum/CrazySwarm2-with-Mocap.git ~/CrazySwarm2-with-Mocap
+cd ~/CrazySwarm2-with-Mocap
 ./scripts/setup.sh
 ```
 
@@ -152,7 +177,7 @@ laptop keeps running the apt driver and `/poses` stays silent even though the
 Motive PC pings:
 
 ```bash
-cd ~/CrazySwarm2
+cd ~/CrazySwarm2-with-Mocap
 rm -rf src/motion_capture_tracking     # only if you cloned it there by hand (old fallback advice)
 git pull
 sudo apt remove -y ros-${ROS_DISTRO}-motion-capture-tracking ros-${ROS_DISTRO}-motion-capture-tracking-interfaces
@@ -170,19 +195,20 @@ ros2 pkg prefix motion_capture_tracking   # must be inside this repo's install/,
 `launch.py` performs the same check and aborts with a clear message if the apt
 copy would be used, so a wrong shell cannot silently fly without mocap.
 
-> **⚠️ Install these too — `install_deps.sh` does not cover them yet.** The
-> default launch and the Python API need a few extra packages:
+> **Install this too — `install_deps.sh` does not cover it.** `python3-scipy`
+> (the `crazyflie_py` Python API, so `hello_world` and every flight script):
 >
 > ```bash
-> sudo apt install -y python3-tk python3-scipy ros-$ROS_DISTRO-joy
+> sudo apt install -y python3-scipy
 > ```
 >
-> Why each one: `python3-tk` → the **preflight GUI** window (started by
-> default; without it the GUI dies or exits silently and no window appears),
-> `ros-$ROS_DISTRO-joy` → the teleop `joy_node` (also default-on),
-> `python3-scipy` → the `crazyflie_py` Python API (`hello_world` and every
-> flight script). (`rowan` and a NumPy-2-compatible `matplotlib>=3.9` are
-> already installed by `install_deps.sh`.)
+> (Checked 2026-10-08: no scipy line in `scripts/install_deps.sh` or the
+> `crazyflie_py`/`crazyflie` `package.xml` files; if rosdep already pulls it in
+> on your machine the line is a no-op.) `install_deps.sh` DOES install
+> `ros-$ROS_DISTRO-joy` (teleop `joy_node`), `python3-tk` and, on 22.04,
+> `libxcb-cursor0` (the preflight GUI's Qt xcb plugin needs it, or the GUI dies
+> with `Could not load the Qt platform plugin xcb`), plus `rowan` and a
+> NumPy-2-compatible `matplotlib>=3.9`.
 
 ### Step 3 — Crazyradio USB permissions *(manual; hardware only)*
 
@@ -226,14 +252,14 @@ the compiled bindings to `PYTHONPATH` via `~/.bashrc`, so open a new shell (or
 
 ```bash
 source /opt/ros/$ROS_DISTRO/setup.bash
-source ~/CrazySwarm2/install/setup.bash
+source ~/CrazySwarm2-with-Mocap/install/setup.bash
 ros2 launch crazyflie launch.py backend:=sim   # needs Step 4; no hardware/mocap
 ```
 
 > **Building by hand.** `setup.sh` already builds the workspace, but to (re)build
 > manually — e.g. after editing source, or to see raw colcon output:
 > ```bash
-> cd ~/CrazySwarm2
+> cd ~/CrazySwarm2-with-Mocap
 > source /opt/ros/$ROS_DISTRO/setup.bash
 > colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 > source install/setup.bash
@@ -253,24 +279,24 @@ commit — a fresh clone then reproduces your exact rig. Key files:
 
 - [`src/crazyswarm2/crazyflie/config/crazyflies.yaml`](src/crazyswarm2/crazyflie/config/crazyflies.yaml) — drone list, URIs, types,
   firmware logging, and each drone's `initial_position` (update it from `/poses`
-  whenever a drone moves — procedure in
+  whenever a drone moves — with `scripts/sync_initial_positions.py`, procedure in
   [docs/MOCAP.md → Section 2b](docs/MOCAP.md#2b-setting-initial_position-from-poses)).
 - [`src/crazyswarm2/crazyflie/config/motion_capture.yaml`](src/crazyswarm2/crazyflie/config/motion_capture.yaml) — Motive address, markers, QoS. `hostname: "auto"` (the default) makes `launch.py` find the Motive PC with a NatNet discovery ping, so DHCP drift on the lab LAN no longer matters; override any time with `mocap_hostname:=<ip>` or `export CRAZYSWARM_MOCAP_HOST=<ip>`: see [MOCAP Section 5](docs/MOCAP.md#5-networking-mocap-over-a-router-lab-setup).
 - [`src/crazyswarm2/crazyflie/config/server.yaml`](src/crazyswarm2/crazyflie/config/server.yaml) — warning thresholds, sim backend/controller, `query_all_values_on_connect` (keep `True` — LED control needs the full param list at connect).
 - [`src/crazyswarm2/crazyflie/config/teleop.yaml`](src/crazyswarm2/crazyflie/config/teleop.yaml) — gamepad mapping
   (see [docs/RUNNING.md → Section D](docs/RUNNING.md#d-manual--teleop-flight)).
-- [`src/crazyswarm2/crazyflie/launch/launch.py`](src/crazyswarm2/crazyflie/launch/launch.py) — customized (adds the **foxglove_bridge**
-  and **preflight GUI** nodes; `rviz` default `True`, `gui` default `False`).
+- [`src/crazyswarm2/crazyflie/launch/launch.py`](src/crazyswarm2/crazyflie/launch/launch.py) — customized
+  (`rviz` default `True`, `gui` default `False`; adds `server:=False`, `trace_cf:=` and the
+  Motive auto-discovery — what differs from upstream is in
+  [docs/SERVER-CHANGES.md](docs/SERVER-CHANGES.md)).
 - [`src/crazyswarm2/crazyflie/scripts/preflight_kalman_plotter.py`](src/crazyswarm2/crazyflie/scripts/preflight_kalman_plotter.py) — the preflight GUI
   (thresholds and takeoff/land setpoints are constants at the top; see
   [docs/RUNNING.md → Section C](docs/RUNNING.md#c-preflight-gui-preflight_kalman_plotterpy)).
 
-[`pose_bridge.py`](pose_bridge.py) `DRONES` and `PUBLISH_HZ` must match `crazyflies.yaml` and the
-Motive streaming rate — see [docs/MOCAP.md](docs/MOCAP.md).
-
-> **Heads-up:** [`pose_bridge.py`](pose_bridge.py) currently lists `DRONES = ['cf1', 'cf2']`,
-> which no longer matches the enabled fleet (`cf1`, `cf2`, `cf3`, `cf10`,
-> `cf14`) — update it before using the alternative natnet_ros2 mocap path.
+[`pose_bridge.py`](pose_bridge.py) (the alternative natnet_ros2 mocap path only)
+reads its roster from `crazyflies.yaml` and publishes at `PUBLISH_HZ = 50.0`,
+matching the Motive streaming rate; there is nothing to keep in sync by hand
+(see [docs/MOCAP.md](docs/MOCAP.md)).
 
 After editing anything in `src/`, rebuild: [`./scripts/build.sh`](scripts/build.sh) (or just the
 changed package, e.g. `./scripts/build.sh crazyflie`).
@@ -282,9 +308,13 @@ changed package, e.g. `./scripts/build.sh crazyflie`).
 First, in **Motive** set Data Streaming to **Multicast** at **50 Hz** — this must
 match `src/crazyswarm2/crazyflie/config/motion_capture.yaml`. Activate the
 workspace in **every** terminal you open (`source /opt/ros/$ROS_DISTRO/setup.bash
-&& source ~/CrazySwarm2/install/setup.bash` — Step 5 above). Then:
+&& source ~/CrazySwarm2-with-Mocap/install/setup.bash` — Step 5 above). Then:
 
 ```bash
+# terminal 0 — radio go/no-go FIRST. The server blocks silently and forever on
+# the first enabled drone that does not answer; the list comes from the yaml.
+./scripts/scan_fleet.sh
+
 # terminal 1 — Crazyflie server. Also starts mocap tracking, RViz, the
 # preflight GUI and the Foxglove bridge (all on by default;
 # rviz:=false / preflight:=False to disable)
@@ -509,14 +539,16 @@ and each tool's header docstring is its full manual:
   multi_trajectory` (whole fleet flies traj1 in formation, returns home, slow
   landing, ~50 s) and `ros2 run crazyflie_examples multi_trajectory_formation`
   (no traj1 — instead a formation dance: waypoint tour (3 waypoints + return,
-  rigid group moves) → pentagon gather → one smooth 360° spin
-  (10 s) → triangle+tail morph → whole-swarm orbit of the room center
-  (1.2 m radius, 12 s, ~0.63 m/s) → back to the pentagon → home, ≈ 58.0 s
-  airborne — needs a **~2.24 m clear radius** around the room center).
+  rigid group moves) → n-gon gather → one smooth 360° spin → triangle+tail morph →
+  whole-swarm orbit of the arena centre → back to the gather ring → home, ≈ 58 s
+  airborne). It **proves its plan against the measured arena before it arms** and
+  refuses if the figure does not fit the marks the drones are parked on, so there
+  is no fixed "clear radius" to quote: run it and read the banner
+  (geometry: [RUNNING Section B](docs/RUNNING.md#multi-drone-trajectory-demos)).
   In sim add `--ros-args -p use_sim_time:=true`; on hardware run without it.
   Full flow: [RUNNING Section B](docs/RUNNING.md#multi-drone-trajectory-demos).
 
-  ![Formation demo — five drones fly the waypoint tour, pentagon gather, 360° spin, triangle+tail morph, and room-center orbit](video/formation_demo_1.gif)
+  ![Formation demo — drones fly the waypoint tour, pentagon gather, 360° spin, triangle+tail morph, and room-center orbit](video/formation_demo_1.gif)
 
   *Formation demo flight footage.*
 
@@ -527,19 +559,36 @@ and each tool's header docstring is its full manual:
   spins all four props at low PWM (~15%, far below hover) for 10 s, then stops
   and disarms — motors always stopped even on Ctrl-C. **Ground test only**:
   drone on the floor, fingers clear.
-  Full flow: [RUNNING Section E](docs/RUNNING.md#prop-spin-ground-test-arming-example).
+  Full flow: [RUNNING Section F](docs/RUNNING.md#prop-spin-ground-test-arming-example).
 - **LED tools** — `./scripts/led.sh <color>` and
   `ros2 run crazyflie_examples color_led <color>` set the Color LED deck live
   while the server runs (both also have an interactive number-key mode);
   `scripts/color_led_cflib.py` talks directly over cflib — **stop the server
   first**, they cannot share the Crazyradio.
-  Full flow: [RUNNING Section E](docs/RUNNING.md#color-led-deck--status-convention-and-manual-control).
+  Full flow: [RUNNING Section F](docs/RUNNING.md#color-led-deck--status-convention-and-manual-control).
 - **Runtime firmware params** — `ros2 param set /crazyflie_server
   cf1.params.<group>.<name> <value>` now reaches the drone immediately: the
   vendored server pushes params from an on-set callback (upstream's
   `/parameter_events` path silently never fired on this rig — see
   [CLAUDE.md → Gotchas](CLAUDE.md#gotchas-hard-won--dont-re-derive)).
-  Full flow: [RUNNING Section E](docs/RUNNING.md#runtime-firmware-parameters).
+  Full flow: [RUNNING Section F](docs/RUNNING.md#runtime-firmware-parameters).
+
+### Shows — the three choreographed / reactive demos
+
+Beyond the examples there is a show package, `crazyflie_shows` (carousel,
+constellation, escort). Every show follows **plan → sim → dry-run → fly**, each
+has an offline planner that needs no radio, no mocap and no drones, and each
+refuses before arming if its plan does not fit the measured arena. Flight-day
+procedure is in [`runbooks/`](runbooks/README.md) (start there, it carries the
+rules common to all three: the address scan, and what an E-STOP costs); design
+rationale is in the package ([SHOW_GUIDE](src/crazyswarm2/crazyflie_shows/SHOW_GUIDE.md),
+[CONSTELLATION](src/crazyswarm2/crazyflie_shows/CONSTELLATION.md),
+[ESCORT](src/crazyswarm2/crazyflie_shows/ESCORT.md)). To add your own, see
+[docs/WRITING-A-SHOW.md](docs/WRITING-A-SHOW.md).
+
+```bash
+ros2 run crazyflie_shows plan_show          # also plan_constellation, plan_escort; no hardware
+```
 
 ## 7. Color LED control
 
@@ -588,8 +637,10 @@ Everything in sections 4–7 can also be driven from a browser:
 
 It sources ROS and this workspace for you, then runs the **same `ros2` commands**
 as child processes — and shows each one before it runs, so you can copy it into a
-terminal instead of memorising it. Five tabs:
+terminal instead of memorising it. Six tabs (Dashboard is the default):
 
+- **Dashboard** — per-drone tiles (supervisor state in words, battery, link),
+  a "needs attention" row and the session steps as buttons.
 - **System health** — a diagram of the real data path (workspace → config →
   radio + Motive → `/poses` → `crazyflie_server` → each drone). Each box is its
   own probe; click one for what was measured, the command behind it and the fix.
@@ -610,22 +661,31 @@ terminal instead of memorising it. Five tabs:
 
 It is a **module, not a fork**: it lives entirely in [`console/`](console/),
 nothing in `src/` references it, and it needs no build — `rm -rf console/` removes
-it and the workspace still works exactly as this README describes. Details,
-including the "no authentication" caveat before you bind it to the lab network:
-[console/README.md](console/README.md).
+it and the workspace still works exactly as this README describes. For
+operators, the GUI-action → terminal-command table is
+[docs/CONSOLE.md](docs/CONSOLE.md); for anyone editing it (module layout, API,
+extending), and the "no authentication" caveat before you bind it to the lab
+network: [console/README.md](console/README.md).
 
 ## 9. Repo layout
 
+The annotated file tree **and** the data-flow graph are in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); this is the one-screen version.
+
 ```
-CrazySwarm2/
-├── src/                  # VENDORED source — crazyswarm2 + natnet_ros2 (committed)
-├── scripts/              # setup.sh, install_deps.sh, build.sh, setup_sim_firmware.sh,
-│                         #   led.sh (LED via ros2 param set), color_led_cflib.py (direct cflib)
-├── pose_bridge.py        # natnet → /poses bridge (50 Hz)
-├── console/              # OPTIONAL mission-console GUI (section 8) — delete it and
-│                         #   everything above still works; nothing depends on it
-├── docs/                 # RUNNING, MOCAP, TROUBLESHOOTING
-├── CLAUDE.md
+CrazySwarm2-with-Mocap/
+├── src/                  # VENDORED, customized source (committed): crazyswarm2 (+ the
+│                         #   crazyflie_shows package), natnet_ros2, motion_capture_tracking
+├── scripts/              # operator tools: setup/build/install, scan_fleet.sh,
+│                         #   sync_initial_positions.py, led.sh, arena + link diagnostics
+├── runbooks/             # per-show OPERATOR run cards (carousel, constellation, escort)
+├── docs/                 # operating, mocap, troubleshooting, architecture, console, shows, upstream
+├── console/              # OPTIONAL mission-console GUI (section 8) — nothing depends on it
+├── pose_bridge.py        # alternative natnet → /poses bridge (50 Hz)
+├── mocap_watchdog.py  safety_watchdog*.py  plot_estimate.py   # top-level helpers (see ARCHITECTURE)
+├── data/  Pics/  video/  # measurements (arena, link stalls), screenshots, demo footage
+├── CLAUDE.md             # operational ground truth for maintainers and Claude Code
+├── WORKSPACE-NOTES.md    # the fork itself: branches, upstream relationship, hand-back
 └── build/  install/  log/   # generated, git-ignored
 ```
 
@@ -633,13 +693,48 @@ CrazySwarm2/
 
 `src/` was vendored from these upstreams (with local customizations):
 
-- `crazyswarm2` — github.com/IMRCLab/crazyswarm2 (`ae23edc`)
+- `crazyswarm2` — github.com/IMRCLab/crazyswarm2 (`ae23edc`), via AI-DA-STC/CrazySwarm2-with-Mocap
 - `natnet_ros2` — github.com/L2S-lab/natnet_ros2 (`883b095`)
+- `motion_capture_tracking` — IMRCLab `ros2@64d3af2` plus local patches ([VENDORED.md](src/motion_capture_tracking/VENDORED.md))
 
-To pull upstream changes, diff against those and merge manually, or re-vendor.
+What this fork changed in the server and libraries relative to AI-DA-STC
+is listed in [docs/SERVER-CHANGES.md](docs/SERVER-CHANGES.md) (regenerate it
+with `git diff upstream/main HEAD`).
 
-## 10. Documentation and troubleshooting
+## 10. Documentation index
 
-- [docs/RUNNING.md](docs/RUNNING.md) — sim, hardware, mocap launch flows; the preflight GUI; custom logging; Color LED control
-- [docs/MOCAP.md](docs/MOCAP.md) — OptiTrack calibration, rigid bodies, 240→50 Hz tuning; see also [Networking: mocap over a router (lab setup)](docs/MOCAP.md#5-networking-mocap-over-a-router-lab-setup)
-- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — common failures
+Every first-party document, who it is for, and what it is for. Where two
+documents overlap, the one marked **owns** is the one to trust.
+
+**Start and operate**
+
+| Document | Audience | One line |
+|---|---|---|
+| [README.md](README.md) | new operator | this file: setup, first flight, the index |
+| [docs/RUNNING.md](docs/RUNNING.md) | operator | **owns** launch flows: sim, hardware, preflight GUI, teleop, LED, launch arguments |
+| [runbooks/README.md](runbooks/README.md) | operator on show day | **owns** the rules common to every show; links the three run cards |
+| [runbooks/CAROUSEL.runcard.md](runbooks/CAROUSEL.runcard.md), [CONSTELLATION](runbooks/CONSTELLATION.runcard.md), [ESCORT](runbooks/ESCORT.runcard.md) | operator | commands in order, every argument, the abort procedure |
+| [runbooks/ESCORT.narrative.md](runbooks/ESCORT.narrative.md), [ESCORT.qna.md](runbooks/ESCORT.qna.md) | presenter | the spoken script, light legend and Q&A for the escort demo |
+| [docs/MOCAP.md](docs/MOCAP.md) | operator, mocap admin | **owns** Motive calibration, rigid bodies, the world frame and arena, networking |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | operator | symptom → cause → fix tables |
+| [docs/CONSOLE.md](docs/CONSOLE.md) | operator | the browser GUI: every action mapped to its terminal command |
+
+**Understand and extend**
+
+| Document | Audience | One line |
+|---|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | anyone new | file-structure tree and functional graph, topics, failure directions |
+| [docs/WRITING-A-SHOW.md](docs/WRITING-A-SHOW.md) | show author | the contract a show must meet before it may arm, with a skeleton |
+| [SHOW_GUIDE](src/crazyswarm2/crazyflie_shows/SHOW_GUIDE.md), [CONSTELLATION](src/crazyswarm2/crazyflie_shows/CONSTELLATION.md), [ESCORT](src/crazyswarm2/crazyflie_shows/ESCORT.md) | show author | design rationale and budgets for each show |
+| [console/README.md](console/README.md) | console developer | internals, API, how to extend the console |
+
+**Maintain and hand back**
+
+| Document | Audience | One line |
+|---|---|---|
+| [CLAUDE.md](CLAUDE.md) | maintainer, Claude Code | **owns** the hard-won gotchas and the firmware stall/upload root-cause record |
+| [docs/SERVER-CHANGES.md](docs/SERVER-CHANGES.md) | maintainer | what the fork changed in the C++ server and libraries vs AI-DA-STC, and why |
+| [WORKSPACE-NOTES.md](WORKSPACE-NOTES.md) | maintainer | the fork: branches, never PR from `main`, the owed sim-arity PR |
+| [docs/CONTRIBUTING-UPSTREAM.md](docs/CONTRIBUTING-UPSTREAM.md) | fork owner | how to give the shows and console back to AI-DA-STC without polluting it |
+| [src/motion_capture_tracking/VENDORED.md](src/motion_capture_tracking/VENDORED.md) | maintainer | why the mocap driver is vendored and what is patched |
+| [PROVENANCE](src/crazyswarm2/crazyflie_shows/PROVENANCE.md), [HANDOVER](src/crazyswarm2/crazyflie_shows/HANDOVER.md) | historian | where the show package came from; the 2026-09-07 mocap debugging story (largely superseded) |

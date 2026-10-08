@@ -23,7 +23,10 @@ Motive/OptiTrack ──NatNet Multicast@50Hz──► motion_capture_tracking �
 Alt mocap path: Motive → natnet_ros2 → /mocap/<body>/pose → pose_bridge.py → /poses
 ```
 
-Fleet = five drones on **ONE Crazyradio dongle** (`radio://0/80/2M`).
+Fleet = the enabled subset of the yaml, on **ONE Crazyradio dongle**
+(`radio://0/80/2M`). Six airframes are declared; how many are enabled changes
+per show (it was five, it is four as of 2026-10-08). **Do not write the count
+here** — `./scripts/scan_fleet.sh --list` prints it.
 **`crazyflies.yaml` is the ground truth for the fleet, and this paragraph
 deliberately does not name it** — every prose copy of the roster in this repo
 had drifted by 2026-10-06 (four documents, three different address lists, two
@@ -88,15 +91,17 @@ src/                # VENDORED source (committed)
                       #     cmdPosition: crazyflie_sil has no cmd_position, so a
                       #     cmdPosition demo cannot be flown in sim at all). Slot order
                       #     is fixed at gather so defenders never swap places. Built
-                      #     2026-09-23 for the 8 Oct area-denial demo; sim only, never
-                      #     flown. The open numbers (speed cap vs walking speed above
+                      #     2026-09-23 for the 8 Oct area-denial demo. FLOWN on
+                      #     hardware 2026-10-07 and DEMONSTRATED TO GUESTS
+                      #     2026-10-08 (several runs, last one clean). The open numbers (speed cap vs walking speed above
                       #     all) are listed in ESCORT.md "Decisions still open" -- with
                       #     the shipped defaults plan_escort --sweep measures the ring
                       #     holding only up to a 0.20 m/s walk.
                       #   Folded in 2026-09-18 from ~/near-intern/swarm-shows (retired,
                       #   commit 714affe). Rig knowledge: its HANDOVER.md. Always re-run
                       #   the planner (plan_show AND plan_constellation) after a position
-                      #   sync -- the carousel sits at 99% of the separation budget.
+                      #   sync -- the planners are the only thing that re-checks
+                      #   separation against the live marks.
   natnet_ros2/        # OptiTrack driver (+ vendored NatNetSDK)
   motion_capture_tracking/  # VENDORED mocap driver: IMRCLab ros2@64d3af2 + NatNet-4.2 modeldef patch.
                             # NEVER apt-install it: apt 1.0.9 hard-codes IP 141.23.110.162 → no /poses (VENDORED.md)
@@ -116,7 +121,11 @@ pose_bridge.py      # natnet → /poses (NamedPoseArray @ 50 Hz)
 console/            # OPTIONAL mission-console GUI (its own README). Self-contained:
                     #   not a colcon package, nothing in src/ imports it, no build.
                     #   `rm -rf console/` removes the feature and changes nothing else.
-docs/               # RUNNING, MOCAP, TROUBLESHOOTING
+runbooks/           # OPERATOR cards, moved out of crazyflie_shows 2026-10-08:
+                    #   one per show + the escort's guest narrative and Q&A
+docs/               # RUNNING, MOCAP, TROUBLESHOOTING, plus (2026-10-08)
+                    #   ARCHITECTURE (file + data-flow graphs), CONSOLE,
+                    #   WRITING-A-SHOW, SERVER-CHANGES, CONTRIBUTING-UPSTREAM
 .claude/            # agents/ (build-doctor, mocap-doctor, ...) and workflows/ (deep-research)
 README.md           # single setup doc (no separate SETUP.md)
 WORKSPACE-NOTES.md  # the FORK itself: main is the working trunk (never PR from it), the sim
@@ -128,11 +137,15 @@ Key customized files inside `src/`:
   `crazyflies.yaml` has the `kalman_preflight` custom log topic (feeds the
   preflight GUI; 22 B of the 26 B log-block budget — vars must exist in the
   firmware log TOC or the cpp server aborts at connect).
-- `src/crazyswarm2/crazyflie/launch/launch.py` — adds the **foxglove_bridge** and
-  **preflight GUI** nodes; defaults: `rviz` `True`, `preflight` `True`,
-  `foxglove` `True`, `gui` `False`, `server` `True` (upstream lacks the extra
-  nodes and the toggle). **`server:=False`** brings up mocap + RViz + preflight
-  GUI and NO server — no radio owner, nothing armable. That is the state
+- `src/crazyswarm2/crazyflie/launch/launch.py` — defaults: `rviz` `True`,
+  `preflight` `True`, `foxglove` `True`, `gui` `False`, `server` `True`.
+  **The foxglove_bridge and preflight GUI nodes are NOT this fork's**: they are
+  already in AI-DA-STC `9ed4bae` (verified 2026-10-08 — identical occurrence
+  counts in `upstream/main` and `HEAD`). This file claimed they were, and that
+  kind of mis-attribution is what makes a donation PR carry code upstream
+  already has. `git diff upstream/main HEAD -- <path>` settles it; the real
+  divergence is +26/-3 lines here.
+  **`server:=False`** brings up mocap + RViz + preflight GUI and NO server — no radio owner, nothing armable. That is the state
   `sync_initial_positions.py` wants ("mocap up, server not yet started"), which
   before 2026-10-02 took a launch-sync-relaunch cycle.
 - `src/crazyswarm2/crazyflie/scripts/preflight_kalman_plotter.py` — preflight GUI.
@@ -140,14 +153,15 @@ Key customized files inside `src/`:
   setpoints (0.5 m/3 s, 0.03 m/3 s), `LOG_DIR` = `~/crazyswarm_ws/preflight_logs`
   (hardcoded, NOT under this repo). Keys: `r` reset kalman, `e` broadcast e-stop
   (deliberate); takeoff/land have no keys on purpose.
-- `src/crazyswarm2/crazyflie/src/crazyflie_server.cpp` — runtime firmware-param
-  pushes use `add_on_set_parameters_callback` instead of upstream's
-  ParameterEventHandler (self-generated `/parameter_events` never loop back on
-  this rig — see Gotchas), so `ros2 param set` now actually reaches the drones;
-  also sets the Color LED deck **green on connect** / off on clean disconnect.
-- `src/crazyswarm2/crazyflie/config/server.yaml` —
-  `query_all_values_on_connect: True` (all firmware-param values are fetched at
-  connect, not lazily).
+- `src/crazyswarm2/crazyflie/src/crazyflie_server.cpp` — **+445/-22 lines vs
+  upstream**, all of it documented group by group in **`docs/SERVER-CHANGES.md`**:
+  the telemetry watchdog, the bounded memory-write waits and `bad_trajectories_`,
+  reply matching by identity rather than shape, packet tracing, and the
+  `may_be_airborne` gate. Read that file before touching this one or before
+  rebasing onto a newer upstream.
+  `add_on_set_parameters_callback`, the Color LED **green on connect**, and
+  `query_all_values_on_connect` are **already in AI-DA-STC `9ed4bae`** — this
+  file used to claim them as fork changes (corrected 2026-10-08).
 - `src/crazyswarm2/crazyflie_examples/crazyflie_examples/multi_trajectory.py` —
   arms before takeoff; flies ONLY `traj1.csv` (~25 s) on all drones (traj0
   dropped, ~50 s total); return-home goTo (+0.75 m over each drone's own

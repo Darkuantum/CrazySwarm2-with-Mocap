@@ -6,9 +6,9 @@ exist so a show can be flown by someone who is not going to read 25 KB first.
 
 | show | card | design doc | duration |
 |---|---|---|---|
-| carousel | [CAROUSEL.runcard.md](CAROUSEL.runcard.md) | `../SHOW_GUIDE.md` | ~63 s |
-| constellation | [CONSTELLATION.runcard.md](CONSTELLATION.runcard.md) | `../CONSTELLATION.md` | 76 s |
-| escort | [ESCORT.runcard.md](ESCORT.runcard.md) | `../ESCORT.md` | script length, or 120 s |
+| carousel | [CAROUSEL.runcard.md](CAROUSEL.runcard.md) | `../src/crazyswarm2/crazyflie_shows/SHOW_GUIDE.md` | ~63 s |
+| constellation | [CONSTELLATION.runcard.md](CONSTELLATION.runcard.md) | `../src/crazyswarm2/crazyflie_shows/CONSTELLATION.md` | 76 s |
+| escort | [ESCORT.runcard.md](ESCORT.runcard.md) | `../src/crazyswarm2/crazyflie_shows/ESCORT.md` | script length, or 120 s |
 
 The escort also has two guest-facing documents:
 [ESCORT.narrative.md](ESCORT.narrative.md) — what to say at each stage, a

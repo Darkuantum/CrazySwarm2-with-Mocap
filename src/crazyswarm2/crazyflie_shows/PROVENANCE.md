@@ -80,7 +80,8 @@ account ("Beyond the Carousel", "Crazyflie Swarm Replay").
 ## Status at the time of the merge
 
 Flown on hardware 2026-09-17: all five drones, seven figures, landed at
-t+63.8 s. Separation sits at 99% of budget — 0.91 m against a 0.90 m floor
-during counterflow — so run `plan_show` after every position sync. The research
+t+63.8 s. As of 2026-10-06 (five marks) separation sat at 99% of its budget — 0.91 m
+against 0.90 m during counterflow; the figure moves with the marks and the
+enabled fleet, so run `plan_show` after every position sync and read its output. The research
 report's first finding (downwash is an ellipsoid, not a sphere) is the obvious
 lever for the next iteration: it would relax exactly that budget.

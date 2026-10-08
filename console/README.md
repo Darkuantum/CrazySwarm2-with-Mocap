@@ -18,8 +18,8 @@ start it from any shell.
 
 ## It is a module, not a fork
 
-Everything lives in `console/`. **No file outside this directory was changed to
-add it**, nothing in `src/` imports it, and it is not a colcon package — so
+Everything lives in `console/`. No code outside this directory depends on it (the top-level README, `CLAUDE.md` and
+`docs/` carry prose that points here, and nothing else), nothing in `src/` imports it, and it is not a colcon package — so
 `rm -rf console/` removes the feature completely and the workspace keeps working
 exactly as documented in the top-level README. It also needs no rebuild: it is
 plain Python 3 + PyYAML (already a dependency) driving the `ros2` CLI.
@@ -228,6 +228,7 @@ the CLI). It also means every probe is a command you can run yourself.
 ```
 console/
   run.sh                     entry point (sources ROS + overlay, de-condas, serves)
+  stop_stack.sh              graceful stack stopper (SIGINT -> SIGTERM -> SIGKILL, then verifies UDP 1511 is free)
   backups/                   timestamped copies of every config file it writes
   mission_console/
     __main__.py              CLI, http server lifecycle, signal handling
@@ -238,6 +239,12 @@ console/
     procs.py                 process manager (pty, process groups, ring buffers)
     static/                  index.html, app.js, style.css
 ```
+
+Flight scripts are discovered, not hard-coded: `catalog.discover_scripts()` scans
+every `crazyflie_py`-dependent package under `install/` (so the `crazyflie_shows`
+scripts appear automatically, with an escort-specific stdin note in `catalog.py`).
+The operator-facing GUI-action-to-command table lives in
+[../docs/CONSOLE.md](../docs/CONSOLE.md); this file is for editing the console.
 
 `?live=0` on the URL opens the page without the live event stream (a static
 snapshot, useful for a screenshot — and required for a headless-browser capture,

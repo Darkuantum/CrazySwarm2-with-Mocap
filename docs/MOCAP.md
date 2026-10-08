@@ -80,18 +80,35 @@ Each drone needs its own rigid body so Motive streams one pose per drone:
 ## 2b. Setting `initial_position` from `/poses`
 
 Whenever the drones' floor placement changes, update each drone's
-`initial_position` in `config/crazyflies.yaml` from **mocap truth**:
+`initial_position` in `config/crazyflies.yaml` from **mocap truth**. Use the
+script; it carries the safety refusals that a hand edit does not:
 
-1. **Place** the drones on the floor where they will take off.
-2. **Read each drone's x/y from `/poses`** (with the launch running). Per-drone
-   filter:
+1. **Place** the drones on the floor where they will take off (the show
+   planners' `--marks` output, or `scripts/place_drones.py`, says where).
+2. **Bring up mocap WITHOUT the server**, so there is no radio owner:
    ```bash
-   ros2 topic echo /poses | grep -A5 -- '- name: cf1$'
+   ros2 launch crazyflie launch.py server:=False
    ```
-3. **Copy** the x/y (z ≈ 0) into that drone's `initial_position` in
-   `crazyflies.yaml`.
+3. **Preview, then apply:**
+   ```bash
+   python3 scripts/sync_initial_positions.py --dry-run     # shows the diff, writes nothing
+   python3 scripts/sync_initial_positions.py               # prompts; --yes to skip the prompt
+   ```
+   It samples `/poses`, matches each drone to the rigid body of the same name
+   and rewrites only the `initial_position` triples, comments preserved. It
+   writes a mark for **every drone mocap streams, enabled or not** (so
+   switching fleets between shows never carries a stale mark;
+   `--enabled-only` restores the old behaviour). It **refuses** when an enabled
+   drone is not streamed, is moving (>10 mm spread over the window), sits above
+   0.5 m, or when two drones are <1 m apart; `--force` overrides and `--with-z`
+   writes the measured z instead of keeping the yaml's.
 4. **Restart the server** — the yaml is read **only at launch**; an edit while
    the server runs changes nothing.
+5. **Re-run every show planner** (`plan_show`, `plan_constellation`,
+   `plan_escort`): the plan is a function of the marks.
+
+Manual equivalent, if you must: read x/y from
+`ros2 topic echo /poses | grep -A5 -- '- name: cf1$'` and edit by hand.
 
 Rules — each one is load-bearing:
 
@@ -107,6 +124,38 @@ Rules — each one is load-bearing:
   the return-home / formation `goTo` paths **cross** — this caused a **real
   mid-air collision on 2026-08-04**. Match names on the floor to names in the
   yaml before every flight.
+
+## 2c. The world frame, the measured arena, and what a recalibration breaks
+
+Everything the shows and the planners know about the room is in
+`src/crazyswarm2/crazyflie_shows/crazyflie_shows/safety.py` (print it, do not
+copy it: `python3 -c "from crazyflie_shows import safety as s; print(s.ARENA_CENTRE, s.ARENA_RADIUS_TESTED, s.ARENA_RADIUS_PLAN, s.ARENA_RADIUS_LOST)"`).
+
+- **The frame is whatever Motive's ground plane defines.** Z is up (a ground
+  plane that is not Z-up must be recalibrated) and each drone's nose must lie
+  along global **+X** when its rigid body is created — see section 2. Look at
+  the axis triad in Motive, not at your memory of it. `scripts/check_mocap_yaw.py`
+  prints each body's own X axis in the world live (mocap up, server not running)
+  while you square the drones.
+- **The arena was surveyed 2026-10-01** by carrying a tracked body and by
+  flying (`scripts/measure_arena.py`, `scripts/arena_flight_sweep.py`; raw
+  data under `data/arena/`). The tracked volume is anisotropic, roughly a
+  truncated cone; `ARENA_RADIUS_TESTED` is where flight was clean,
+  `ARENA_RADIUS_LOST` is where a flying drone actually lost tracking, and
+  `ARENA_RADIUS_PLAN` is tested minus the tracking margin, the number a plan
+  must stay inside.
+- **Motive was recalibrated 2026-10-08, and the frame moved.** The room, the
+  cameras and the drones did not. The old-to-new transform was fitted on three
+  undisturbed drones (rotate +91.59 deg, translate [+0.043, -0.098] m, max
+  residual 0.0159 m; their pairwise distances still agreed with the yaml to
+  <= 21 mm, which is what shows the frame moved and not the drones). `ARENA_CENTRE`
+  was carried across; the radii are invariant. **A transformed survey is not a
+  survey:** re-run `scripts/arena_flight_sweep.py` before trusting the edges.
+- **After any Motive recalibration or rigid-body rename:** do not fly; re-sync the
+  marks (2b); transform every world-frame literal in every show *by its kind*
+  (a point is rotated and translated, an offset is rotated, an absolute bearing
+  has the angle added) — the full table, and the escort's three separate
+  mistakes, are in [WRITING-A-SHOW §5.6](WRITING-A-SHOW.md); re-run the planners.
 
 ## 3. Frequency / bandwidth tuning (240 → 50 Hz)
 
@@ -172,7 +221,7 @@ all:
 Guidelines:
 
 - **Drones on the same URI channel share one radio's bandwidth.** This rig
-  currently runs **single-dongle**: cf1/cf2/cf3/cf10/cf14 all on `radio://0/80/2M` —
+  currently runs **single-dongle**: the whole enabled fleet (`./scripts/scan_fleet.sh --list`) on `radio://0/80/2M` —
   workable because the log rates below are trimmed low. **When running two
   dongles** — as this rig historically did (cf1 on `radio://0/80/2M`, cf11 on
   `radio://1/90/1M`) — two rules, both proven the hard way here (see the
@@ -183,7 +232,7 @@ Guidelines:
   - **Per-drone datarate must match the URI.** A `2M` URI on a drone whose
     radio runs at `1M` makes the server **hang forever at connect** — and the
     `/all/*` services (takeoff/land/arm) are never created. Verify with a scan
-    on the drone's address (`ros2 run crazyflie scan --address 0xE7E7E7E711`).
+    on the drone's address (`./scripts/scan_fleet.sh`, or by hand `ros2 run crazyflie scan --address <address from the yaml>`).
 - Keep total logging modest: `pose @ 10 Hz`, `status @ 1 Hz`, the
   `kalman_preflight` block `@ 5 Hz` is enough for monitoring. Add high-rate
   logging (50 Hz attitude/kalman
@@ -263,4 +312,4 @@ Then **restart Motive and relaunch** the stack. Symptom of forgetting:
 ST Engineering staff: the lab-specific addresses and full router details
 (credentials, IP plan, photos) are in the private repo:
 [Mocap_QC_Ground_Control_Router_Information](https://github.com/AI-DA-STC/Mocap_QC_Ground_Control_Router_Information)
-(TODO: confirm link once published).
+(link not confirmed as published; if it 404s, ask the lab admin for the router notes).

@@ -7,13 +7,25 @@ machine back.
 
 ## Branches
 
-Only `main`, as of 2026-09-19. `local-fixes` and `workspace-notes` were merged
-in and deleted; their commits stay reachable from `main`'s history.
+Only `main`, as of 2026-10-08. `local-fixes`, `workspace-notes` and `escort`
+were merged in and deleted; their commits stay reachable from `main`'s history.
+`escort` was deleted on 2026-10-08 at `627b499`, which was by then the merge
+base with `main` -- it held nothing `main` did not, and `main` was 35 commits
+ahead of it. Topic branches are expected to be short-lived here: `main` is the
+trunk, and a branch that has stopped being ahead of it is finished.
 
 `main` is **the fork's working trunk, not a mirror of AI-DA-STC.** It carries
 fork-only work (the mission console, `crazyflie_shows`, a fork-specific
 `CLAUDE.md`) on top of upstream. So **never open a PR from `main`**: cut a branch
 from `upstream/main` and cherry-pick only the commit being proposed.
+For a whole deliverable (the console, the show package) rather than one commit,
+branch from `upstream/main` and copy the paths over with
+`git checkout main -- <path>`; the strategy, the `pr/*` and long-lived `donate/*`
+branch naming, the pre-donation checklist and the exact command sequences are in
+[docs/CONTRIBUTING-UPSTREAM.md](docs/CONTRIBUTING-UPSTREAM.md). A `donate/*`
+branch, if one is created, must be recorded in this section as deliberate and
+deleted the day its PR merges or is abandoned. What the fork changed in the C++
+server versus upstream is [docs/SERVER-CHANGES.md](docs/SERVER-CHANGES.md).
 
 ## Owed upstream: the sim trajectory arity fix
 
@@ -51,7 +63,8 @@ git fetch upstream && git merge upstream/main
 
 Tags worth knowing: `archive/swarm-shows-714affe` is the original history of the
 out-of-tree show repo that was folded into `crazyflie_shows/` (see that
-package's `PROVENANCE.md`) — it is the only copy.
+package's `PROVENANCE.md`) — it is on `origin` as well as local (`git ls-remote --tags origin`
+printed it 2026-10-08), so it is no longer the only copy.
 
 ## Restoring this clone to a stock checkout
 

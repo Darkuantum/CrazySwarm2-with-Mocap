@@ -1,20 +1,26 @@
-# SHOW GUIDE — a 5-drone, ~62 s swarm show
+# SHOW GUIDE — the carousel swarm show (~63 s)
 
 **There are two shows in this package.** This guide covers the carousel show
 (`swarm_show`) and, in §2 and §5, everything rig-specific that both shows
 need. The second show — shape changes on a beat, with lights — is
 `constellation_show`, documented in `CONSTELLATION.md`.
 
-**Written 2026-09-07.** Read `HANDOVER.md` first if you have not — this guide
-assumes the rig facts in it, especially §4a (the mocap address) and §6 (the
-safety rules). This file covers the show itself: what it does, what you must
+**Written 2026-09-07, reconciled 2026-10-08.** `HANDOVER.md` is a historical
+record of the 2026-09-07 debugging session and is largely superseded: the
+mocap-address story in its §4a is obsolete (the driver is vendored, see
+`src/motion_capture_tracking/VENDORED.md`), and the rig's current rules are in
+`CLAUDE.md` and `runbooks/README.md`. This file covers the show itself: what it does, what you must
 fill in, how to verify it on a laptop, and how to deploy and fly it.
 
-**Status.** The plan is verified offline, the package builds in the workspace,
-and **the whole show has flown end to end on `backend:=sim`** — all twelve
-phases, landing at t+62.3 s against a predicted 62.3 s. **Nothing has flown on
-hardware.** Every number below is measured, in sim or on the ground; treat §5d
-and §5e as a procedure to follow, not a report of something that worked.
+**Status.** The plan is verified offline and the show has flown end to end in
+sim (all twelve phases, landing at t+62.3 s against a predicted 62.3 s).
+**It has also flown on hardware:** 2026-09-17, all five drones then in the
+yaml, landed at t+63.8 s (`PROVENANCE.md`). That is the one show of the three
+with a hardware flight behind its numbers. Every number below is measured, in
+sim, on the ground or in that flight; the sections that describe a PROCEDURE
+(5d, 5e) were written before the flight and have been reconciled with the
+current rig since, so where they disagree with `runbooks/CAROUSEL.runcard.md`
+the runcard wins.
 
 Getting the sim run to work required fixing a pre-existing bug in the
 workspace's `crazyflie_sim` — see §7 and HANDOVER §4d. It is unrelated to this
@@ -39,8 +45,7 @@ ros2 launch crazyflie_shows show_launch.py backend:=sim
 ros2 run crazyflie_shows swarm_show --ros-args -p use_sim_time:=true
 
 # 4. hardware — only after §5's checklist
-sudo ip addr add 141.23.110.162/32 dev wlp131s0f0     # >>> your NIC
-ros2 run crazyflie scan --address 0xE7E7E7E701        # ... and every other one
+./scripts/scan_fleet.sh                               # GO/NO-GO for every enabled address
 ros2 launch crazyflie_shows show_launch.py
 ros2 run crazyflie_shows swarm_show
 ```
@@ -82,24 +87,32 @@ pieces of firmware memory instead of 18.
 ### Measured budgets
 
 Re-run `plan_show` after every position sync; the radius line in particular
-moves with `initial_position`. As of 2026-10-06, on the five enabled marks:
+moves with `initial_position`. **Do not quote the numbers from this file:**
+they depend on the marks, and on 2026-10-06 (five marks) they read separation
+0.91 m against a 0.90 m budget (99%), radius 1.77 m of 1.90 m (93%), while on
+the four-drone fleet of 2026-10-08 `plan_show` printed 0.96 m (94%) and 1.57 m
+(82%). The planner prints, for the current yaml: separation against
+`PLAN_SEPARATION` (0.80 m floor + 0.10 m tracking margin), speed, acceleration,
+radius, height, floor and trajectory pieces, each as a percentage of its budget.
 
-```
-separation   0.91 m  min 0.90 m    99%     (= 0.80 m floor + 0.10 m tracking margin)
-speed        1.87 m/s  max 2.00     93%
-accel        2.58 m/s2 max 3.00     86%
-radius       1.77 m  max 1.90 m    93%     about the MEASURED volume centre
-height       1.45 m  max 2.32 m    63%     centre column; 1.85 m at full radius
-floor        0.65 m  min 0.30 m    46%
-pieces         28     max 31       90%
-```
+**One thing the printed radius line does NOT do, and says it does:** it is
+labelled "about the MEASURED volume centre", but `choreography.py` sets
+`center` to the centroid of `initial_position` when `ShowConfig.room_center`
+is `None` (and passes that to `check_show`), so the carousel's envelope is
+checked about the formation, not about `safety.ARENA_CENTRE` — the failure mode
+`safety.py` and CONSTELLATION §1a say shows must not have. `plan_show` printed
+"centre (-0.171, +0.035) [centroid of initial_position]" on 2026-10-08 beside
+the label. This is a code/doc decision for the owner (how far the carousel
+moves if measured about `ARENA_CENTRE` was not checked); until it is made,
+read the centre the planner prints, not the label. The runcard states the
+centroid behaviour correctly.
 
 The radius and height limits used to be printed here as 2.50 m and 2.00 m,
 the inherited pre-survey numbers, which made the show look like it was using
-58% of the room when it is at 93%. Most of that 1.77 m is the PARKING, not the
-figures -- the same point CONSTELLATION.md makes.
+58% of the room when it was at 93%. Most of that radius is the PARKING, not
+the figures -- the same point CONSTELLATION.md makes.
 
-Separation sits at 99% of budget because the counterflow's clearance is
+Separation sits at the edge of its budget (99% on the five-drone marks) because the counterflow's clearance is
 *designed*, not accidental — it is a static radial gap. The budget itself is
 0.80 m of hard floor plus a 0.10 m allowance for controller lag, which was not
 guessed: see §4e.
@@ -148,37 +161,28 @@ the yaml is read once at launch (HANDOVER §2).
 
 ### 2b. `config/motion_capture.yaml` — the Motive server
 
-```yaml
-    hostname: "192.168.9.124"    # <-- literal dotted quad, NOT a hostname
-    type: "optitrack"            # <-- exactly this; see HANDOVER 4a
-```
-
-`interface_ip` in this file is **inert** in `motion_capture_tracking` 1.0.9 —
-do not spend time on it. The node always joins multicast on the hardcoded
-`141.23.110.162`, which is why §5's `ip addr add` is not optional.
+Since the mocap driver was vendored this file needs no per-show edit.
+`hostname: "auto"` makes `launch.py` find the Motive PC with a NatNet ping, and
+`type: "optitrack"` is the only value the vendored driver accepts. (This
+section used to tell you to hard-code a Motive IP and to add a bogus
+`141.23.110.162` address to your NIC; that was a workaround for the apt 1.0.9
+driver and is obsolete and harmful on the current rig. See `docs/MOCAP.md`.)
 
 ### 2c. `ShowConfig` in `crazyflie_shows/choreography.py` — the room
 
-Three fields, all marked `>>> FILL IN`:
-
 ```python
-room_center: tuple = None       # None = centroid of initial_position
-arena_radius: float = 2.5       # m, horizontal half-extent — MEASURE THIS
-ceiling: float = 2.0            # m — MEASURE THIS
+room_center: tuple = None       # None = centroid of initial_position (see "Measured budgets" above)
+arena_radius: float = safety.ARENA_RADIUS_PLAN   # 1.90 m
+ceiling: float = safety.CEILING_CENTRE_TESTED - safety.TRACKING_MARGIN
 ```
 
-* **`room_center`** — leave it `None` and the show centres itself on the
-  centroid of the fleet's start positions, which is usually what you want and
-  self-corrects when you move the drones. Set it explicitly if the fleet does
-  *not* start symmetrically about the room centre you want to fly around.
-  HANDOVER §3 records a hand-measured `(0.0467, -0.1037)` next to a computed
-  centroid of `(0.068, -0.109)`.
-* **`arena_radius` / `ceiling`** — these two are inherited from `safety.py`
-  and **have never been checked against the actual mocap volume.** They are
-  the only defaults in this package that are guesses. Measure them. The show
-  currently uses 1.45 m of radius and 1.45 m of height, so anything above
-  roughly 1.6 m and 1.6 m will pass — but a wrong value here is a check that
-  silently permits a wall.
+* **`room_center`** — `None` centres the show on the centroid of the fleet's
+  start positions. That self-corrects when you move drones, but it is the
+  formation, not the measured volume (see the note under "Measured budgets").
+* **`arena_radius` / `ceiling`** — no longer guesses. They default to the
+  measured, margin-reduced arena in `safety.py` (surveyed 2026-10-01,
+  re-expressed into the recalibrated frame 2026-10-08; see `docs/MOCAP.md`
+  section 2c). Print them, do not copy them.
 
 ### 2d. Nothing else is rig-specific
 
@@ -401,24 +405,22 @@ hardware it is the firmware's own pose log and the check is real.
 
 ### 5d. Hardware pre-flight
 
-Everything here is from HANDOVER §4a and §6. None of it is optional.
+None of it is optional. (An earlier version began with a per-session
+`ip addr add 141.23.110.162/32` step. That was a workaround for the apt mocap
+driver; with the vendored driver it is wrong. Do not run it.)
 
 ```bash
-# 1. the mocap address — PER SESSION, and again after any Wi-Fi reconnect
-sudo ip addr add 141.23.110.162/32 dev wlp131s0f0     # >>> your NIC
-ip -o -f inet addr show dev wlp131s0f0                # expect BOTH addresses
-
-# 2. mocap actually publishing
+# 1. mocap actually publishing
 ros2 topic hz /poses                                  # want ~50 Hz
 python3 scripts/sync_initial_positions.py --dry-run   # body names vs fleet (from the workspace root)
 ss -uanp | grep :1511                                 # two sockets = an orphan is starving it
 
-# 3. scan EVERY enabled address — one silent drone wedges the whole server.
+# 2. scan EVERY enabled address — one silent drone wedges the whole server.
 #    Derived from the yaml; the hardcoded list that used to sit here named
 #    cf10 and cf12, neither of which is in the fleet any more.
 ./scripts/scan_fleet.sh
 
-# 4. overlay check
+# 3. overlay check
 source install/setup.bash && ros2 pkg prefix crazyflie
 ```
 
@@ -431,10 +433,10 @@ ros2 launch crazyflie_shows show_launch.py
 * `err.yaw`: **±5° fly, 5–15° fix, >20° do not fly.** `locSrv.extPosStdDev`
   is `1e-3`, which force-fuses the mocap position — a yaw offset is invisible
   at rest and a fly-away in flight.
-* Batteries above the 3.8 V warning. The show is ~62 s plus upload time.
-* A mid-session Wi-Fi reconnect withdraws `141.23.110.162` and puts you in the
-  fly-away case, not the loud case. If the Wi-Fi drops, re-check the address
-  and restart the stack before arming.
+* Batteries above the 3.8 V warning. The show is ~63 s plus upload time.
+* If the Motive PC's address moved (lab DHCP), `hostname: "auto"` rediscovers
+  it at launch; restart the stack before arming rather than trusting a stale
+  connection.
 
 ### 5e. Fly
 
@@ -453,8 +455,10 @@ ros2 run crazyflie_shows swarm_show
   tracked),
 * any drone is more than `placement_tol` from its `initial_position`.
 
-Keep a hand on the emergency stop for all 62 s. Nothing in this package has
-flown.
+Keep a hand on the emergency stop for all ~63 s. `swarm_show` takes SIGINT and
+SIGTERM back through `abort.py` and lands staged, so Ctrl-C is the first
+response and the E-STOP is for a misbehaving drone (it latches the supervisor
+LOCKED until a battery is pulled).
 
 ### Parameters
 
@@ -560,11 +564,11 @@ opens up and every budget is re-checked automatically.
 | `No executable found` | added a file, skipped the rebuild | `./scripts/build.sh crazyflie_shows` |
 | `plan_show` rejects the plan | a budget is violated | it names the phase and the lever; see §6 |
 | launch hangs, no `/all/*` services | an enabled drone did not answer | scan every address; `enabled: false` the dead one (HANDOVER §6) |
-| mocap node aborts ~1.1 s, `set_option: No such device` | `141.23.110.162` missing | `sudo ip addr add …` (HANDOVER §4a) |
+| mocap node aborts ~1.1 s, `set_option: No such device` | the apt `motion_capture_tracking` is shadowing the vendored one | `ros2 pkg prefix motion_capture_tracking` must be inside `install/`; remove the apt package ([VENDORED.md](../../motion_capture_tracking/VENDORED.md)) |
 | mocap node aborts ~1.1 s, `Unknown motion capture type!` | `type` is not `"optitrack"` | fix `motion_capture.yaml` |
 | stack starts, `/poses` never publishes | node hung in `recv` | check the **topic**, never the process (HANDOVER §4a) |
 | your yaml edits appear to do nothing | overlay not sourced | `ros2 pkg prefix crazyflie` (HANDOVER §4b) |
-| **sim** server dies at the first figure, `plan_start_trajectory() takes 5 positional arguments but 7 were given` | `crazyflie_sim` targets a newer cffirmware binding than the one installed | fixed in `crazyflie_sil.py`; HANDOVER §4d. Hardware is unaffected |
+| **sim** server dies at the first figure, `plan_start_trajectory() takes 5 positional arguments but 7 were given` | the binding on this box is 5-arg and `crazyflie_sim` called it with 7 | `crazyflie_sil.py` now probes the arity at import; hardware unaffected. Never hard-code either signature |
 | `NO POSE from: …` | that drone is not being tracked | `ros2 topic hz /poses`, then `/cfX/pose` |
 | `PLACEMENT CHECK FAILED` | drone is not on its mark | move it, or re-take `initial_position` from `/poses` |
 | show runs but far too fast in sim | `use_sim_time` not set | add `--ros-args -p use_sim_time:=true` |
@@ -575,16 +579,16 @@ opens up and every budget is re-checked automatically.
 
 These are additions to HANDOVER §8, not replacements.
 
-1. **Nothing here has flown on hardware.** Sim first, then a single hover, then
-   the show.
-2. **`arena_radius` and `ceiling` are guesses.** They are the only unmeasured
-   defaults in the package, and they are exactly the check that would stop the
-   show hitting a wall. Measure them (§2c).
-3. **Mocap rate.** HANDOVER §8 item 11 is unresolved: `/poses` was measured at
-   ~27 Hz against ~42 Hz at the socket. This show asks for 1.87 m/s, so a
-   dropped frame is ~7 cm of stale position. That is inside the margins here,
-   but it is the reason to re-measure before trusting the faster figures.
-4. **Battery draw at speed.** 62 s of continuous motion with a 9.5 s
+1. **Hardware status:** flown once, 2026-09-17 (see Status). Sim first, then a
+   single hover, then the show, whenever the fleet or the marks change.
+2. **`arena_radius` and `ceiling`** were guesses until 2026-10-01; they now
+   default to the measured arena. The remaining open point is the envelope
+   CENTRE (see "Measured budgets").
+3. **Mocap rate.** The 27 Hz vs 42 Hz figure from the 2026-09-07 session is
+   obsolete: Motive streams 50 Hz here and `/poses` carries it (check with
+   `ros2 topic hz /poses`). A dropped frame at 1.87 m/s is still about 7 cm of
+   stale position per 40 ms.
+4. **Battery draw at speed.** ~63 s of continuous motion with a 9.5 s
    counterflow is more demanding than a hover test. Watch the 3.8 V warning on
    the first full run.
 5. **Trajectory upload time on hardware.** 5 figures × 5 drones = 25 blocking

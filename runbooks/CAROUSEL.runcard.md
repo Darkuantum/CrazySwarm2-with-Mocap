@@ -3,15 +3,23 @@
 Five drones, ~63 s, twelve phases. Fully choreographed — the whole path is
 known before takeoff. The original show; `demo_show` is its unchanged starter.
 
-Why any of it is the way it is: [`../SHOW_GUIDE.md`](../SHOW_GUIDE.md).
+Why any of it is the way it is: [`src/crazyswarm2/crazyflie_shows/SHOW_GUIDE.md`](../src/crazyswarm2/crazyflie_shows/SHOW_GUIDE.md).
 Shared rules (address scan, E-STOP, LOCKED): [`README.md`](README.md).
 
-> **Ctrl-C does NOT land this show.** `swarm_show` installs no signal handler,
-> so `rclpy` tears the ROS context down before the script sees the interrupt
-> and the drones keep flying their last command. `constellation_show` and
-> `escort_show` take SIGINT back and land; this one does not. **To stop the
-> carousel early, use the E-STOP** — and accept the power cycle it costs.
-> See [README.md](README.md).
+> **Ctrl-C lands this show.** Corrected 2026-10-08: this box used to say the
+> opposite, and sent operators to the E-STOP — which costs a battery cycle on
+> every drone — when a normal landing was available. The abort machinery was
+> extracted into `crazyflie_shows/abort.py` on 2026-10-06 and `swarm_show`
+> uses it: `take_signals()` at `swarm_show.py:233`, `armed = True` before the
+> arm loop at `:237`, and `except ShowAborted -> abort_land(...)` at `:280`.
+> All four shows now land on Ctrl-C.
+>
+> **Not yet proved in flight for this show.** The path is wired and read in
+> source, but no sim or hardware abort test is recorded for `swarm_show`.
+> Prove it once in sim before relying on it — and note `ros2 run` does NOT
+> forward a signal sent to it alone, so test with `kill -INT <the script's own
+> PID>`, not the wrapper's. A terminal Ctrl-C does reach it, because that goes
+> to the whole foreground process group.
 
 ---
 
@@ -93,5 +101,7 @@ room centre     centroid of the drones' own marks (NOT the tracked volume --
 | situation | do |
 |---|---|
 | before arming | Ctrl-C is safe — nothing is flying |
-| **in flight** | **E-STOP.** Ctrl-C will not land it (see the box above) |
+| **in flight** | **Ctrl-C lands** — staged abort, it takes SIGINT back from rclpy |
+| second Ctrl-C | kills the process outright (handler restores `SIG_DFL`) |
+| drone misbehaving | **E-STOP** — costs a power cycle per drone, see [README.md](README.md) |
 | after an E-STOP | battery out-and-in on every drone, or nothing will arm |
