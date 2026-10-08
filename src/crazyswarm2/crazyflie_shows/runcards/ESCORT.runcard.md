@@ -88,11 +88,11 @@ ring_radius       1.0    m   also the chord the closing wall uses
 height            1.2    m
 v_max             0.6    m/s
 phase_rate        0.3    rad/s
-alert_radius      1.88   m   adversary-to-VIP distance that ENGAGES blocking
-release_radius    2.0    m   the larger one that disengages
+alert_radius      2.10   m   adversary-to-VIP distance that ENGAGES blocking
+release_radius    2.22   m   the larger one that disengages
 min_vip_dist      1.0    m   hard floor, defender to VIP (= ring_radius)
 rate_hz           20.0       setpoint stream rate per drone
-vip_height_offset 0.0    m   ring altitude relative to an airborne VIP
+vip_height_offset 0.3    m   ring altitude relative to an airborne VIP
 ```
 
 `probe < alert < release < retreat` must hold. `plan_escort` refuses if it
