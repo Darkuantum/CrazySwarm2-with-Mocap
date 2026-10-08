@@ -343,10 +343,19 @@ class EscortConfig:
     floor: float = 0.3             # m
     #: MEASURED 2026-10-01 by walking cf1 through the volume (scripts/
     #: measure_arena.py, 8067 samples): the centroid of the tracked space is
-    #: (0.033, 0.255), not the room centre the other shows use. The escort is
-    #: the only show that puts a drone near the edge on purpose, so it is
-    #: centred on what Motive can SEE rather than on the room.
-    room_center: tuple = (0.033, 0.255)
+    #: NOT the room centre the other shows use. The escort is the only show
+    #: that puts a drone near the edge on purpose, so it is centred on what
+    #: Motive can SEE rather than on the room.
+    #:
+    #: DERIVED from safety.ARENA_CENTRE, not written out again. It was a
+    #: literal (0.033, 0.255) until 2026-10-08, when Motive was recalibrated
+    #: and the surveyed centroid had to be re-expressed in the new world
+    #: frame: safety.py was updated and this copy was not, so every escort
+    #: geometry -- the geofence keep-in, the arena clamp, the VIP mark, role
+    #: assignment -- silently kept using a centre 0.41 m from the real one
+    #: while safety.check_envelope used the right one. Two sources of truth
+    #: for a surveyed physical place is the bug; there is now one.
+    room_center: tuple = tuple(safety.ARENA_CENTRE)
 
     #: Where the VIP stands for the static stages, and the centre the walking
     #: stages start from. NOT the room centre, deliberately: a VIP in the

@@ -75,8 +75,34 @@ TRACKING_MARGIN = 0.10  # m
 #: USE THESE. A show that plans outside ARENA_RADIUS_TESTED is planning
 #: somewhere nothing has flown; re-measure before raising it rather than
 #: assuming the old 2.5 m.
-ARENA_CENTRE = (0.033, 0.255)   # m, centroid of the tracked volume, NOT the
-                                # room centre the configs used to assume
+#: RE-EXPRESSED 2026-10-08 after Motive was recalibrated and the rigid bodies
+#: renamed. The room, the cameras and the surveyed volume did not change --
+#: only the definition of the world frame did, so the radii and ceilings below
+#: are untouched (they are scalar distances about this point, and a rotation
+#: does not move them). This centroid is a PHYSICAL place, so it had to be
+#: carried into the new frame.
+#:
+#: The transform was fitted on cf1, cf3 and cf5, whose marks were synced on
+#: 2026-10-07 and which had not been touched: their pairwise distances agreed
+#: with the yaml to <= 21 mm, which is what proves the drones stayed put and
+#: the frame moved rather than the other way round.
+#:
+#:     old -> new:  rotate +91.59 deg, translate [+0.043, -0.098] m
+#:     residual max 0.0159 m, scale 0.9947
+#:     (0.033, 0.255) -> (-0.213, -0.072), i.e. 0.410 m away
+#:
+#: CORROBORATED INDEPENDENTLY, which is the only reason this is a one-line
+#: edit and not a re-survey: the escort marks stand the defenders at
+#: 1.40 / 0.40 / 1.40 m from this centroid. Measured from the NEW value the
+#: parked drones read 1.44 / 0.38 / 1.41 m (max error 36 mm); from the OLD
+#: value they read 1.03 / 0.72 / 1.37 m, which matches nothing. The drones
+#: were still on their marks; the centre had moved out from under them.
+#:
+#: A mapped survey is NOT a survey. This is correct while the room and the
+#: cameras are unchanged; re-run scripts/arena_flight_sweep.py to re-earn the
+#: radii themselves, and do that before trusting the edges again.
+ARENA_CENTRE = (-0.213, -0.072)  # m, centroid of the tracked volume, NOT the
+                                 # room centre the configs used to assume
 ARENA_RADIUS_TESTED = 2.00      # m, flown clean at 1.20 m AND 1.95 m altitude
 ARENA_RADIUS_LOST = 2.24        # m, where a flying drone actually lost tracking
 CEILING_TESTED = 1.95           # m, flown clean at full radius
