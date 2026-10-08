@@ -54,7 +54,7 @@ import time
 import numpy as np
 from crazyflie_py import Crazyswarm
 
-from crazyflie_shows import constellation, plan_show
+from crazyflie_shows import constellation, plan_show, safety
 # The abort machinery and the supervisor check used to be defined HERE, which
 # is why they were the constellation's alone. They are re-exported below so
 # that `from crazyflie_shows.constellation_show import ShowAborted, ...` keeps
@@ -101,6 +101,10 @@ def command(allcfs, cfs, cfg, ph):
 
 
 def main():
+    # The room must have been MEASURED before anything plans or flies.
+    # No-op on this rig; the gate exists so a copy of this package in an
+    # unsurveyed room refuses instead of inheriting our geofence.
+    safety.require_measured_arena('constellation_show')
     swarm = Crazyswarm()
     timeHelper = swarm.timeHelper
     allcfs = swarm.allcfs

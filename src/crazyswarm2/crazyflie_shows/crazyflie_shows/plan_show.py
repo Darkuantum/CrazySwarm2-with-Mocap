@@ -279,6 +279,10 @@ def plot(plan, names, path):
 
 
 def main(default_show='swarm'):
+    # The room must have been MEASURED before anything plans or flies.
+    # No-op on this rig; the gate exists so a copy of this package in an
+    # unsurveyed room refuses instead of inheriting our geofence.
+    safety.require_measured_arena('plan_show')
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--show', choices=sorted(SHOWS), default=default_show,
                     help=f'which show to plan (default {default_show})')
@@ -338,5 +342,9 @@ if __name__ == '__main__':
 
 
 def main_constellation():
+    # The room must have been MEASURED before anything plans or flies.
+    # No-op on this rig; the gate exists so a copy of this package in an
+    # unsurveyed room refuses instead of inheriting our geofence.
+    safety.require_measured_arena('plan_show (main_constellation)')
     """Entry point ``plan_constellation``: plan_show preset to the constellation."""
     return main(default_show='constellation')

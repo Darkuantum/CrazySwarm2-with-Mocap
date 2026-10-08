@@ -10,14 +10,116 @@ relative position is linear in normalised time and its squared distance is a
 quadratic -- the minimum over the leg is closed-form, not sampled.
 """
 
+import os
 from itertools import permutations
 
 import numpy as np
+import yaml
+
+
+#: Where the ROOM comes from. Added 2026-10-08.
+#:
+#: These numbers used to be literals in this file, which made every show
+#: carry ONE room's geofence. That is fine for this rig and wrong for anybody
+#: who copies the package: an unmeasured arena silently inherits our centre,
+#: our radius and our ceiling, and the first thing a reader learns about their
+#: own room is where their drone hit the wall. The show code is now
+#: setup-agnostic -- the room is config, the choreography stays in the shows.
+#:
+#: Search order, first hit wins:
+#:   1. $CRAZYSWARM_ARENA                   -- explicit, for a second room
+#:   2. <crazyflie share>/config/arena.yaml -- the installed rig config
+#:   3. ../../crazyflie/config/arena.yaml   -- the source tree, uninstalled
+#:
+#: A MISSING file is a hard error, deliberately. The tempting alternative --
+#: fall back to the values that used to be hard-coded here -- reintroduces
+#: exactly the hazard this change removes, and does it silently.
+ARENA_FILE_ENV = 'CRAZYSWARM_ARENA'
+
+
+def _arena_path():
+    """The arena.yaml this install should read, or raise saying why not."""
+    explicit = os.environ.get(ARENA_FILE_ENV)
+    if explicit:
+        if not os.path.exists(explicit):
+            raise RuntimeError(
+                f'{ARENA_FILE_ENV}={explicit!r} does not exist.')
+        return explicit
+    tried = []
+    try:
+        from ament_index_python.packages import get_package_share_directory
+        p = os.path.join(get_package_share_directory('crazyflie'),
+                         'config', 'arena.yaml')
+        tried.append(p)
+        if os.path.exists(p):
+            return p
+    except Exception:                                   # noqa: BLE001
+        pass                                            # not built/sourced
+    here = os.path.dirname(os.path.abspath(__file__))
+    p = os.path.abspath(os.path.join(
+        here, '..', '..', 'crazyflie', 'config', 'arena.yaml'))
+    tried.append(p)
+    if os.path.exists(p):
+        return p
+    raise RuntimeError(
+        'arena.yaml not found -- the show code cannot know how big the room '
+        'is.\n  looked in: ' + '\n             '.join(tried)
+        + f'\n  Set ${ARENA_FILE_ENV}, or copy '
+        'src/crazyswarm2/crazyflie/config/arena.yaml and MEASURE YOUR OWN '
+        'ROOM before setting measured: true.')
+
+
+def _load_arena():
+    path = _arena_path()
+    with open(path) as fh:
+        d = yaml.safe_load(fh) or {}
+    try:
+        a, sep = d['arena'], d['separation']
+        out = {
+            'path': path,
+            'measured': bool(a['measured']),
+            'centre': tuple(float(v) for v in a['centre']),
+            'radius_tested': float(a['radius_tested']),
+            'radius_lost': float(a['radius_lost']),
+            'ceiling_tested': float(a['ceiling_tested']),
+            'ceiling_centre_tested': float(a['ceiling_centre_tested']),
+            'ceiling_pinch_radius': float(a['ceiling_pinch_radius']),
+            'min_separation': float(sep['minimum']),
+            'tracking_margin': float(sep['tracking_margin']),
+        }
+    except (KeyError, TypeError, ValueError) as e:
+        raise RuntimeError(f'{path} is not a valid arena file: {e}') from e
+    if len(out['centre']) != 2:
+        raise RuntimeError(f'{path}: arena.centre must be [x, y]')
+    return out
+
+
+_ARENA = _load_arena()
+
+#: False means THIS ROOM HAS NOT BEEN MEASURED. The planners refuse to clear a
+#: flight while it is false -- see :func:`require_measured_arena`. It is not a
+#: warning, because a geofence from somebody else's room is not a smaller
+#: version of the right answer, it is an unrelated one.
+ARENA_MEASURED = _ARENA['measured']
+ARENA_FILE = _ARENA['path']
+
+
+def require_measured_arena(what='this check'):
+    """Raise unless the arena numbers were measured in the room being flown."""
+    if not ARENA_MEASURED:
+        raise SystemExit(
+            f'\n  REFUSED: {what} needs a MEASURED arena.\n'
+            f'  {ARENA_FILE} has `measured: false`, so the radius, ceiling and\n'
+            '  centre in it are placeholders, not this room.\n'
+            '  Re-measure (scripts/measure_arena.py for the centroid,\n'
+            '  scripts/arena_flight_sweep.py for radius and ceiling), write the\n'
+            '  results into that file, then set measured: true.\n')
 
 # Rule of thumb for this rig: 1 m start spacing, and the formation figures in
 # multi_trajectory_formation.py were accepted at a 0.84 m worst case.
-MIN_SEPARATION = 0.8   # m, the hard floor - two drones closer than this is a
-                       # collision risk, whatever the plan says
+MIN_SEPARATION = _ARENA['min_separation']   # m, the hard floor - two drones
+#                      closer than this is a collision risk, whatever the plan
+#                      says. Value lives in arena.yaml (separation.minimum).
 
 #: How much closer the drones actually get than the plan says they will.
 #:
@@ -42,7 +144,7 @@ MIN_SEPARATION = 0.8   # m, the hard floor - two drones closer than this is a
 #: Confirmed by re-flying the show with the lanes widened to clear the new
 #: budget: planned 0.91 m, flown **0.861 m** -- a 0.049 m loss, and now 0.061 m
 #: clear of MIN_SEPARATION instead of 0.007 m under it.
-TRACKING_MARGIN = 0.10  # m
+TRACKING_MARGIN = _ARENA['tracking_margin']  # m, arena.yaml separation.tracking_margin
 
 # ---------------------------------------------------------------------------
 # The volume Motive can actually see -- MEASURED, not inherited
@@ -101,15 +203,20 @@ TRACKING_MARGIN = 0.10  # m
 #: A mapped survey is NOT a survey. This is correct while the room and the
 #: cameras are unchanged; re-run scripts/arena_flight_sweep.py to re-earn the
 #: radii themselves, and do that before trusting the edges again.
-ARENA_CENTRE = (-0.213, -0.072)  # m, centroid of the tracked volume, NOT the
-                                 # room centre the configs used to assume
-ARENA_RADIUS_TESTED = 2.00      # m, flown clean at 1.20 m AND 1.95 m altitude
-ARENA_RADIUS_LOST = 2.24        # m, where a flying drone actually lost tracking
-CEILING_TESTED = 1.95           # m, flown clean at full radius
-CEILING_CENTRE_TESTED = 2.42    # m, flown clean within ~0.6 m of the centre
+#: All five now come from arena.yaml. The comments above are the PROVENANCE
+#: of the values this rig measured; the values themselves live in the config so
+#: another room can hold different ones without editing code. Names unchanged,
+#: so every consumer (escort.py, plan_show.py, plan_escort.py, constellation.py,
+#: demo_show.py, choreography.py) is untouched by the move.
+ARENA_CENTRE = _ARENA['centre']                  # m, centroid of the TRACKED
+#                                                  volume, not the room centre
+ARENA_RADIUS_TESTED = _ARENA['radius_tested']    # m, flown clean
+ARENA_RADIUS_LOST = _ARENA['radius_lost']        # m, where tracking was lost
+CEILING_TESTED = _ARENA['ceiling_tested']        # m, clean at full radius
+CEILING_CENTRE_TESTED = _ARENA['ceiling_centre_tested']   # m, near the centre
 #: Above this the cone pinches: a carried body held only to ~2.09 m radius in
 #: the 2.0-2.5 m band, against 3.1 m lower down.
-CEILING_PINCH = 2.00            # m
+CEILING_PINCH = _ARENA['ceiling_pinch_radius']   # m, arena.yaml
 
 
 #: What a *plan* must clear, so that the flown show still clears
@@ -305,6 +412,12 @@ def check_envelope(positions, radius=ARENA_RADIUS_PLAN, ceiling=None,
                    center=ARENA_CENTRE, label='envelope'):
     """Assert every position is inside the flyable volume.
 
+    Refuses outright on an UNMEASURED arena (``measured: false`` in
+    arena.yaml). This is the gate that makes the package safe to copy: every
+    plan and every show reaches this function, so a room nobody has surveyed
+    cannot be flown by accident on somebody else's numbers. It is a no-op on a
+    measured arena, so it changes nothing for this rig.
+
     Defaults are the MEASURED volume (2026-10-01), centred on ARENA_CENTRE --
     not the inherited 2.5 m from (0, 0), which this function's own defaults
     were the last thing in the package still referencing.
@@ -315,6 +428,7 @@ def check_envelope(positions, radius=ARENA_RADIUS_PLAN, ceiling=None,
     ``ceiling`` can only LOWER it, never raise it above what has been flown --
     the same composition check_show uses.
     """
+    require_measured_arena(f'{label} check')
     for i, p in enumerate(positions):
         p = np.asarray(p, float)
         r = float(np.linalg.norm(p[:2] - np.asarray(center, float)))

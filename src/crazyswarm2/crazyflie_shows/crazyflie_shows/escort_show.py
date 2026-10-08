@@ -120,12 +120,12 @@ before takeoff and refused if it does not check out:
 ``height``              1.2         m
 ``v_max``               0.6         m/s
 ``phase_rate``          0.3         rad/s
-``alert_radius``        1.88        m, adversary-to-VIP distance that ENGAGES
-``release_radius``      2.0         m, the larger one that disengages
+``alert_radius``        2.10        m, adversary-to-VIP distance that ENGAGES
+``release_radius``      2.22        m, the larger one that disengages
 ``min_vip_dist``        1.0         m, hard floor defender-to-VIP
                                     (= ring_radius by design)
 ``rate_hz``             20.0        setpoint stream rate per drone
-``vip_height_offset``   0.0         m, ring altitude relative to an airborne
+``vip_height_offset``   0.30        m, ring altitude relative to an airborne
                                     VIP
 ``dji_clear_height``    1.70        m, where the ring waits while the DJI
                                     takes off / lands. Must clear the DJI's
@@ -449,6 +449,10 @@ def operator_gate(prompt, pump=None, spin=None):
 
 
 def main():
+    # The room must have been MEASURED before anything plans or flies.
+    # No-op on this rig; the gate exists so a copy of this package in an
+    # unsurveyed room refuses instead of inheriting our geofence.
+    safety.require_measured_arena('escort_show')
     swarm = Crazyswarm()
     timeHelper = swarm.timeHelper
     allcfs = swarm.allcfs

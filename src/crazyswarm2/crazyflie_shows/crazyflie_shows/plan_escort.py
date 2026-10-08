@@ -355,6 +355,10 @@ def plot(tr, cfg, path):
 
 
 def main():
+    # The room must have been MEASURED before anything plans or flies.
+    # No-op on this rig; the gate exists so a copy of this package in an
+    # unsurveyed room refuses instead of inheriting our geofence.
+    safety.require_measured_arena('plan_escort')
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--walk', type=float, default=0.3,
                     help='VIP walking speed for the moving case, m/s')

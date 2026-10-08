@@ -1,0 +1,74 @@
+# The ROOM, as measured. NOT choreography.
+#
+# This file exists so the show code can be setup-agnostic: safety.py reads it
+# instead of carrying this rig's numbers as Python constants. Everything here
+# is a property of the physical space and the camera rig -- it changes when the
+# room changes, when Motive is recalibrated, or when somebody re-flies the
+# survey. Nothing here describes what a show DOES; per-show numbers (ring
+# radius, speeds, engagement distances) stay with the show and are overridable
+# per run with --ros-args -p.
+#
+# ANY OTHER ROOM MUST RE-MEASURE. Set `measured: false` and the planners refuse
+# to clear a flight, which is the correct behaviour for a copy of this repo
+# that has not been surveyed -- these numbers are a geofence for ONE room and
+# flying someone else's geofence is how a drone meets a wall.
+#
+#   scripts/arena_flight_sweep.py    re-earns radius and ceiling
+#   scripts/measure_arena.py         re-earns the centroid
+
+arena:
+  # true only when the numbers below were measured in THIS room.
+  measured: true
+
+  #: Centroid of the TRACKED VOLUME -- not the room's geometric centre, and not
+  #: the centroid of where the drones happen to be parked.
+  #:
+  #: MEASURED 2026-10-01 by walking cf1 through the volume
+  #: (scripts/measure_arena.py, 8067 samples).
+  #:
+  #: RE-EXPRESSED 2026-10-08 after Motive was recalibrated and the rigid bodies
+  #: renamed. The room, the cameras and the surveyed volume did not change --
+  #: only the definition of the world frame. The transform was fitted on cf1,
+  #: cf3 and cf5, whose marks had not been touched and whose pairwise distances
+  #: still agreed with the yaml to <= 21 mm, which is what proves the FRAME
+  #: moved rather than the drones:
+  #:     old -> new: rotate +91.59 deg, translate [+0.043, -0.098] m
+  #:     residual max 0.0159 m, scale 0.9947
+  #:     (0.033, 0.255) -> (-0.213, -0.072), i.e. 0.410 m
+  #: Corroborated independently: the escort marks stand the defenders at
+  #: 1.40 / 0.40 / 1.40 m from this centroid, and from the NEW value the parked
+  #: drones read 1.44 / 0.38 / 1.41 m (max error 36 mm); from the OLD value
+  #: 1.03 / 0.72 / 1.37 m, which matches nothing.
+  #:
+  #: A DIRECTION is not a point. If the frame moves again, bearings must be
+  #: ROTATED as well as this point translated -- escort's vip_offset and both
+  #: adversary bearings were missed on 2026-10-08 and the attacker's waiting
+  #: station landed 2.70 m out, outside the arena AND outside radius_lost.
+  centre: [-0.213, -0.072]      # m, [x, y]
+
+  #: Flown clean at 1.20 m AND 1.95 m altitude (arena_flight_sweep.py --mode
+  #: spiral, cf3, 72 waypoints, 3477 samples): zero stale poses and zero follow
+  #: failures anywhere inside it, worst pose age 0.02 s in every radius band.
+  radius_tested: 2.00           # m
+
+  #: Where a flying drone ACTUALLY lost tracking (carried survey, 2026-10-01).
+  #: Plans never go here; it is the evidence behind radius_tested.
+  radius_lost: 2.24             # m
+
+  #: The volume is a truncated cone -- wide through the flight band, pinching
+  #: near the ceiling. A single "ceiling" number is meaningless without saying
+  #: at what radius, which is why there are three.
+  ceiling_tested: 1.95          # m, flown clean at FULL radius
+  ceiling_centre_tested: 2.42   # m, flown clean within ~0.6 m of the centre
+  ceiling_pinch_radius: 2.00    # m, beyond this the cone pinches
+
+separation:
+  #: The hard floor. Two drones closer than this is a near miss, not a tight
+  #: formation. A property of the airframe and the downwash, not of the room --
+  #: but it lives here because it is the other half of what a plan is checked
+  #: against, and splitting them across two files is how one gets edited alone.
+  minimum: 0.80                 # m
+
+  #: What the flown show loses to controller lag, so a PLAN must hold
+  #: minimum + margin and a plan must stay inside radius_tested - margin.
+  tracking_margin: 0.10         # m

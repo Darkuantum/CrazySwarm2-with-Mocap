@@ -52,6 +52,10 @@ MARGIN = 0.5             # s of slack added to every sleep
 
 
 def main():
+    # The room must have been MEASURED before anything plans or flies.
+    # No-op on this rig; the gate exists so a copy of this package in an
+    # unsurveyed room refuses instead of inheriting our geofence.
+    safety.require_measured_arena('demo_show')
     swarm = Crazyswarm()
     timeHelper = swarm.timeHelper
     allcfs = swarm.allcfs

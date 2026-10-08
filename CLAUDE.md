@@ -133,6 +133,17 @@ WORKSPACE-NOTES.md  # the FORK itself: main is the working trunk (never PR from 
 ```
 
 Key customized files inside `src/`:
+- `src/crazyswarm2/crazyflie/config/arena.yaml` — **THE ROOM** (2026-10-08).
+  Centre, tested/lost radius, the three ceilings, and the separation floor +
+  tracking margin. `crazyflie_shows/safety.py` reads it at import; the
+  constant NAMES are unchanged, so every consumer is untouched. These were
+  Python literals until 2026-10-08, which made every show carry ONE room's
+  geofence — fine here, wrong for anyone who copies the package. Choreography
+  (ring radius, speeds, engagement distances) stays with the shows and is
+  still `-p` overridable; only the ROOM moved. `measured: false` makes every
+  planner and every show REFUSE — that is the gate that makes the package safe
+  to donate. Override with `$CRAZYSWARM_ARENA`; a missing file is a hard
+  error, never a silent default.
 - `src/crazyswarm2/crazyflie/config/*.yaml` — drone/mocap/server/teleop config.
   `crazyflies.yaml` has the `kalman_preflight` custom log topic (feeds the
   preflight GUI; 22 B of the 26 B log-block budget — vars must exist in the
