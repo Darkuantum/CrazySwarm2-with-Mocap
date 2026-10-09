@@ -714,7 +714,7 @@ function fleetRows() {
     return `<div class="hint" style="padding:8px">No fleet commands heard yet on ROS_DOMAIN_ID=${esc(S.env.domain_id)}.
       Listening with <code>ros2 topic echo /rosout --csv</code> (${esc(S.journalState || '?')}).</div>`;
   }
-  return evs.map((e) => `<div class="fleetrow ${e.verb === 'emergency' ? 'estop' : ''} ${e.backlog ? 'old' : ''}"
+  return evs.map((e) => `<div class="jrow ${e.verb === 'emergency' ? 'estop' : ''} ${e.backlog ? 'old' : ''}"
       title="${esc(e.text)}${e.backlog ? '\n(from before this console started)' : ''}">
       <time>${new Date(e.ts * 1000).toLocaleTimeString([], { hour12: false })}</time>
       <b>${esc(e.target)}</b> <span>${esc(e.verb.replace('_', ' '))}</span>
