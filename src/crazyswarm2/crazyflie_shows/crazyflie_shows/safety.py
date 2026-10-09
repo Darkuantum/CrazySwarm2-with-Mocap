@@ -149,65 +149,29 @@ TRACKING_MARGIN = _ARENA['tracking_margin']  # m, arena.yaml separation.tracking
 # ---------------------------------------------------------------------------
 # The volume Motive can actually see -- MEASURED, not inherited
 # ---------------------------------------------------------------------------
-#: Every show inherited arena_radius 2.5 m and ceiling 2.0 m from the
-#: follow-drone prototype. Neither had ever been checked against this room.
-#: They are now, by three methods on 2026-10-01, and the room is SMALLER than
-#: the inherited numbers in radius and a different shape than assumed.
+#: THE VALUES AND THEIR PROVENANCE LIVE IN arena.yaml, not here.
 #:
-#: 1. Carried surveys (scripts/measure_arena.py, cf1 walked by hand, 2 runs,
-#:    15k samples). Tracking is NOT isotropic -- by 45 deg sector the first
-#:    sustained dropout sits at 2.15 m (270-315), 2.25 m (0-45), 2.31 m
-#:    (225-270), and never in 180-225, which held past 2.46 m.
-#: 2. Flown radius (scripts/arena_flight_sweep.py --mode spiral, cf1 at
-#:    1.20 m): lost tracking at 2.24 m.
-#: 3. Flown climb (--mode climb, cf5 near centre): clean to the 2.42 m cap,
-#:    pose age never above 0.02 s. The ceiling is ABOVE that and unmeasured.
+#: That file carries the three 2026-10-01 survey methods, the per-sector
+#: anisotropy (tracking fails earliest around 270-315 deg and never in
+#: 180-225), the 2026-10-08 frame re-expression with its residual and its
+#: independent corroboration, and the warning that a mapped survey is not a
+#: survey. All of that was duplicated HERE until 2026-10-09, in 63 lines that
+#: said the same things in different words -- and the repo has already been
+#: bitten seven times by a second prose copy of a live fact drifting from the
+#: first. One owner. Read arena.yaml; print ARENA_FILE if you are unsure which
+#: file this install actually loaded.
 #:
-#: The volume is a truncated cone: wide through the flight band, pinching in
-#: near the ceiling. A carried body was lost at z 2.33 m but only out at
-#: r 1.97 m, while a drone at r 0.55 m flew to 2.42 m untroubled -- so a
-#: single "ceiling" number is meaningless without saying at what radius.
-#:
-#: VERIFIED CLEAN (scripts/arena_flight_sweep.py --mode spiral --levels
-#: 1.20,1.95 --r-max 2.00, cf3, 72 waypoints, 3477 samples): zero stale poses
-#: and zero follow failures anywhere inside it, worst pose age 0.02 s in every
-#: radius band. That run also covers the high-and-far corner (1.95 m altitude
-#: at 1.96 m radius) that neither carried survey reached.
-#:
-#: USE THESE. A show that plans outside ARENA_RADIUS_TESTED is planning
-#: somewhere nothing has flown; re-measure before raising it rather than
-#: assuming the old 2.5 m.
-#: RE-EXPRESSED 2026-10-08 after Motive was recalibrated and the rigid bodies
-#: renamed. The room, the cameras and the surveyed volume did not change --
-#: only the definition of the world frame did, so the radii and ceilings below
-#: are untouched (they are scalar distances about this point, and a rotation
-#: does not move them). This centroid is a PHYSICAL place, so it had to be
-#: carried into the new frame.
-#:
-#: The transform was fitted on cf1, cf3 and cf5, whose marks were synced on
-#: 2026-10-07 and which had not been touched: their pairwise distances agreed
-#: with the yaml to <= 21 mm, which is what proves the drones stayed put and
-#: the frame moved rather than the other way round.
-#:
-#:     old -> new:  rotate +91.59 deg, translate [+0.043, -0.098] m
-#:     residual max 0.0159 m, scale 0.9947
-#:     (0.033, 0.255) -> (-0.213, -0.072), i.e. 0.410 m away
-#:
-#: CORROBORATED INDEPENDENTLY, which is the only reason this is a one-line
-#: edit and not a re-survey: the escort marks stand the defenders at
-#: 1.40 / 0.40 / 1.40 m from this centroid. Measured from the NEW value the
-#: parked drones read 1.44 / 0.38 / 1.41 m (max error 36 mm); from the OLD
-#: value they read 1.03 / 0.72 / 1.37 m, which matches nothing. The drones
-#: were still on their marks; the centre had moved out from under them.
-#:
-#: A mapped survey is NOT a survey. This is correct while the room and the
-#: cameras are unchanged; re-run scripts/arena_flight_sweep.py to re-earn the
-#: radii themselves, and do that before trusting the edges again.
-#: All five now come from arena.yaml. The comments above are the PROVENANCE
-#: of the values this rig measured; the values themselves live in the config so
-#: another room can hold different ones without editing code. Names unchanged,
-#: so every consumer (escort.py, plan_show.py, plan_escort.py, constellation.py,
-#: demo_show.py, choreography.py) is untouched by the move.
+#: What stays here is about the CODE, not the room:
+#:  * the names below are the package's stable interface -- six modules read
+#:    them (escort.py, plan_show.py, plan_escort.py, constellation.py,
+#:    demo_show.py, choreography.py) and the 2026-10-09 move to config
+#:    deliberately did not rename any of them;
+#:  * ARENA_RADIUS_PLAN and PLAN_SEPARATION are DERIVED here, not configured,
+#:    because the margin they apply is a property of how well the drones track
+#:    a plan, not of the room;
+#:  * ceiling_at() turns the three ceiling numbers into the truncated cone the
+#:    room actually is -- one "ceiling" number either forbids the centre climb
+#:    or blesses an untested corner.
 ARENA_CENTRE = _ARENA['centre']                  # m, centroid of the TRACKED
 #                                                  volume, not the room centre
 ARENA_RADIUS_TESTED = _ARENA['radius_tested']    # m, flown clean

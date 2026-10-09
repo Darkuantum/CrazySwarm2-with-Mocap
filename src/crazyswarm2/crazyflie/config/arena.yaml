@@ -49,6 +49,31 @@ arena:
   #: Flown clean at 1.20 m AND 1.95 m altitude (arena_flight_sweep.py --mode
   #: spiral, cf3, 72 waypoints, 3477 samples): zero stale poses and zero follow
   #: failures anywhere inside it, worst pose age 0.02 s in every radius band.
+  #: That run also covers the high-and-far corner (1.95 m altitude at 1.96 m
+  #: radius) that neither carried survey reached.
+  #:
+  #: HOW IT WAS EARNED, three independent methods on 2026-10-01. Every show
+  #: used to inherit arena_radius 2.5 m and ceiling 2.0 m from the follow-drone
+  #: prototype, and neither had ever been checked against this room. The room
+  #: is SMALLER in radius than the inherited numbers, and a different shape:
+  #:   1. Carried surveys (measure_arena.py, cf1 walked by hand, 2 runs,
+  #:      15k samples).
+  #:   2. Flown radius (arena_flight_sweep.py --mode spiral, cf1 at 1.20 m):
+  #:      lost tracking at 2.24 m -> radius_lost below.
+  #:   3. Flown climb (--mode climb, cf5 near centre): clean to the 2.42 m cap,
+  #:      pose age never above 0.02 s. The ceiling is ABOVE that, unmeasured.
+  #:
+  #: TRACKING IS NOT ISOTROPIC, which is why this is a single conservative
+  #: number rather than the best case. By 45 deg sector the first sustained
+  #: dropout sits at 2.15 m (270-315), 2.25 m (0-45), 2.31 m (225-270), and
+  #: never in 180-225, which held past 2.46 m. A show planned to the best
+  #: sector would leave the volume in the worst one. NOTE: those sector
+  #: bearings were measured in the PRE-2026-10-08 world frame -- the frame has
+  #: since rotated ~91.6 deg, so add that before reasoning about which
+  #: physical part of the room is weakest.
+  #:
+  #: A show that plans outside radius_tested is planning somewhere nothing has
+  #: flown. Re-measure before raising it; do not assume the old 2.5 m.
   radius_tested: 2.00           # m
 
   #: Where a flying drone ACTUALLY lost tracking (carried survey, 2026-10-01).
