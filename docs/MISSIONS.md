@@ -13,7 +13,9 @@ src/crazyswarm2/crazyflie_shows/missions/escort.yaml   ->  http://localhost:8077
 
 Open one from the console's **Dashboard → Missions** row (each opens its own
 browser window), from the palette (`Ctrl-K`, type the mission name), or at
-`/mission` for the list. A new `missions/<name>.yaml` appears there on the next
+`/mission` for the list:
+
+![The mission list](img/mission-picker.png) A new `missions/<name>.yaml` appears there on the next
 page load — no console change, no console restart, and with the workspace's
 `--symlink-install` build no rebuild either.
 
@@ -29,6 +31,23 @@ Contents: [1 What a window gives you](#1-what-a-window-gives-you) ·
 
 ## 1. What a window gives you
 
+![The escort mission window, waiting at a gate](img/mission-escort.png)
+
+The escort, paced, stopped at its ARM gate (simulator backend):
+
+| # | What it is |
+|---|---|
+| 1 | **The run state** — READY / RUNNING / **WAITING FOR YOU** / LANDING / ENDED, or RUNNING OUTSIDE THE CONSOLE when the census finds the show already running from a terminal. |
+| 2 | **Link pills** — the server (and whether it is the simulator), the foxglove bridge behind the 3D view, the pose stream this window is receiving, and the console event stream. |
+| 3 | **The scene** — the measured arena from `arena.yaml`, the parking marks from `crazyflies.yaml`, every drone with its trail and altitude, and the show's own markers. |
+| 4 | **View controls** — 3D or Plan (x right, y up: the orientation of `plan_escort --plot` and of the teleop keys), reset, trails. |
+| 5 | **The gate** — the script's own prompt, as buttons. `Enter` presses Continue; `q` lands. The panel glows and the header changes, so a waiting show is visible across the room. |
+| 6 | **Indicators** — pulled out of the script's stdout by the spec's regexes. |
+| 7 | **Fleet tiles** — supervisor state and battery from the console's health sweep, altitude from the live pose feed. |
+| 8 | **The timeline** — the lines the spec calls events, interleaved with every fleet command the server acted on (tagged FLEET), wall-clock stamped to lay against a video. |
+| 9 | **Raw output and a stdin line** — the script and each helper, on their own tabs. |
+| 10 | **E-STOP** — the same one-click, answered e-stop as the console header. |
+
 | Widget | What it shows / does |
 |---|---|
 | `scene` | Live 3D view (three.js): the measured arena from `arena.yaml` (radius_tested amber, radius_lost red, the ceiling as a cage), parking marks from `crazyflies.yaml`, every drone with a trail and altitude label, every other `/poses` rigid body (a VIP hat, an external adversary), and the show's own RViz markers. **3D** orbits; **Plan** is a top-down view with x right and y up — the orientation of `plan_escort --plot` and of the teleop keys. A drone drawn from its onboard estimate (no mocap, e.g. the simulator) is labelled `(est)`; with mocap, the estimate is a wireframe ghost and the fleet tile shows the estimate-vs-mocap error. |
@@ -40,17 +59,86 @@ Contents: [1 What a window gives you](#1-what-a-window-gives-you) ·
 | `events` | A timeline of the lines that matter (the spec's `events:` patterns), wall-clock stamped so they can be laid against a video. |
 | `output` | Raw output of the script and each helper, with a stdin line. |
 
-The header carries the run state (READY / RUNNING / **WAITING FOR YOU** /
-LANDING / ENDED), link pills (server, foxglove bridge, `/poses` rate, console
-event stream) and the **E-STOP** — the same one-click, answered-within-3-s
-e-stop as the console header.
+The header carries the run state, the link pills and the **E-STOP** — the same
+one-click, answered-within-3-s e-stop as the console header.
+
+**The launch panel** is where a run starts, and it is the only place the window
+builds a command:
+
+![The mission window's Run panel](img/mission-run-panel.png)
+
+**1** the operator's choices, from the spec's `options:` (each one a stored
+setting, shared with every other window on this console). **2** the exact
+command line that will run — it updates as you choose, and the confirm step
+shows it again. **3** Start, which becomes **Abort & land** and **Kill** while
+the show runs. **4** the helper processes this choice implies, with their own
+start/stop.
+
+**The teleop pad** appears when a choice needs one (here VIP = `manual`), and
+drives the same `escort_teleop` node a terminal would:
+
+![The teleop pad in a mission window](img/mission-teleop.png)
+
+**1** the helper and whether it is running — it starts and stops with the
+mission. **2** the pad: hold a key to move, release to stop. **3** the opt-in
+keyboard mode, so the physical keys drive it; the pad stays **locked** until the
+script prints the spec's `enable_after` line (for the escort, `ESCORT LIVE` —
+the runbook's "start the teleop, then touch nothing until the show is live").
 
 ---
 
 ## 2. Where the data comes from
 
 Nothing in the window is a second implementation of something the rig already
-does:
+does — each panel is fed by whatever already knows the answer:
+
+```mermaid
+flowchart LR
+    spec[("<b>missions/&lt;name&gt;.yaml</b><br>in the show's package<br><i>layout · options · regexes<br>marker topics · helpers</i>")]
+
+    subgraph feeds["what fills the picture — read-only"]
+        direction TB
+        bridge(["<b>foxglove_bridge</b> :8765<br>/poses · /tf · markers"])
+        out(["the script's <b>own stdout</b><br>&gt;&gt;&gt; prompts · [t+ …] lines"])
+        hs(["console health sweep"])
+        jr(["fleet-command journal<br><i>/rosout, from anyone</i>"])
+    end
+
+    subgraph panels["the mission window"]
+        direction TB
+        scene["scene — 3D or 2D plan"]
+        gate["gate — prompts as buttons"]
+        inds["indicators · timeline"]
+        fl["fleet tiles"]
+        runp["launch panel · teleop pad"]
+    end
+
+    subgraph acts["what it can do — through the backend only"]
+        direction TB
+        be(["console backend<br>/api/mission/start<br>/api/input · /api/stop"])
+        script["<b>ros2 run</b> &lt;pkg&gt; &lt;show&gt;<br>+ helpers, each on a pty"]
+    end
+
+    spec --> panels
+    bridge --> scene
+    out --> gate
+    out --> inds
+    jr --> inds
+    hs --> fl
+    runp --> be
+    gate --> be
+    be --> script
+    script --> out
+    script -. "markers · setpoints" .-> bridge
+
+    classDef sp fill:#ede9fe,stroke:#7c3aed,color:#1e1b4b
+    classDef w fill:#dbeafe,stroke:#2563eb,color:#0b1b33
+    classDef ext fill:#dcfce7,stroke:#15803d,color:#052e16
+    class spec sp
+    class scene,gate,inds,fl,runp w
+    class bridge,out,hs,jr,be,script ext
+```
+
 
 | What | Source | Why |
 |---|---|---|
@@ -68,6 +156,42 @@ The front-end libraries (Preact + htm, three.js) are **vendored** under
 `console/mission_console/static/vendor/` and served by the console: the rig
 flies on the Motive network, which has no internet, so a CDN import would leave
 the window blank exactly when it is needed.
+
+**A paced run, end to end.** The window never commands a drone itself: it starts
+the same `ros2 run`, answers the same stdin, and sends the same single SIGINT
+you would send with Ctrl-C.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Op as operator
+    participant W as mission window
+    participant B as console backend
+    participant H as helper (escort_teleop)
+    participant S as show script
+    participant R as crazyflie_server → drones
+
+    Op->>W: Start mission
+    W->>Op: confirm — every argv, in order
+    W->>B: POST /api/mission/start (helpers first)
+    B->>H: ros2 run … escort_teleop
+    Note over B,H: 1.5 s, so the target is published<br/>before the show reads it
+    B->>S: ros2 run … escort_show --ros-args -p …
+    S->>R: preflight, supervisor check, gather
+    S-->>W: ">>> ARM and take off?" (stdout)
+    W->>Op: prompt as a button — header reads WAITING FOR YOU
+    Op->>W: Continue
+    W->>B: /api/input "\n"
+    B->>S: written to the pty
+    S->>R: arm, take off, stream setpoints
+    R-->>W: /tf and /poses via foxglove_bridge (3D view)
+    S-->>W: "[t+ 12.3s] BLOCKING" → indicators, timeline
+    Op->>W: Abort & land
+    W->>B: /api/stop mode=interrupt
+    B->>S: ONE SIGINT — nothing follows it
+    S->>R: abort.py lands where they are, disarms
+    S-->>W: exit 130 → ENDED
+```
 
 ---
 

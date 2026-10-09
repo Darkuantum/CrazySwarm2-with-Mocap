@@ -54,6 +54,55 @@ Contents: [1 What it is](#1-what-it-is-and-that-it-is-removable) ·
   (`crazyflie_shows/preflight.py`) and in `scripts/sync_initial_positions.py`.
   See [6.4](#64-other-limits).
 
+**How it is wired.** One Python process serves the page and runs everything as a
+child process; the only things it reads directly are `/proc` and the files in
+this repo:
+
+```mermaid
+flowchart LR
+    subgraph browser["browser"]
+        page["Dashboard · Health · Control<br>Config · Command log"]
+        mw["mission window<br>/mission?m=…"]
+    end
+    subgraph backend["console/mission_console — one Python process, stdlib only"]
+        api["server.py<br>JSON API + SSE event stream"]
+        cat["catalog.py<br>every button = one argv"]
+        health["health.py<br>probe graph"]
+        procs["procs.py<br>pty · process groups"]
+        cfgio["configio.py<br>comment-preserving YAML"]
+        store["settings.py · usage.py · builds.py"]
+        census["system.py<br>census of /proc"]
+        jour["journal.py<br>/rosout → fleet commands"]
+    end
+    children(["child processes:<br><b>ros2 launch · ros2 run · ros2 service call</b><br>scan · build.sh · stop_stack.sh"])
+    rig(["the rig:<br>crazyflie_server · mocap node · drones"])
+    bridge(["foxglove_bridge :8765"])
+    files[("src/…/config/*.yaml<br>console/usage/*.json")]
+
+    page <-- "HTTP + SSE" --> api
+    mw <-- "HTTP + SSE" --> api
+    mw -- "WebSocket, read-only<br>/poses · /tf · markers" --> bridge
+    bridge -. "same ROS domain" .- rig
+    api --> cat --> procs --> children --> rig
+    api --> health -- "ros2 node/topic/service list" --> rig
+    api --> cfgio <--> files
+    api --> store <--> files
+    api --> census -- "reads /proc: every rig process,<br>its ROS_DOMAIN_ID, who started it" --> rig
+    api --> jour -- "ros2 topic echo /rosout" --> rig
+
+    classDef ui fill:#dbeafe,stroke:#2563eb,color:#0b1b33
+    classDef be fill:#ede9fe,stroke:#7c3aed,color:#1e1b4b
+    classDef ext fill:#dcfce7,stroke:#15803d,color:#052e16
+    class page,mw ui
+    class api,cat,health,procs,cfgio,store,census,jour be
+    class children,rig,bridge,files ext
+```
+
+The one exception to "never in-process rclpy" is the **mission window's 3D view**,
+which subscribes to foxglove_bridge from the browser, read-only: a 50 Hz pose
+stream is not a command. Everything that *does* anything still goes through the
+backend as a command you could have typed.
+
 ## 2. Starting it
 
 ```bash
@@ -90,6 +139,28 @@ launched the stack, the console sees an empty graph.
 Ctrl-C on the console sends SIGINT to every long-running process it started, as
 closing the terminal those were launched from would; a second signal exits
 immediately.
+
+### The dashboard, labelled
+
+![The console dashboard, with numbered callouts](img/console-dashboard.png)
+
+*(simulator backend, so the drone tiles read "no telemetry topics" — on hardware
+they carry battery, link and the supervisor state in words.)*
+
+| # | What it is | Where it is explained |
+|---|---|---|
+| 1 | **The verdict** — ALL SYSTEMS GO / ATTENTION / FAULT, with the headline behind it. Click it for the health diagram. | [4](#4-the-health-diagram) |
+| 2 | **Live telemetry pills** — server, mocap, `/poses` (with a sparkline), fleet size, ROS domain, and how long ago the probes ran. | [4](#4-the-health-diagram) |
+| 3 | **E-STOP** — one click, no confirmation, answered within 3 s. On every tab. | [5.2](#52-e-stop-is-one-click-with-an-answer-within-3-seconds) |
+| 4 | **The fleet row** — one tile per drone plus the radio. Each tile links to the check behind it. | [4](#4-the-health-diagram) |
+| 5 | **Needs attention** — every failing or warning check as a chip; green when there is nothing. | [4](#4-the-health-diagram) |
+| 6 | **The stepper** — the five steps of a session. It follows the rig; click a step to see its buttons anyway. | [5.0](#50-one-source-of-truth--the-console-reflects-the-machine-not-just-itself) |
+| 7 | **This step's buttons only** — each one a catalog action; the tooltip is the real argv, `⋯` opens the full card in Control. A button that cannot work now is dimmed, with the reason at the end of the row. | [3](#3-gui-action--terminal-command-the-centrepiece) |
+| 8 | **More** — every action, ranked by how often *you* have run it, ☆ to pin beside the step buttons. | [5.0](#50-one-source-of-truth--the-console-reflects-the-machine-not-just-itself) |
+| 9 | **Missions** — one chip per mission window; each opens in its own browser window. A chip says *not built* when its package is not. | [MISSIONS.md](MISSIONS.md) |
+| 10 | **Activity** — everything this console started, plus rig processes started **outside** it (amber). The second tab, **Fleet commands**, is every command the server acted on, from anyone. | [5.0](#50-one-source-of-truth--the-console-reflects-the-machine-not-just-itself) |
+| 11 | **Stop / Kill / Copy / follow** for the selected process. | [3](#console-only--no-catalog-command-or-a-different-one) |
+| 12 | **The stdin line** — shown while the selected process runs; an empty line is a bare Enter, which is what a paced show's gate waits for. | [6.1](#61-operator-paced-and-interactive-runs) |
 
 ### The tabs
 
@@ -268,20 +339,47 @@ cause rather than the symptom. Clicking a box shows what was measured, the exact
 command used, and the fix. This is where CLAUDE.md's Gotchas became executable,
 in `health.py`.
 
+```mermaid
+flowchart LR
+    ros["env.ros"] --> ovl["env.overlay"]
+    py["env.python"] --> ovl
+    ovl --> parse["cfg.parse"] --> fleet["cfg.fleet"]
+    ovl --> shows["env.shows<br><i>show packages built</i>"]
+    fleet --> usb["radio.usb"] --> scan["radio.drones<br><i>the go/no-go scan</i>"]
+    fleet --> mhost["mocap.host"] --> mpkg["mocap.pkg"]
+    port["mocap.port<br><i>UDP 1511</i>"] --> mpkg
+    ovl --> mpkg
+    mpkg --> mnode["mocap.node"] --> mposes["/poses"]
+    scan --> snode["server.node"] --> ssvc["server.services<br><i>/all/* up?</i>"]
+    mposes --> ssvc
+    ssvc --> d1["drone.cf1"]
+    ssvc --> d2["drone.cfN<br><i>one per enabled drone</i>"]
+
+    classDef env fill:#e5e7eb,stroke:#6b7280,color:#111827
+    classDef cfg fill:#fef3c7,stroke:#b45309,color:#1b1300
+    classDef radio fill:#fee2e2,stroke:#b91c1c,color:#450a0a
+    classDef mocap fill:#dcfce7,stroke:#15803d,color:#052e16
+    classDef srv fill:#dbeafe,stroke:#2563eb,color:#0b1b33
+    class ros,py,ovl,shows env
+    class parse,fleet cfg
+    class usb,scan radio
+    class mhost,port,mpkg,mnode,mposes mocap
+    class snode,ssvc,d1,d2 srv
 ```
-env.ros ─┐
-         ├─► env.overlay ─► cfg.parse ─► cfg.fleet ─┬─► radio.usb ─► radio.drones ─► server.node ─► server.services ─► drone.cfN
-env.python ┘                                  │     │
-                                              │     └─► mocap.host ─► mocap.pkg ─► mocap.node ─► mocap.poses ─┐
-          env.overlay ─────────────────────────────► mocap.pkg                                                 │
-                            mocap.port ─────────────► mocap.pkg                      server.services ◄──────────┘
-```
+
+![System health: the probe graph and one box's evidence](img/console-health.png)
+
+**1** the graph — each box one probe, laid out along the real data path, dashed
+links moving where data is flowing. **2** the selected box: what was measured,
+the exact command behind it, and the fix. **3** *Scan the fleet* — the go/no-go
+check, which needs the radio free.
 
 | Box | Probe | The known failure it names |
 |---|---|---|
 | `env.ros` — ROS 2 environment | `ros2` on `PATH`, `$ROS_DISTRO`, `$ROS_DOMAIN_ID` | Console started without ROS sourced; a domain mismatch with the shell that launched the stack. |
 | `env.overlay` — Workspace overlay | `install/setup.bash` exists and `install/` is on `AMENT_PREFIX_PATH` | Built but not sourced, so apt packages shadow the vendored, patched ones. |
 | `env.python` — Python interpreter | `python3` resolves to `/usr/bin/python3`; no `CONDA_PREFIX` / `VIRTUAL_ENV` | conda shadowing: `No module named '_cffirmware'`, invalid message types. |
+| `env.shows` — Show packages built | `builds.py`: every `crazyflie_py` package in `src/` against `install/` | A show declared but never built, a new `setup.cfg` entry point with no shim, a new module file with no symlink, or a package built after the console started. Hidden by `--symlink-install`, and the failure reads as `No executable found`. |
 | `cfg.parse` — Config files | `crazyflies.yaml` and `motion_capture.yaml` parse | A bad hand edit — the launch cannot start. |
 | `cfg.fleet` — Fleet sanity | `configio.validate_crazyflies` | Duplicate addresses, drones under 1 m apart, unknown robot type, two dongles on channels less than 2 apart, a firmware log block over the 26 B budget, malformed `initial_position` or a z not near 0. |
 | `radio.usb` — Crazyradio dongle | `lsusb` filtered to Bitcraze IDs | Dongle missing, or a udev/plugdev problem. |
@@ -329,6 +427,49 @@ Boxes that do not apply to the current run — radio and mocap under
 Three mechanisms (2026-10-09), so that a stack launched in a terminal, a show
 run by hand, a test stack Claude started on another `ROS_DOMAIN_ID`, or an
 e-stop pressed in the preflight GUI are all known to every console page:
+
+```mermaid
+flowchart LR
+    subgraph sources["what the console reads — not just its own children"]
+        set["<b>settings.py</b><br>console/usage/settings.json<br><i>one value per choice</i>"]
+        cen["<b>system.py</b><br>census of /proc<br><i>every rig process, its domain,<br>who started it</i>"]
+        jr["<b>journal.py</b><br>ros2 topic echo /rosout<br><i>every command the server acted on</i>"]
+    end
+    subgraph who["who else touches the rig"]
+        term(["a terminal:<br>ros2 launch / ros2 run"])
+        pf(["preflight GUI<br>e = e-stop"])
+        claude(["Claude's test stack<br>another ROS_DOMAIN_ID"])
+        shows(["a show landing itself"])
+    end
+    subgraph ui["every console page, live"]
+        dash["Dashboard<br>steps · Activity · Fleet commands"]
+        cards["Control cards"]
+        mwin["mission windows"]
+        hl["System health"]
+    end
+
+    term --> cen
+    claude --> cen
+    pf --> jr
+    term --> jr
+    shows --> jr
+    set --> dash
+    set --> cards
+    set --> mwin
+    cen --> dash
+    cen --> hl
+    cen -- "the radio and UDP 1511 are<br>MACHINE-wide: gates every launch" --> cards
+    jr --> dash
+    jr --> mwin
+
+    classDef src fill:#ede9fe,stroke:#7c3aed,color:#1e1b4b
+    classDef out fill:#dbeafe,stroke:#2563eb,color:#0b1b33
+    classDef ext fill:#fef3c7,stroke:#b45309,color:#1b1300
+    class set,cen,jr src
+    class dash,cards,mwin,hl out
+    class term,pf,claude,shows ext
+```
+
 
 * **Settings** (`mission_console/settings.py`, `console/usage/settings.json`).
   Every dropdown and field is ONE stored value, keyed by what it is — `rviz`,

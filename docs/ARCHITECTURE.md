@@ -25,6 +25,40 @@ WE edit (diff it against `upstream/main` before believing anything about it).
 Edited-by: `you` = a human edits it by hand; `tool` = a script or the console rewrites
 it; `nobody` = generated or frozen.
 
+**What you edit, and where it ends up.** Everything runs out of `install/`, which is
+git-ignored and built from `src/`. `--symlink-install` makes that mostly invisible —
+until it is not (right-hand box):
+
+```mermaid
+flowchart LR
+    src["<b>src/</b> — committed<br>vendored + customized ROS 2 source<br><i>a clone IS the rig</i>"]
+    cfg["<b>crazyflie/config/</b><br>crazyflies.yaml · arena.yaml<br>motion_capture.yaml · server.yaml"]
+    build(["scripts/build.sh<br>colcon --symlink-install"])
+    inst["<b>install/</b> — git-ignored<br>what <code>ros2 run</code> and<br><code>ros2 launch</code> actually load"]
+    run(["ros2 launch crazyflie launch.py<br>ros2 run crazyflie_shows &lt;show&gt;"])
+    live["<b>edit is live</b><br>an existing .py is a symlink<br>back into src/"]
+    rebuild["<b>needs a rebuild</b><br>new package · new module file<br>new setup.cfg entry point<br>any .msg/.srv · C++"]
+
+    src --> build --> inst --> run
+    cfg -. "read at launch (server)<br>or per run (planners, scripts)" .-> run
+    src --> live --> run
+    src --> rebuild --> build
+
+    classDef keep fill:#dbeafe,stroke:#2563eb,color:#0b1b33
+    classDef gen fill:#e5e7eb,stroke:#6b7280,color:#111827
+    classDef warn fill:#fef3c7,stroke:#b45309,color:#1b1300
+    classDef ok fill:#dcfce7,stroke:#15803d,color:#052e16
+    class src,cfg keep
+    class inst gen
+    class rebuild warn
+    class live ok
+```
+
+The console checks that last box for you: **System health → Show packages built**
+(`console/mission_console/builds.py`) compares every show package in `src/` with
+`install/` and names what is missing — the failure otherwise reads as
+`No executable found`, which looks like a typo in the name.
+
 ```
 CrazySwarm2-with-Mocap/
 |
@@ -247,45 +281,53 @@ drift** — print them, never copy them (`./scripts/scan_fleet.sh --list` for th
 
 ### 1. The diagram (hardware path, the default)
 
+```mermaid
+flowchart TB
+    subgraph win["WINDOWS PC"]
+        cams(["OptiTrack cameras"])
+        motive["<b>Motive</b><br>Multicast/Broadcast frame data<br><i>transmission type read ONCE at connect</i>"]
+        cams --> motive
+    end
+
+    subgraph lap["THIS LAPTOP — one ROS 2 domain (domain 0 is shared with the lab)"]
+        mocapnode["<b>motion_capture_tracking_node</b><br>VENDORED — never apt<br>owns <b>UDP 1511</b>"]
+        poses(["<b>/poses</b> NamedPoseArray<br>BEST_EFFORT · keep_last(1)<br>deadline from motion_capture.yaml"])
+        tf(["/tf<br>one child_frame_id per rigid body"])
+        server["<b>crazyflie_server</b> (C++)<br>ONE process, ALL drones<br>owns the <b>Crazyradio</b><br>callback_group_cf_srv:<br><i>one fleet-wide, mutually exclusive</i>"]
+        gui["preflight GUI<br>preflight_kalman_plotter.py"]
+        shows["shows · sync_initial_positions.py<br><i>must use sensor QoS</i>"]
+        viz["RViz · Foxglove bridge"]
+        py["<b>crazyflie_py</b> Crazyswarm()<br>every show script"]
+        console["<b>console/</b> web GUI :8077<br><i>runs the ros2 CLI as subprocesses,<br>never in-process rclpy</i>"]
+    end
+
+    drones(["<b>drones cf1 … cfN</b>"])
+
+    motive -- "NatNet multicast, 50 Hz<br>hostname 'auto' → launch.py<br>discovery ping on UDP 1510" --> mocapnode
+    mocapnode --> poses
+    mocapnode --> tf
+    poses --> server
+    poses --> gui
+    poses --> shows
+    tf --> viz
+    server -- "posesChanged(): note z for the<br>watchdog's airborne gate, then<br>sendExternalPositions/Poses<br>on the BROADCAST connection" --> drones
+    drones -- "log blocks → /cfX/pose · /cfX/status<br>/cfX/kalman_preflight · connection_statistics" --> server
+    server -. "services /cfX/* and /all/*<br>topics /cfX/cmd_* and /all/cmd_*" .- py
+    py --> server
+    console -- "launch · shows · scans<br>/api/estop → ros2 service call /all/emergency" --> server
+
+    classDef ext fill:#ede9fe,stroke:#7c3aed,color:#1e1b4b
+    classDef node fill:#dbeafe,stroke:#2563eb,color:#0b1b33
+    classDef topic fill:#dcfce7,stroke:#15803d,color:#052e16
+    classDef hw fill:#fee2e2,stroke:#b91c1c,color:#450a0a
+    class cams,motive ext
+    class mocapnode,server,gui,shows,viz,py,console node
+    class poses,tf topic
+    class drones hw
 ```
-  WINDOWS PC                     THIS LAPTOP (one ROS 2 domain; domain 0 is shared with the lab)
-  ----------                     ----------------------------------------------------------------
-  OptiTrack cameras
-        |
-     Motive --- NatNet multicast --> [motion_capture_tracking_node]      (VENDORED; never apt)
-     (Multicast/Broadcast           |  package motion_capture_tracking, started by launch.py
-      frame data, read ONCE         |  owns UDP 1511  (a 2nd socket there = silent starvation)
-      at connect; 50 Hz stream)     |  hostname "auto" -> launch.py NatNet ping on UDP 1510
-                                    |
-                                    +-- /poses  NamedPoseArray  BEST_EFFORT, keep_last(1),
-                                    |           deadline from motion_capture.yaml (50 Hz, cfg)
-                                    +-- /tf     (child_frame_id per rigid body)
-                                    |
-      +-----------------------------+------------------------+--------------------+
-      |                             |                        |                    |
-      v                             v                        v                    v
- [crazyflie_server]           [preflight GUI]          shows / sync script    RViz, Foxglove
- package crazyflie, C++       preflight_kalman_        (read /poses; MUST     (/tf,
- ONE process, ALL drones      plotter.py                use sensor QoS)        robot_description)
-      |
-      | posesChanged(): per rigid body -> note z for the telemetry watchdog's airborne gate,
-      |   then sendExternalPositions / sendExternalPoses on the BROADCAST connection
-      |
-      | owns: the ONE Crazyradio (radio://0/80/2M — one owner at a time)
-      |       callback_group_cf_srv (ONE fleet-wide, mutually exclusive group)
-      |
-      +===== Crazyradio dongle =====> drones cfN   (CRTP unicast + broadcast)
-      ^                                     |
-      | services /cfX/* and /all/*          +-- log blocks: pose, status, kalman_preflight
-      | topics   /cfX/cmd_*, /all/cmd_*     |   come back as /cfX/pose, /cfX/status,
-      |                                     |   /cfX/kalman_preflight (+ connection_statistics)
- [crazyflie_py  Crazyswarm()] <-------------+
-  used by every show script
-      ^
-      | subprocess `ros2 ...` ONLY, never in-process rclpy
- [console/ web GUI :8077] --> launches launch.py, shows, scans, e-stop
-                              (/api/estop -> ros2 service call /all/emergency)
-```
+
+Everything between the dongle and the drones is CRTP (unicast + broadcast) over the one
+radio; the red box is the only hardware the laptop does not own.
 
 Processes started by `ros2 launch crazyflie launch.py` (read from `launch.py`):
 `motion_capture_tracking_node` (when `backend != sim` and `mocap:=True`); one
@@ -329,8 +371,14 @@ show is running** — the server is the fusion path, not the show.
 
 ### 3. Alternative mocap path: natnet_ros2 + pose_bridge.py
 
-```
-Motive --NatNet--> natnet_ros2 --/mocap/<body>/pose--> pose_bridge.py --/poses--> (same consumers)
+```mermaid
+flowchart LR
+    motive(["Motive"]) -- NatNet --> nn["natnet_ros2<br><i>namespace:=mocap</i>"]
+    nn -- "/mocap/&lt;body&gt;/pose" --> br["pose_bridge.py<br>50 Hz · drops poses older than 0.25 s"]
+    br -- "/poses NamedPoseArray" --> cons(["the same consumers<br>server · preflight GUI · shows"])
+
+    classDef alt fill:#fef3c7,stroke:#b45309,color:#1b1300
+    class nn,br alt
 ```
 
 Read from source: `natnet_ros2.launch.py` defaults `namespace:=mocap`; `pose_bridge.py`
@@ -378,10 +426,20 @@ guide for adding your own.
 
 ### 5. The SIM path (`backend:=sim`)
 
-```
-launch.py (no mocap node, no /poses) --> crazyflie_sim crazyflie_server (Python, cffirmware SIL)
-   same /cfX/* and most /all/* SERVICES; cmd_full_state / cmd_hover / cmd_vel_legacy topics
-   outputs: /tf via the rviz visualization, /cfX/robot_description.  Simulated time.
+```mermaid
+flowchart LR
+    launch(["launch.py backend:=sim<br><i>no mocap node, no /poses</i>"])
+    sim["<b>crazyflie_sim</b> crazyflie_server<br>Python + cffirmware SIL<br>simulated time (~4x slower)"]
+    svc(["same /cfX/* and most /all/* services<br>cmd_full_state · cmd_hover · cmd_vel_legacy"])
+    out(["/tf · /cfX/robot_description<br><b>no /poses, no /cfX/pose, no /cfX/status</b>"])
+    launch --> sim
+    sim --> svc
+    sim --> out
+
+    classDef simc fill:#e0f2fe,stroke:#0369a1,color:#082f49
+    classDef gap fill:#fee2e2,stroke:#b91c1c,color:#450a0a
+    class sim,svc simc
+    class out gap
 ```
 
 Read from source: `launch.py` skips `motion_capture_tracking_node` when `backend == sim`;

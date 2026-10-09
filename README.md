@@ -637,7 +637,13 @@ Everything in sections 4–7 can also be driven from a browser:
 
 It sources ROS and this workspace for you, then runs the **same `ros2` commands**
 as child processes — and shows each one before it runs, so you can copy it into a
-terminal instead of memorising it. Five tabs (Dashboard is the default):
+terminal instead of memorising it.
+
+[![The console dashboard](docs/img/console-dashboard.png)](docs/CONSOLE.md#the-dashboard-labelled)
+
+*(every numbered callout is explained in [`docs/CONSOLE.md`](docs/CONSOLE.md#the-dashboard-labelled))*
+
+Five tabs (Dashboard is the default):
 
 - **Dashboard** — per-drone tiles (supervisor state in words, battery, link),
   a "needs attention" row, the session steps (one at a time, following the
@@ -673,6 +679,31 @@ network: [console/README.md](console/README.md).
 
 The annotated file tree **and** the data-flow graph are in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); this is the one-screen version.
+
+```mermaid
+flowchart TD
+    root["<b>CrazySwarm2-with-Mocap/</b>"]
+    root --> src["<b>src/</b><br>vendored + customized ROS 2 source"]
+    root --> ops["<b>scripts/</b><br>setup · build · scan_fleet<br>sync_initial_positions · led"]
+    root --> con["<b>console/</b><br>optional web GUI<br><i>removable: nothing depends on it</i>"]
+    root --> docs["<b>docs/</b> · <b>runbooks/</b><br>guides · per-show operator cards"]
+    root --> notes["<b>CLAUDE.md</b> · WORKSPACE-NOTES.md<br>data/ · Pics/ · video/"]
+    root --> gen["<b>build/ install/ log/</b><br><i>git-ignored, generated</i>"]
+
+    src --> cs["crazyswarm2/<br>crazyflie · crazyflie_py · crazyflie_sim<br>crazyflie_examples"]
+    src --> shows["crazyswarm2/<b>crazyflie_shows/</b><br>the shows + abort.py · preflight.py · safety.py<br>missions/ — one mission window per show"]
+    src --> mocap["motion_capture_tracking/ (VENDORED)<br>natnet_ros2/"]
+    cs --> cfg["crazyflie/<b>config/</b><br>crazyflies.yaml — the ONE roster<br>arena.yaml — the measured room<br>motion_capture.yaml · server.yaml"]
+
+    classDef keep fill:#dbeafe,stroke:#2563eb,color:#0b1b33
+    classDef truth fill:#fef3c7,stroke:#b45309,color:#1b1300
+    classDef gen fill:#e5e7eb,stroke:#6b7280,color:#111827
+    classDef opt fill:#dcfce7,stroke:#15803d,color:#052e16
+    class root,src,cs,mocap,ops,docs,notes keep
+    class cfg,shows truth
+    class gen gen
+    class con opt
+```
 
 ```
 CrazySwarm2-with-Mocap/
