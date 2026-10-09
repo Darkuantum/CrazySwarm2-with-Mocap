@@ -205,7 +205,7 @@ afterwards — the yaml is read only at launch.
 
 | GUI path | Needs | Exact command |
 |---|---|---|
-| Flight → **Run a flight script** (Dashboard "Fly") | server running · confirm | `ros2 run <package> <script>`, plus `--ros-args -p <name>:=<value>` for each entry in the ROS-parameters field. With the "simulation clock" selector set to `yes`, `use_sim_time:=true` is inserted as the **first** `-p`. |
+| Flight → **Run a flight script** (Dashboard "Fly") | server running · confirm | `ros2 run <package> <script>`, plus `--ros-args -p <name>:=<value>` for each entry in the ROS-parameters field. The "simulation clock" selector defaults to `auto`: `use_sim_time:=true` is inserted as the **first** `-p` exactly when the running stack is the simulator (`/clock` present); `yes`/`no` force it. |
 | Commands → **E-STOP (all drones)** | server running · confirm | `ros2 service call /all/emergency std_srvs/srv/Empty {}` |
 | Commands → **Arm all** | server running · confirm | `ros2 service call /all/arm crazyflie_interfaces/srv/Arm '{arm: true}'` |
 | Commands → **Disarm all** | server running | `ros2 service call /all/arm crazyflie_interfaces/srv/Arm '{arm: false}'` |
@@ -323,6 +323,49 @@ Boxes that do not apply to the current run — radio and mocap under
 ---
 
 ## 5. Rules that bite
+
+### 5.0 One source of truth — the console reflects the machine, not just itself
+
+Three mechanisms (2026-10-09), so that a stack launched in a terminal, a show
+run by hand, a test stack Claude started on another `ROS_DOMAIN_ID`, or an
+e-stop pressed in the preflight GUI are all known to every console page:
+
+* **Settings** (`mission_console/settings.py`, `console/usage/settings.json`).
+  Every dropdown and field is ONE stored value, keyed by what it is — `rviz`,
+  `backend`, `drone` are each one setting whichever card or button shows them;
+  others are `<action>.<param>` or `mission.<id>.<option>`. Choose
+  `rviz: False` on a Control card and the Dashboard's Start / Restart launch
+  without RViz; every open page (mission windows included) updates live. The
+  backend merges the store under each request, so a pin or the palette uses
+  the same values. (Before: per-button browser storage, and the Dashboard
+  launched `rviz:=True` after it was turned off in Control.)
+* **The process census** (`mission_console/system.py`). Every sweep scans
+  `/proc` for the rig's processes — launch, server, mocap node, bridge, RViz,
+  preflight GUI, any show/example script — and records each one's
+  `ROS_DOMAIN_ID` (from `/proc/<pid>/environ`) and whether this console
+  started it. A process started **outside** appears in the Dashboard's
+  Activity list (amber, "outside", with its domain); select it to see what it
+  is and **Stop / Kill** it (SIGINT to its process group, escalating to
+  SIGTERM/SIGKILL for a stack — a process started in the background of a
+  script ignores SIGINT; a flight script gets one SIGINT only, so its landing
+  is not killed). The radio and UDP 1511 belong to the machine, so "the radio
+  is free" and "may I launch" now count a server or mocap node **on any
+  domain**: a server on another domain shows on System health and blocks a
+  scan or a launch with the reason. It cannot be SEEN by the ROS probes — the
+  console still talks only to its own domain.
+* **The fleet-command journal** (`mission_console/journal.py`). The server logs
+  every command it acts on (`[all] emergency()`, `[cf3] takeoff(...)`, `land`,
+  `go_to`, trajectory uploads) to `/rosout`; the console follows it with
+  `ros2 topic echo /rosout --csv --qos-durability transient_local`. Dashboard →
+  Activity → **Fleet commands** lists them, mission windows put them on their
+  timeline, and an **e-stop from anywhere** (preflight GUI `e`, a terminal, a
+  script) raises the e-stop banner. Own domain only.
+
+**The simulator does not implement e-stop.** `crazyflie_sim`'s
+`_emergency_callback` only logs `[all] emergency not yet implemented`, so in sim
+the console's "E-STOP confirmed" means the call was *accepted* — nothing was
+cut. The journal recognises that line and says so in the banner. Land, or stop
+the script.
 
 ### 5.1 Restart the console after changing its code
 

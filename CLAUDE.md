@@ -833,6 +833,23 @@ it. These rules hold it together; keep them when editing:
   second mocap node on UDP 1511. There is **no Processes tab** (folded into the
   Dashboard output pane with stdin, 2026-10-09) and **no UI-zoom control** (the
   user uses browser zoom).
+- **One source of truth (2026-10-09, docs/CONSOLE.md 5.0).** `settings.py`: every
+  dropdown is ONE server-side value (`rviz`, `backend`, `drone` shared;
+  `<action>.<param>`, `mission.<id>.<opt>` otherwise) and `catalog.render` merges
+  it under each request. `system.py`: a /proc census of rig processes with their
+  `ROS_DOMAIN_ID` and origin (console / outside) -- radio and UDP 1511 are
+  MACHINE-wide, so `server_any`/`stack_any` gate launches and scans. `journal.py`:
+  `/rosout` -> fleet commands from anyone; an outside e-stop raises the banner.
+  **The SIM does not implement e-stop** (`[all] emergency not yet implemented`).
+  **For Claude running test stacks:** use a separate console port, a private
+  `ROS_DOMAIN_ID` and `MISSION_CONSOLE_USAGE_DIR`; the user's console WILL show
+  them as "outside" (by design); never run `stop_stack.sh` (or Stop the stack)
+  while the user may have a stack up -- it stops every crazyflie stack on the
+  machine (it killed a test stack on 2026-10-09); stop your own by PID. A process
+  launched from a background subshell IGNORES SIGINT -- use SIGTERM, and kill an
+  orphaned `crazyflie_server` the launch leaves behind.
+  Mission windows: a WebGL failure (Optimus laptop) falls back to `plan2d.mjs`,
+  widgets sit in error boundaries, and a show started by Fly is ADOPTED.
 - **`builds.py`: is every show in src/ built?** New package / new setup.cfg
   script / new module file are invisible under `--symlink-install` until a build.
   Surfaced as health node `env.shows`, *not built* mission chips, a Build button

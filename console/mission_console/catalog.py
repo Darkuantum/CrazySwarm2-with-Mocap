@@ -537,7 +537,10 @@ def build_catalog(fleet):
         pkg, name = _split(v, '')
         argv = ['ros2', 'run', pkg, name]
         params = _ros_params(v.get('rosargs', ''))
-        if v.get('sim') == 'yes':
+        sim = v.get('sim')
+        if sim == 'auto':                    # follow the running stack (/clock present)
+            sim = 'yes' if v.get('__stack_is_sim') else 'no'
+        if sim == 'yes':
             params.insert(0, 'use_sim_time:=true')
         if params:
             argv.append('--ros-args')
@@ -560,8 +563,9 @@ def build_catalog(fleet):
             confirm='The drones will move. Area clear, everyone back, hand near the E-STOP?',
             params=[
                 _script_param(flights, 'script', 'hello_world'),
-                p('sim', 'simulation clock', 'select', 'no', ['no', 'yes'],
-                  'yes ONLY with backend:=sim.'),
+                p('sim', 'simulation clock', 'select', 'auto', ['auto', 'no', 'yes'],
+                  'auto = follow the running stack (use_sim_time:=true exactly when it is the '
+                  'simulator). yes ONLY with backend:=sim; never on hardware.'),
                 p('rosargs', 'ROS parameters', 'text', '',
                   help='Space-separated name:=value, e.g. '
                        '"vip_mode:=point adversary:=manual paced:=true". Each '
@@ -776,15 +780,42 @@ def catalog_index(acts):
     return {a['id']: a for a in acts}
 
 
-def render(action_def, values):
-    # Fill every declared param the caller left out with its default: the
-    # compact dashboard buttons send only what they show.
+#: Parameters that are ONE setting, whichever card or button shows them: the
+#: launch arguments, and which drone a per-drone command targets. Every other
+#: parameter is specific to its action (a takeoff height is not a landing
+#: height) and is keyed "<action>.<param>". See settings.py.
+SHARED_PARAMS = {'backend', 'mocap', 'rviz', 'preflight', 'foxglove', 'teleop', 'gui',
+                 'debug', 'mocap_hostname', 'drone'}
+
+
+def setting_key(action_id, name):
+    return name if name in SHARED_PARAMS else f'{action_id}.{name}'
+
+
+def render(action_def, values, settings=None):
+    """-> (argv, cmdline). Precedence: the param's default < the stored
+    setting (settings.py, the single source of truth) < what the request
+    carried. A stored value that is no longer one of a select's options (a
+    script that was removed) is ignored rather than run."""
     merged = {q['name']: q['default'] for q in action_def.get('params', [])}
+    for q in action_def.get('params', []):
+        v = (settings or {}).get(setting_key(action_def['id'], q['name']))
+        if v is None:
+            continue
+        if q['type'] == 'select' and q['options'] and v not in [str(o) for o in q['options']]:
+            continue
+        merged[q['name']] = v
     merged.update({k: v for k, v in (values or {}).items() if v is not None})
     argv = action_def['build'](merged)
     return argv, ' '.join(shlex.quote(a) for a in argv)
 
 
 def public(acts):
-    """Catalog without the un-JSON-able build callables."""
-    return [{k: v for k, v in a.items() if k != 'build'} for a in acts]
+    """Catalog without the un-JSON-able build callables; each param carries its
+    settings key, so every page reads and writes the same setting."""
+    out = []
+    for a in acts:
+        b = {k: v for k, v in a.items() if k not in ('build', 'params')}
+        b['params'] = [{**q, 'key': setting_key(a['id'], q['name'])} for q in a['params']]
+        out.append(b)
+    return out

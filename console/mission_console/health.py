@@ -26,7 +26,7 @@ import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from . import builds, configio
+from . import builds, configio, system
 from .procs import run_capture
 
 REPO = configio.REPO
@@ -76,7 +76,7 @@ SIGNATURES = [
     (r'process has died.*crazyflie_server',
      'server.node', FAIL, 'crazyflie_server died',
      'The server exited instead of staying up.',
-     'Read its last lines in the Processes tab; a scan of every enabled address is the '
+     'Read its last lines in the Dashboard output pane; a scan of every enabled address is the '
      'usual next step.'),
     (r'process has died.*motion_capture_tracking',
      'mocap.node', FAIL, 'The mocap node died',
@@ -417,7 +417,7 @@ class Health:
                      detail='Not in `ros2 node list`. Either the stack is not launched, '
                             'it was launched with mocap:=False or backend:=sim, or the '
                             'node died / hung before it finished initialising.',
-                     fix='Launch the stack, or check the Processes tab for its output.')
+                     fix='Launch the stack, or read its output on the Dashboard.')
 
         n = nodes['server.node']
         if server_up:
@@ -877,6 +877,36 @@ class Health:
         self._check_signatures(nodes)
 
         # --- mark everything downstream of a hard failure as blocked ---
+        # --- what actually runs on this machine, whoever started it -----------
+        # The ROS graph only shows THIS console's domain. A server or mocap node
+        # on another domain is invisible to every probe above -- but it still
+        # holds the Crazyradio and UDP 1511. Say so on the boxes it affects.
+        my_domain = os.environ.get('ROS_DOMAIN_ID', '0') or '0'
+        census = system.census({p.popen.pid: p.id for p in self.procs.procs.values()
+                                if p.running and p.popen is not None}, my_domain)
+        sysfacts = system.summarise(census, my_domain)
+        far = [p for p in census if p['other_domain'] and p['role'] in ('server', 'mocap', 'launch')]
+        if far:
+            doms = sorted({p['domain'] for p in far})
+            msg = (f"a stack runs on ROS_DOMAIN_ID={', '.join(doms)} -- this console is on "
+                   f"{my_domain}, so it cannot see or command it")
+            for nid, role, what in (('server.node', 'server', 'it owns the Crazyradio'),
+                                    ('mocap.node', 'mocap', 'it holds UDP 1511')):
+                hits = [p for p in far if p['role'] == role]
+                if hits and nodes[nid]['status'] != OK:
+                    nodes[nid].update(
+                        status=WARN, summary=f'running on domain {hits[0]["domain"]} -- {what}',
+                        detail=msg + '.\n' + '\n'.join(f"pid {p['pid']} ({p['by']}): {p['cmdline'][:160]}"
+                                                       for p in hits),
+                        fix='Stop it from the Dashboard (it is listed under Activity as '
+                            '"outside"), or start the console with the same ROS_DOMAIN_ID.')
+        if sysfacts['servers'] > 1:
+            nodes['server.node'].update(
+                status=FAIL, summary=f"{sysfacts['servers']} crazyflie_servers running",
+                detail='Only one process can own a Crazyradio. ' + '\n'.join(
+                    f"pid {p['pid']} domain {p['domain']} ({p['by']})" for p in census if p['role'] == 'server'),
+                fix='Stop all but one -- Launch -> Stop the stack stops every one of them.')
+
         incoming = {}
         for a, b in edges:
             incoming.setdefault(b, []).append(a)
@@ -903,6 +933,12 @@ class Health:
             'edges': [{'from': a, 'to': b} for a, b in edges],
             'facts': {
                 'server_running': bool(graph.get('server_running')),
+                # the machine, not just this domain's graph: system.py
+                'system': sysfacts,
+                'server_any': sysfacts['server_any'] or bool(graph.get('server_running')),
+                'mocap_any': sysfacts['mocap_any'] or bool(graph.get('mocap_running')),
+                'stack_any': sysfacts['stack_any'] or bool(graph.get('server_running'))
+                             or bool(graph.get('mocap_running')),
                 'mocap_running': bool(graph.get('mocap_running')),
                 'poses_hz': rate,
                 # the mission window needs these two: the sim clock flag for

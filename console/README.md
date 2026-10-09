@@ -284,6 +284,14 @@ the console only for something every mission needs — a new stock widget in
 `missions.WIDGETS` so specs validate), a new marker type in `scene.mjs`, a new
 spec field in `missions.normalise()`.
 
+*System API* (`server.py`): `GET|POST /api/settings` (the single store;
+POST `{values: {key: value|null}}`, broadcast as an SSE `settings` event),
+`GET /api/system` (the census), `POST /api/signal {pid, mode: int|kill}` (only
+a pid the census lists as an OUTSIDE rig process), `GET /api/journal`; SSE
+`fleet` events carry each journal entry. Health facts gain `system`,
+`server_any`, `mocap_any`, `stack_any` (machine-wide) beside the per-domain
+`server_running` / `mocap_running`. See docs/CONSOLE.md 5.0.
+
 *Mission API* (`server.py`): `GET /api/missions` (cards), `GET /api/mission?id=`
 (spec + its processes), `POST /api/mission/preview` and `/api/mission/start`
 (`{id, role: main|<helper>, values, sim}` -> argv / a process), `GET /api/arena`
@@ -319,9 +327,12 @@ console/
                              partial-prompt events, the SIGINT-only interrupt)
     missions.py              mission-spec discovery, validation and argv
     builds.py                is every show in src/ built? (no imports, file checks only)
+    settings.py              the ONE store for every dropdown/field (console/usage/settings.json)
+    system.py                census of rig processes on the machine: any domain, any origin
+    journal.py               fleet-command journal from /rosout (ros2 topic echo --csv)
     usage.py                 the usage log and dashboard prefs
     static/                  index.html, app.js, style.css
-      mission/               the mission window: index.html app.mjs ros.mjs scene.mjs mission.css
+      mission/               the mission window: index.html app.mjs ros.mjs scene.mjs plan2d.mjs mission.css
       vendor/                Preact+htm, three.js (vendored: the rig network is offline)
   tests/                     python3 -m unittest discover -s tests
   usage/                     usage.jsonl + dashboard.json (git-ignored)

@@ -251,6 +251,23 @@ the script, where it can be planned and refused.
 
 ---
 
+## 5b. One source of truth
+
+* **The same run, wherever it was started.** If the mission's script is
+  already running — started from the Dashboard's **Fly**, say — the window
+  *adopts* it: its prompts, status, output and Abort & land are here, with a
+  note saying where it was started. If it runs **outside the console** (a
+  terminal), the census sees it: the header reads RUNNING OUTSIDE THE CONSOLE,
+  Start is disabled, the 3D view is live, and Stop / Kill signal it — but its
+  output went to its terminal, so there are no prompts or status tiles.
+* **Choices are the console's settings**, under `mission.<id>.<option>`, not
+  this browser's: open the window elsewhere and it shows the same choices; the
+  backend applies them even to a request that left them out.
+* **The timeline also carries every fleet command** the server acted on while
+  the window was open, from anyone (tagged FLEET), and an e-stop from anywhere
+  raises the banner — including the simulator's "not yet implemented", which
+  the banner calls out: in sim, e-stop does nothing.
+
 ## 6. The safety contract
 
 The window keeps the console's rules, and adds two of its own.
@@ -281,6 +298,16 @@ The window keeps the console's rules, and adds two of its own.
 
 ## 7. Limits
 
+* **No WebGL → a 2D plan view.** This laptop is an NVIDIA Optimus hybrid and
+  Chrome can fail to create a WebGL context on it (`BindToCurrentSequence
+  failed ... Optimus = yes`, reproduced 2026-10-09). The first version then lost
+  its 3D view **and its Start button**: three.js threw inside a Preact effect,
+  the effect queue stopped, and the confirm dialog never appeared. Now the scene
+  falls back to `plan2d.mjs` (same data, same API, plan view, altitude in the
+  labels, wheel to zoom, drag to pan) and says so in the corner, and every
+  widget sits behind an error boundary — one failing panel shows its error and
+  the rest of the window keeps working. If you want the 3D view back, check
+  `chrome://gpu`.
 * **No 3D without foxglove_bridge.** The window says so in the scene and the
   header pill; everything else works. The flight is unaffected.
 * **Reaching the window from another machine** needs port 8765 as well as 8077

@@ -19,10 +19,11 @@
  * landing a show goes through the show's own abort (one SIGINT, no SIGTERM
  * chasing it -- see procs.interrupt).
  */
-import { h, html, render, useState, useEffect, useRef, useMemo, useCallback }
+import { h, html, render, Component, useState, useEffect, useRef, useMemo, useCallback }
   from '/static/vendor/preact/htm-preact-standalone.mjs';
 import { Bridge } from './ros.mjs';
 import { createScene } from './scene.mjs';
+import { createPlan2D } from './plan2d.mjs';
 
 /* ================================================================ store */
 const Q = new URLSearchParams(location.search);
@@ -31,6 +32,7 @@ const BRIDGE_URL = Q.get('bridge') || `ws://${location.hostname || 'localhost'}:
 
 const S = {
   mission: null, error: '', missions: [], unviewed: [], build: null, arena: null,
+  settings: {}, fleet: [], adoptedId: null,
   health: null, procs: new Map(), lines: new Map(), sse: 'connecting',
   derived: new Map(),            // procId -> derived state of a MAIN run
   heldBy: null,                  // which teleop owns the keyboard
@@ -65,14 +67,46 @@ const prefix = () => `mission:${MID}:`;
 const roleOf = (p) => (p.action_id.startsWith(prefix()) ? p.action_id.slice(prefix().length) : null);
 const alive = (p) => p && (p.state === 'running' || p.state === 'stopping');
 
-/** newest process for a role of THIS mission */
+/** the executable this window's main role runs */
+function runTarget() {
+  const r = S.mission && S.mission.run;
+  if (!r) return null;
+  if (r.exe) return { pkg: r.pkg, exe: r.exe };
+  const v = (S.launchValues && S.launchValues.script) || '';
+  const [pkg, exe] = v.split(' ');
+  return exe ? { pkg, exe } : null;
+}
+
+/** The same show running but NOT started by this window -- from the
+ * dashboard's Fly (a console process: adopted, with its output and its stdin),
+ * or outside the console altogether (census: seen, stoppable, no output).
+ * One source of truth: the window shows what is running, whoever started it. */
+function foreignRun() {
+  const t = runTarget();
+  if (!t) return {};
+  const flights = ((facts().system || {}).flights || []).filter((x) => x.exe === t.exe && x.pkg === t.pkg);
+  const viaConsole = flights.find((x) => x.console_proc && S.procs.get(x.console_proc)
+    && !roleOf(S.procs.get(x.console_proc)));
+  return { consoleProc: viaConsole ? S.procs.get(viaConsole.console_proc) : null,
+           outside: flights.find((x) => x.by === 'outside') || null };
+}
+
+/** newest process for a role of THIS mission (for 'main': or the adopted run) */
 function procFor(role) {
   let best = null;
   for (const p of S.procs.values()) {
     if (roleOf(p) === role && (!best || p.started > best.started)) best = p;
   }
+  if (role === 'main' && !alive(best)) {
+    const f = foreignRun().consoleProc;
+    if (f && alive(f)) {
+      if (S.adoptedId !== f.id) { S.adoptedId = f.id; S.derived.delete(f.id); loadLines(f.id); }
+      return f;
+    }
+  }
   return best;
 }
+const isMain = (p) => p && (roleOf(p) === 'main' || p.id === S.adoptedId);
 
 /* ---------------------------------------------- derived state of a run */
 function tpl(s, m) {
@@ -97,7 +131,7 @@ const re = (src) => {
 function ingest(procId, text, ts) {
   const spec = S.mission;
   const p = S.procs.get(procId);
-  if (!spec || !p || roleOf(p) !== 'main') return;
+  if (!spec || !isMain(p)) return;
   if (!S.derived.has(procId)) S.derived.set(procId, freshDerived(spec));
   const d = S.derived.get(procId);
   for (const r of spec.indicators) {
@@ -166,7 +200,7 @@ async function buildPkg(pkg) {
   'Build', 'primary');
   if (!ok) return;
   try { await post('/api/run', { action_id: 'build.workspace', values: { package: pkg }, source: 'mission' }); }
-  catch (e) { alert(e.message); }
+  catch (e) { S.estop = { kind: 'fail', title: 'Build could not start', detail: e.message }; changed(); }
 }
 
 function upsertProc(p) {
@@ -190,6 +224,8 @@ async function boot() {
     const b = await api('/api/bootstrap');
     S.health = b.health;
     S.missions = b.missions || [];
+    S.settings = b.settings || {};
+    S.fleet = (b.journal && b.journal.events) || [];
     if (!MID) {
       const ml = await api('/api/missions');
       S.missions = ml.missions; S.unviewed = ml.unviewed || [];
@@ -217,15 +253,35 @@ async function boot() {
     else if (ev.type === 'proc') { upsertProc(ev.proc); changed(); }
     else if (ev.type === 'line') {
       const p = S.procs.get(ev.proc);
-      if (p && roleOf(p)) { pushLine(ev.proc, ev.seq, ev.text, Date.now()); changed(); }
+      if (p && (roleOf(p) || p.id === S.adoptedId)) { pushLine(ev.proc, ev.seq, ev.text, Date.now()); changed(); }
       else if (!p) {                    // the "$ cmd" line arrives before the proc event
         pushLine(ev.proc, ev.seq, ev.text, Date.now());
       }
     } else if (ev.type === 'partial') {
       const p = S.procs.get(ev.proc);
       if (p) { p.partial = ev.text; changed(); }
+    } else if (ev.type === 'settings') {
+      S.settings = ev.settings || {}; changed();
+    } else if (ev.type === 'fleet') {
+      onFleet(ev.event); changed();
     }
   };
+}
+
+/* A command the server acted on, from ANYONE (journal.py): it goes on the
+ * timeline, and an e-stop from anywhere raises the banner here too. */
+function onFleet(ev) {
+  S.fleet.push(ev);
+  if (S.fleet.length > 300) S.fleet.splice(0, 100);
+  if (ev.verb !== 'emergency' || ev.backlog) return;
+  const t = new Date(ev.ts * 1000).toLocaleTimeString([], { hour12: false });
+  if (ev.sim_noop) {
+    S.estop = { kind: 'fail', title: `E-STOP at ${t} did NOTHING -- the simulator does not implement it`,
+      detail: 'The simulated drones keep flying. Abort & land the script, or Land all.' };
+  } else if (!(S.ownEstopAt && Date.now() - S.ownEstopAt < 6000)) {
+    S.estop = { kind: 'ok', title: `E-STOP fired outside this window at ${t}`,
+      detail: `crazyflie_server: "${ev.text}" -- from the console, the preflight GUI, a terminal or a script.` };
+  }
 }
 
 /* ------------------------------------------------------------- actions */
@@ -241,6 +297,7 @@ async function sendLine(procId, text, source = 'mission') {
   changed();
 }
 async function fireEstop() {
+  S.ownEstopAt = Date.now();
   S.estop = { kind: 'pending', title: 'E-STOP sent', detail: 'waiting for the crazyflie_server...' };
   changed();
   try {
@@ -292,12 +349,18 @@ function Scene() {
   const s = useStore();
   const host = useRef(null);
   const sc = useRef(null);
-  const [view, setView] = useState(() => localStorage.getItem('mw_view') || 'iso');
+  const [view, setView] = useState(() => { try { return localStorage.getItem('mw_view') || 'iso'; } catch (e) { return 'iso'; } });
   const [trails, setTrails] = useState(true);
   const b = bridge();
 
   useEffect(() => {
-    sc.current = createScene(host.current);
+    try {
+      sc.current = createScene(host.current);
+    } catch (e) {
+      // no WebGL (seen on this Optimus laptop): the same view in 2D, same API
+      host.current.innerHTML = '';
+      sc.current = createPlan2D(host.current, { reason: String(e.message || e).slice(0, 80) });
+    }
     window.__scene = sc.current;          // for a custom view, and for debugging
     return () => sc.current.dispose();
   }, []);
@@ -365,7 +428,7 @@ function Scene() {
   return html`<div class="scene">
     <div class="scenehost" ref=${host}></div>
     <div class="scenebar">
-      <div class="seg">
+      <div class="seg" hidden=${sc.current && sc.current.kind === '2d'}>
         <button class=${view === 'iso' ? 'on' : ''} onClick=${() => setView('iso')} title="Perspective: drag to orbit, right-drag to pan, wheel to zoom">3D</button>
         <button class=${view === 'plan' ? 'on' : ''} onClick=${() => setView('plan')} title="Plan view: x right, y up -- the orientation of plan_escort --plot and the teleop keys">Plan</button>
       </div>
@@ -533,7 +596,7 @@ function TeleopPad({ hp, main, d }) {
 
   return html`<${Panel} title=${hp.label} right=${state} cls="teleop">
     ${!running && html`<div class="hint">${hp.autostart ? 'Starts with the mission.' : 'Not started.'}
-      <button class="btn ghost sm" onClick=${() => startRole(hp.key, S.launchValues || {}, S.launchSim).catch((e) => alert(e.message))}>start now</button></div>`}
+      <button class="btn ghost sm" onClick=${() => startRole(hp.key, S.launchValues || {}, S.launchSim).catch((e) => { S.estop = { kind: 'fail', title: hp.label + ' did not start', detail: e.message }; changed(); })}>start now</button></div>`}
     ${running && !live && html`<div class="hint warn">Locked until the script prints <code>${hp.enable_after}</code>.
       The runbook: start the teleop, then touch nothing until the show is live -- a target that is already moving makes the gather refuse.
       <a href="#" onClick=${(e) => { e.preventDefault(); setUnlock(true); }}>unlock anyway</a></div>`}
@@ -588,9 +651,20 @@ function Launch() {
   const s = useStore();
   const spec = s.mission;
   const f = facts();
+  // the operator's choices live in the console's ONE settings store, under
+  // mission.<id>.<option> -- not in this browser -- so a choice made here is
+  // the one the backend runs, and any other open window sees it change
+  const fromStore = () => {
+    const out = {};
+    for (const o of spec.options) {
+      const k = `mission.${MID}.${o.name}`;
+      if (s.settings[k] != null) out[o.name] = o.type === 'bool' ? s.settings[k] === 'true' : s.settings[k];
+    }
+    if (s.settings[`mission.${MID}.extra`] != null) out.extra = s.settings[`mission.${MID}.extra`];
+    return out;
+  };
   const [values, setValues] = useState(() => {
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem('mw_vals_' + MID) || '{}'); } catch (e) { /* */ }
+    let saved = fromStore();
     const v = {};
     for (const o of spec.options) {
       const sv = saved[o.name];
@@ -609,8 +683,12 @@ function Launch() {
   const [busy, setBusy] = useState(false);
   S.launchValues = values; S.launchSim = simOn;
 
+  // another window changed a choice: follow it
+  const storeSig = JSON.stringify(fromStore());
+  useEffect(() => { setValues((cur) => ({ ...cur, ...fromStore() })); }, [storeSig]);
+  const [err, setErr] = useState('');
+
   useEffect(() => {
-    try { localStorage.setItem('mw_vals_' + MID, JSON.stringify(values)); } catch (e) { /* */ }
     let dead = false;
     post('/api/mission/preview', { id: MID, role: 'main', values, sim: simOn })
       .then((r) => !dead && setPreview({ cmd: r.cmdline, helpers: r.helpers, err: '' }))
@@ -637,7 +715,10 @@ function Launch() {
     }
     cmds.push([spec.title, preview.cmd]);
     const warn = [];
-    if (!f.server_running) warn.push('The crazyflie_server is not running -- the script will wait or fail.');
+    if (!f.server_running) {
+      warn.push(f.server_any ? `A crazyflie_server runs, but on ROS_DOMAIN_ID=${((f.system || {}).stack || {}).domain} -- this console is on ${(f.system || {}).my_domain}, so the script cannot reach it.`
+        : 'The crazyflie_server is not running -- the script will wait or fail.');
+    }
     if (f.server_running && !!f.sim !== simOn) warn.push(simOn ? 'Simulation clock ON, but the running stack is not the simulator.' : 'The running stack is the SIMULATOR but the simulation clock is off: the script will race ahead of the physics.');
     if (!f.foxglove_running) warn.push('foxglove_bridge is not running: the 3D view will stay empty (the flight is unaffected).');
     const dry = values.dry_run === true;
@@ -653,10 +734,20 @@ function Launch() {
       for (const hp of helpers) await startRole(hp.key, values, simOn);
       if (helpers.length) await new Promise((r) => setTimeout(r, 1500));   // let the helper publish first
       await startRole('main', values, simOn);
-    } catch (e) { alert(e.message); }
+      setErr('');
+    } catch (e) { setErr(e.message); }
     finally { setBusy(false); }
   }
 
+  const fr = foreignRun();
+  const outside = !running && fr.outside;
+  async function stopOutside(mode) {
+    const ok = await confirmBox(mode === 'kill' ? 'Kill the show (started outside the console)' : 'Stop the show (started outside the console)',
+      html`<p>${mode === 'kill' ? html`<b>SIGKILL: no landing.</b>` : 'One SIGINT, as Ctrl-C in its terminal: the show lands itself.'}</p>
+        <div class="cmdline">pid ${outside.pid}, ROS_DOMAIN_ID=${outside.domain}</div>`, mode === 'kill' ? 'Kill it' : 'Stop it', 'danger');
+    if (!ok) return;
+    try { await post('/api/signal', { pid: outside.pid, mode }); } catch (e) { setErr(e.message); }
+  }
   async function abort() {
     if (!main) return;
     if (spec.abort === 'q') await sendLine(main.id, 'q');
@@ -670,7 +761,10 @@ function Launch() {
     if (ok) await post('/api/stop', { proc: main.id, mode: 'kill', source: 'mission' });
   }
 
-  const set = (k, v) => setValues((x) => ({ ...x, [k]: v }));
+  const set = (k, v) => {
+    setValues((x) => ({ ...x, [k]: v }));
+    post('/api/settings', { values: { [`mission.${MID}.${k}`]: String(v) } }).catch(() => {});
+  };
   const bs = s.build;
   const building = [...s.procs.values()].some((q) => q.action_id === 'build.workspace' && alive(q));
   if (bs && !bs.ok && !running) {
@@ -707,8 +801,17 @@ function Launch() {
           onInput=${(e) => set('extra', e.target.value)} /></details>
     </div>
     <div class=${'cmdline ' + (preview.err ? 'bad' : '')} title="exactly what will run">${preview.err || preview.cmd || '...'}</div>
+    ${running && main && main.id === S.adoptedId && html`<div class="hint warn">This show was started from the
+      console dashboard (Fly), not this window -- it is the same run: its prompts, output and abort are here.</div>`}
+    ${outside && html`<div class="warnline"><b>This show is already running, started outside the console</b>
+      (pid ${outside.pid}, ROS_DOMAIN_ID=${outside.domain}). Its output went to the terminal it was started from,
+      so no prompts or status here -- but the 3D view is live, and you can stop it.
+      <div class="runbtns" style="margin-top:6px">
+        <button class="btn warn" onClick=${() => stopOutside('int')}>Stop (lands itself)</button>
+        <button class="btn ghost" onClick=${() => stopOutside('kill')}>Kill</button></div></div>`}
+    ${err && html`<div class="warnline">${err} <a href="#" onClick=${(e) => { e.preventDefault(); setErr(''); }}>dismiss</a></div>`}
     <div class="runbtns">
-      ${!running && html`<button class="btn ${spec.flight && values.dry_run !== true ? 'danger' : 'primary'} big" disabled=${busy || !!preview.err} onClick=${start}>
+      ${!running && html`<button class="btn ${spec.flight && values.dry_run !== true ? 'danger' : 'primary'} big" disabled=${busy || !!preview.err || !!outside} onClick=${start}>
         ${busy ? 'starting...' : values.dry_run === true ? 'Dry run' : 'Start mission'}</button>`}
       ${running && html`<button class="btn warn big" onClick=${abort}
           title=${spec.abort === 'q' ? 'sends q to the script' : 'one SIGINT: the show lands itself (abort.py). Nothing escalates.'}>
@@ -722,7 +825,7 @@ function Launch() {
       return html`<div class="helper"><span class="dot ${alive(hpp) ? 'on' : ''}"></span>${hp.label}
         <small>${hp.autostart ? 'starts with the mission' : 'manual'}</small>
         ${alive(hpp) ? html`<button class="btn ghost sm" onClick=${() => post('/api/stop', { proc: hpp.id, source: 'mission' })}>stop</button>`
-          : html`<button class="btn ghost sm" onClick=${() => startRole(k, values, simOn).catch((e) => alert(e.message))}>start</button>`}</div>`;
+          : html`<button class="btn ghost sm" onClick=${() => startRole(k, values, simOn).catch((e) => setErr(e.message))}>start</button>`}</div>`;
     })}</div>`}
     ${spec.docs && html`<div class="hint">Runbook: <code>${spec.docs}</code></div>`}
   <//>`;
@@ -736,10 +839,18 @@ function Events() {
   const d = main && s.derived.get(main.id);
   const ref = useRef(null);
   useEffect(() => { const el = ref.current; if (el) el.scrollTop = el.scrollHeight; });
-  return html`<${Panel} title="Timeline" cls="events">
-    <div class="evs" ref=${ref}>${d && d.events.length ? d.events.map((e) => html`
-      <div class=${'ev ' + lineClass(e.text)}><time>${fmt(e.ts)}</time><span>${e.text}</span></div>`)
-      : html`<div class="hint">Key moments of the run land here (the spec's <code>events</code> patterns).</div>`}</div><//>`;
+  // the script's own key lines, interleaved with every command the SERVER
+  // acted on while this window was open -- from anyone (journal.py)
+  const rows = [...((d && d.events) || []).map((e) => ({ ...e, kind: 'run' })),
+    ...s.fleet.filter((e) => !e.backlog).map((e) => ({ ts: e.ts * 1000, kind: 'fleet', verb: e.verb,
+      text: `${e.text}${e.sim_noop ? '  (sim: not implemented)' : ''}` }))]
+    .sort((a, b) => a.ts - b.ts).slice(-300);
+  return html`<${Panel} title="Timeline" cls="events" right=${html`<span title="lines tagged fleet are commands crazyflie_server acted on, whoever sent them">script + fleet commands</span>`}>
+    <div class="evs" ref=${ref}>${rows.length ? rows.map((e) => html`
+      <div class=${'ev ' + (e.kind === 'fleet' ? 'fleet ' + (e.verb === 'emergency' ? 'l-err' : '') : lineClass(e.text))}>
+        <time>${fmt(e.ts)}</time>${e.kind === 'fleet' ? html`<b class="tag">fleet</b>` : ''}<span>${e.text}</span></div>`)
+      : html`<div class="hint">Key moments of the run land here (the spec's <code>events</code> patterns), with every
+          command the server acts on -- from this window, the console, the preflight GUI or a terminal.</div>`}</div><//>`;
 }
 
 /* ------------------------------------------------------------ output */
@@ -789,6 +900,7 @@ function Header() {
   else if (main && main.state === 'stopping') { state = 'LANDING'; tone = 'warn'; }
   else if (alive(main) && d && d.gate) { state = 'WAITING FOR YOU'; tone = 'hot'; }
   else if (alive(main)) { state = 'RUNNING'; tone = 'ok'; }
+  else if (s.mission && foreignRun().outside) { state = 'RUNNING OUTSIDE THE CONSOLE'; tone = 'warn'; }
   else if (main && main.state === 'failed') { state = 'ENDED (FAILED)'; tone = 'fail'; }
   else if (main) { state = 'ENDED'; }
   const pill = (k, on, v, tip) => html`<span class=${'pill ' + (on ? 'on' : 'off')} title=${tip}><i></i><span class="k">${k}</span><b>${v}</b></span>`;
@@ -847,6 +959,23 @@ async function loadCustom(spec) {
   catch (e) { return { error: String(e) }; }
 }
 
+/* One widget failing must never take the window down with it. The first
+ * version had no boundary: three.js threw on a machine without WebGL, the
+ * exception escaped a Preact effect, the effect queue stopped, and the Start
+ * button's confirm dialog never appeared. Each widget is now fenced. */
+class Guard extends Component {
+  constructor() { super(); this.state = { err: null }; }
+  componentDidCatch(err) { this.setState({ err }); console.error(err); }
+  render() {
+    if (this.state.err) {
+      return html`<section class="panel"><div class="pb"><div class="warnline"><b>${this.props.name} failed:</b>
+        ${String(this.state.err.message || this.state.err)}</div>
+        <button class="btn ghost sm" onClick=${() => this.setState({ err: null })}>retry</button></div></section>`;
+    }
+    return this.props.children;
+  }
+}
+
 function Body() {
   const s = useStore();
   const [custom, setCustom] = useState(null);
@@ -865,7 +994,7 @@ function Body() {
   const slot = (name) => s.mission.layout[name].map((w) => {
     const [kind, arg] = w.split(':');
     const C = reg[kind];
-    return C ? html`<${C} key=${w} only=${arg} ctx=${ctx} />` : html`<div class="hint">unknown widget ${w}</div>`;
+    return C ? html`<${Guard} key=${w} name=${w}><${C} only=${arg} ctx=${ctx} /><//>` : html`<div class="hint">unknown widget ${w}</div>`;
   });
   return html`<main class="grid">
     <div class="main">${slot('main')}</div>

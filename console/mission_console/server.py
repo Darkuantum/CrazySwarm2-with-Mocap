@@ -21,7 +21,8 @@ from urllib.parse import urlparse, parse_qs
 
 import yaml
 
-from . import builds, catalog, configio, missions, usage
+from . import builds, catalog, configio, missions, settings, system, usage
+from .journal import Journal
 from .health import Health
 from .procs import EventBus, ProcessManager, is_flight
 
@@ -46,6 +47,7 @@ class App:
         self._catalog_cache = (0.0, [])
         self._missions_cache = (None, [])
         self.started = time.time()
+        self.journal = Journal(self.bus)
         threading.Thread(target=self._health_loop, daemon=True).start()
 
     # ------------------------------------------------------------- catalog
@@ -69,6 +71,14 @@ class App:
             if a['id'] == action_id:
                 return a
         raise KeyError(action_id)
+
+    def render(self, act, values):
+        """catalog.render with the single settings store and the running
+        stack's sim flag (for a 'simulation clock: auto' choice)."""
+        f = (self.health.last or {}).get('facts') or {}
+        v = dict(values or {})
+        v['__stack_is_sim'] = bool(f.get('sim'))
+        return catalog.render(act, v, settings.load())
 
     def labels(self):
         return {a['id']: a['label'] for a in self.catalog()}
@@ -95,8 +105,20 @@ class App:
         return [p.summary() for p in self.procs.procs.values()
                 if p.action_id.startswith(prefix)]
 
+    def mission_values(self, m, values):
+        """The operator's mission choices: stored settings (mission.<id>.<opt>)
+        under whatever the request carried -- the same store as everything else."""
+        st = settings.load()
+        out = {o['name']: st[f'mission.{m["id"]}.{o["name"]}'] for o in m['options']
+               if f'mission.{m["id"]}.{o["name"]}' in st}
+        if f'mission.{m["id"]}.extra' in st:
+            out['extra'] = st[f'mission.{m["id"]}.extra']
+        out.update({k: v for k, v in (values or {}).items() if v is not None})
+        return out
+
     def start_mission(self, mid, role, values, sim):
         m = self.mission(mid)
+        values = self.mission_values(m, values)
         aid = missions.action_id(mid, role)
         if self.procs.find_running(aid):
             raise ValueError(f'{role} is already running for this mission')
@@ -160,7 +182,7 @@ class App:
     # ---------------------------------------------------------------- runs
     def run_action(self, action_id, values, source=None):
         act = self.action(action_id)
-        argv, cmdline = catalog.render(act, values)
+        argv, cmdline = self.render(act, values)
         usage.record('run', action=action_id, source=source, values=values or None)
         proc = self.procs.start(action_id, act['label'], argv,
                                 kind=act.get('kind', 'task'), note=act.get('why', ''))
@@ -185,7 +207,7 @@ class App:
     def estop(self, source=None):
         usage.record('estop', source=source)
         act = self.action('srv.estop')
-        argv, cmdline = catalog.render(act, {})
+        argv, cmdline = self.render(act, {})
         t0 = time.time()
         proc = self.procs.start('srv.estop', act['label'], argv, kind='task',
                                 note=act.get('why', ''))
@@ -223,6 +245,45 @@ class App:
                 f'`{cmdline}` exited {proc.returncode}: ' + ' | '.join(tail[-3:])))
         self.refresh_health_soon()
         return out
+
+    def console_pgids(self):
+        return {p.popen.pid: p.id for p in self.procs.procs.values()
+                if p.running and p.popen is not None}
+
+    def signal_outside(self, pid, mode):
+        """Stop a rig process the console did NOT start (a terminal launch, a
+        test stack). Only something the census currently lists as a rig
+        process can be signalled -- this is not a general kill endpoint."""
+        procs = system.census(self.console_pgids())
+        hit = next((p for p in procs if p['pid'] == pid), None)
+        if hit is None:
+            raise ValueError(f'pid {pid} is not a running rig process')
+        if hit['by'] == 'console':
+            raise ValueError('that process belongs to this console -- use its Stop button')
+        import signal as _sig
+        sig = _sig.SIGKILL if mode == 'kill' else _sig.SIGINT
+        usage.record('signal_outside', role=hit['role'], mode=mode, domain=hit['domain'])
+        ok = system.signal_group(hit['pgid'], sig)
+        escalate = sig == _sig.SIGINT and hit['role'] != 'script'
+        if escalate:
+            # A process started in the background of a non-interactive shell
+            # inherits SIGINT as IGNORED (found stopping a test stack,
+            # 2026-10-09) -- so a stack gets SIGTERM, then SIGKILL, like
+            # stop_stack.sh. A flight script does NOT: abort.py restores the
+            # default handlers as its landing starts, so a SIGTERM then would
+            # kill the landing (see procs.FLIGHT_STOP_ESCALATION).
+            def _escalate(pgid=hit['pgid']):
+                for s2, wait in ((_sig.SIGTERM, 6.0), (_sig.SIGKILL, 4.0)):
+                    time.sleep(wait)
+                    try:
+                        os.killpg(pgid, 0)
+                    except OSError:
+                        return
+                    system.signal_group(pgid, s2)
+            threading.Thread(target=_escalate, daemon=True).start()
+        self.refresh_health_soon()
+        return {'ok': ok, 'pgid': hit['pgid'], 'signal': sig.name, 'escalates': escalate,
+                'cmd': f'kill -{sig.name[3:]} -{hit["pgid"]}'}
 
     def refresh_health_soon(self):
         threading.Timer(0.5, self.refresh_health).start()
@@ -302,6 +363,9 @@ class Handler(BaseHTTPRequestHandler):
                     'repo': REPO,
                     'missions': _mission_cards(),
                     'prefs': usage.load_prefs(),
+                    'settings': settings.load(),
+                    'journal': {'state': APP.journal.state, 'cmd': APP.journal.cmdline,
+                                'events': APP.journal.recent()},
                     'usage': usage.summary(days=30, labels=APP.labels()),
                     'env': {
                         'ros_distro': os.environ.get('ROS_DISTRO', ''),
@@ -364,6 +428,15 @@ class Handler(BaseHTTPRequestHandler):
                                                 labels=APP.labels()))
             if path == '/api/prefs':
                 return self._json(usage.load_prefs())
+            if path == '/api/settings':
+                return self._json(settings.load())
+            if path == '/api/journal':
+                return self._json({'state': APP.journal.state, 'cmd': APP.journal.cmdline,
+                                   'events': APP.journal.recent()})
+            if path == '/api/system':
+                procs = system.census(APP.console_pgids())
+                return self._json({'procs': procs,
+                                   'summary': system.summarise(procs, _my_domain())})
             if path == '/api/history.sh':
                 return self._send(200, APP.history_script(), 'text/plain; charset=utf-8')
             if path == '/api/events':
@@ -379,7 +452,7 @@ class Handler(BaseHTTPRequestHandler):
             body = self._body()
             if path == '/api/preview':
                 act = APP.action(body['action_id'])
-                argv, cmdline = catalog.render(act, body.get('values') or {})
+                argv, cmdline = APP.render(act, body.get('values') or {})
                 return self._json({'argv': argv, 'cmdline': cmdline})
             if path == '/api/estop':
                 return self._json(APP.estop(source=body.get('source')))
@@ -408,14 +481,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({'ok': True})
             if path == '/api/prefs':
                 return self._json(usage.save_prefs(body))
+            if path == '/api/settings':
+                cur = settings.update(body.get('values') or {})
+                APP.bus.publish({'type': 'settings', 'settings': cur})
+                return self._json(cur)
+            if path == '/api/signal':
+                return self._json(APP.signal_outside(int(body['pid']), body.get('mode') or 'int'))
             if path == '/api/mission/preview':
                 m = APP.mission(body['id'])
-                argv, cmdline, label = missions.build(m, body.get('role') or 'main',
-                                                      body.get('values') or {},
+                vals = APP.mission_values(m, body.get('values'))
+                argv, cmdline, label = missions.build(m, body.get('role') or 'main', vals,
                                                       sim=bool(body.get('sim')))
                 return self._json({'argv': argv, 'cmdline': cmdline, 'label': label,
-                                   'helpers': [h['key'] for h in missions.active_helpers(
-                                       m, body.get('values') or {})]})
+                                   'helpers': [h['key'] for h in missions.active_helpers(m, vals)]})
             if path == '/api/mission/start':
                 return self._json(APP.start_mission(body['id'], body.get('role') or 'main',
                                                     body.get('values') or {},
@@ -608,6 +686,10 @@ def _arena():
     cf = configio.load('crazyflies')
     out['fleet'] = configio.fleet_summary(cf['doc']) if cf['doc'] else []
     return out
+
+
+def _my_domain():
+    return os.environ.get('ROS_DOMAIN_ID', '0') or '0'
 
 
 def _code_changed():

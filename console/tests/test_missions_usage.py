@@ -226,6 +226,124 @@ class Builds(unittest.TestCase):
                          {'new_show.py', 'fresh.py'})
 
 
+class Settings(unittest.TestCase):
+    """One store for every choice (settings.py) and how render() applies it."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        os.environ['MISSION_CONSOLE_USAGE_DIR'] = self.dir.name
+        import importlib
+        from mission_console import usage, settings
+        importlib.reload(usage)
+        self.s = importlib.reload(settings)
+
+    def tearDown(self):
+        os.environ.pop('MISSION_CONSOLE_USAGE_DIR', None)
+        self.dir.cleanup()
+
+    def test_store(self):
+        self.assertEqual(self.s.load(), {})
+        self.s.update({'rviz': 'False', 'srv.takeoff_all.height': '0.7'})
+        self.assertEqual(self.s.load()['rviz'], 'False')
+        self.s.update({'rviz': None})
+        self.assertNotIn('rviz', self.s.load())
+        with self.assertRaises(ValueError):
+            self.s.update({'bad key with spaces': '1'})
+
+    def test_one_setting_reaches_every_launch_button(self):
+        from mission_console import catalog
+        acts = {a['id']: a for a in catalog.build_catalog([])}
+        st = {'rviz': 'False', 'backend': 'sim'}
+        for aid in ('launch.stack', 'launch.restart'):
+            _, cmd = catalog.render(acts[aid], {}, st)
+            self.assertIn('rviz:=False', cmd)
+            self.assertIn('backend:=sim', cmd)
+        _, cmd = catalog.render(acts['launch.mocap'], {}, st)
+        self.assertIn('rviz:=False', cmd)
+        # what the request carries still wins
+        _, cmd = catalog.render(acts['launch.stack'], {'rviz': 'True'}, st)
+        self.assertIn('rviz:=True', cmd)
+        # a takeoff height is not a landing height
+        self.assertEqual(catalog.setting_key('srv.takeoff_all', 'height'), 'srv.takeoff_all.height')
+        self.assertEqual(catalog.setting_key('check.status_once', 'drone'), 'drone')
+        # a stale select value is ignored, not run
+        _, cmd = catalog.render(acts['launch.stack'], {}, {'backend': 'gone'})
+        self.assertIn('backend:=cpp', cmd)
+
+    def test_sim_clock_auto_follows_the_stack(self):
+        from mission_console import catalog
+        fly = next(a for a in catalog.build_catalog([]) if a['id'] == 'fly.script')
+        _, cmd = catalog.render(fly, {'__stack_is_sim': True}, {})
+        self.assertIn('use_sim_time:=true', cmd)
+        _, cmd = catalog.render(fly, {'__stack_is_sim': False}, {})
+        self.assertNotIn('use_sim_time', cmd)
+
+
+class Journal(unittest.TestCase):
+    """/rosout lines -> fleet commands, from anyone."""
+
+    def test_parse(self):
+        from mission_console import journal as J
+        sim = J.classify(J.parse_csv_line(
+            '1791531941,931411909,20,crazyflie_server,[all] emergency not yet implemented,'
+            '/x/crazyflie_server.py,_emergency_callback,253'))
+        self.assertEqual((sim['target'], sim['verb'], sim['sim_noop']), ('all', 'emergency', True))
+        real = J.classify(J.parse_csv_line(
+            '1,2,20,/crazyflie_server,[cf3] land(height=0.040000 m, duration=4.000000 s, group_mask=0),'
+            'f.cpp,land,996'))
+        self.assertEqual((real['target'], real['verb']), ('cf3', 'land'))
+        self.assertIn('duration=4.000000 s', real['detail'])           # commas inside msg survive
+        self.assertIsNone(J.classify(J.parse_csv_line('1,2,20,/rviz2,[all] emergency(),f,g,1')))
+        self.assertIsNone(J.classify(J.parse_csv_line('1,2,20,crazyflie_server,connected to cf1,f,g,1')))
+        self.assertIsNone(J.parse_csv_line('garbage'))
+
+
+class Census(unittest.TestCase):
+    """system.py: rig processes, whoever started them, on any domain."""
+
+    def test_classify(self):
+        from mission_console import system
+        exes = {('crazyflie_shows', 'escort_show'), ('crazyflie_shows', 'plan_show')}
+        role, d = system._classify(['/usr/bin/python3', '/opt/ros/humble/bin/ros2', 'launch', 'crazyflie',
+                                    'launch.py', 'backend:=sim', 'server:=False'], exes)
+        self.assertEqual((role, d['backend'], d['server']), ('launch', 'sim', False))
+        role, d = system._classify(['/x/install/crazyflie_sim/lib/crazyflie_sim/crazyflie_server'], exes)
+        self.assertEqual((role, d['backend']), ('server', 'sim'))
+        role, d = system._classify(['/usr/bin/python3', '/w/install/crazyflie_shows/lib/crazyflie_shows/escort_show',
+                                    '--ros-args', '-p', 'paced:=true'], exes)
+        self.assertEqual((role, d['exe'], d['ground'], d['params']['paced']), ('script', 'escort_show', False, 'true'))
+        self.assertIsNone(system._classify(['/usr/bin/python3', '/opt/ros/humble/bin/ros2', 'run',
+                                            'crazyflie_shows', 'escort_show'], exes))   # the wrapper, not the script
+
+    def test_finds_a_process_on_another_domain(self):
+        """A fake mocap node, started outside the console on ROS_DOMAIN_ID=55."""
+        from mission_console import system
+        with tempfile.TemporaryDirectory() as d:
+            node = os.path.join(d, 'motion_capture_tracking_node')
+            with open(node, 'w') as fh:
+                fh.write('#!/bin/sh\nsleep 20\n')
+            os.chmod(node, 0o755)
+            import subprocess
+            child = subprocess.Popen([node], env={**os.environ, 'ROS_DOMAIN_ID': '55'},
+                                     start_new_session=True)
+            try:
+                time.sleep(0.3)
+                procs = system.census({}, my_domain='1')
+                hit = [p for p in procs if p['pid'] == child.pid]
+                self.assertEqual(len(hit), 1, procs)
+                self.assertEqual((hit[0]['role'], hit[0]['domain'], hit[0]['by'], hit[0]['other_domain']),
+                                 ('mocap', '55', 'outside', True))
+                summ = system.summarise(procs, '1')
+                self.assertTrue(summ['mocap_any'] and summ['stack_any'])
+                self.assertIn('55', summ['other_domains'])
+                # and the console's own child is recognised as its own
+                procs = system.census({child.pid: 'p9'}, my_domain='1')
+                self.assertEqual([p['by'] for p in procs if p['pid'] == child.pid], ['console'])
+            finally:
+                child.kill()
+                child.wait()
+
+
 class Procs(unittest.TestCase):
     CHILD = textwrap.dedent('''
         import signal, sys, time

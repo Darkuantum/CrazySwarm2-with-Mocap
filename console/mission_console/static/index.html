@@ -80,7 +80,9 @@
       <div class="dmissions" id="dmissions"></div>
       <div class="dconsole">
         <div class="dc-list">
-          <div class="dc-head">Activity
+          <div class="dc-head">
+            <button class="dc-view on" data-actview="procs" title="Everything running or run: this console's commands, and rig processes started outside it">Processes</button>
+            <button class="dc-view" data-actview="fleet" title="Every command the crazyflie_server acted on, from anyone: this console, the preflight GUI, a terminal, a show (/rosout)">Fleet commands</button>
             <a class="hlink" data-go="tab:log" title="every command as a shell script">log</a>
           </div>
           <div class="dc-rows" id="dashactivity"></div>

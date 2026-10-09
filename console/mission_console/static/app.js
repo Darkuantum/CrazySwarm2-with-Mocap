@@ -13,6 +13,7 @@ const S = {
   lines: {}, selNode: null, selGroup: null, selFile: 'crazyflies', factsSig: '', follow: true,
   cfg: {}, repo: '', env: {}, dashProc: null, checkedAt: 0, checkedFullAt: 0,
   missions: [], prefs: { pins: [] }, usage: null, step: null, stepAuto: null,
+  settings: {}, journal: [], journalState: '', actView: 'procs', selOutside: null,
 };
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -86,6 +87,8 @@ async function boot() {
   S.health = b.health; S.procs = b.procs; S.history = b.history;
   S.repo = b.repo; S.env = b.env;
   S.missions = b.missions || []; S.prefs = b.prefs || { pins: [] }; S.usage = b.usage || null;
+  S.settings = b.settings || {};
+  S.journal = (b.journal && b.journal.events) || []; S.journalState = b.journal ? b.journal.state : '';
   if (!Array.isArray(S.prefs.pins)) S.prefs.pins = [];
   if (b.code_changed) markStale('console code changed since it started');
   S.selGroup = S.groups[0];
@@ -94,6 +97,7 @@ async function boot() {
   renderTabs(); renderHealth(); renderControl(); renderDash();
   renderProcs(); renderLog(); renderTop();
   S.booted = true;
+  migrateLocalSettings();
   if (!location.search.includes("live=0")) events();
 }
 
@@ -110,6 +114,8 @@ function events() {
     else if (ev.type === 'proc') { upsertProc(ev.proc); renderProcs(); }
     else if (ev.type === 'line') { pushLine(ev); }
     else if (ev.type === 'history') { S.history.push(ev.entry); renderLog(); }
+    else if (ev.type === 'settings') { S.settings = ev.settings || {}; renderSettingsChanged(); }
+    else if (ev.type === 'fleet') { onFleetEvent(ev.event); }
     else if (ev.type === 'config') { if ($('#tab-config').classList.contains('active')) loadConfig(S.selFile); }
   };
   let opened = false;
@@ -457,24 +463,60 @@ function optionsHtml(p, cur) {
     `<optgroup label="${esc(g)}">${opts.map((o) => one(o, String(o).slice(g.length + 1))).join('')}</optgroup>`).join('');
 }
 
-/* Actions that must remember the SAME choices: "Restart with the server" is
- * "Start the stack" preceded by a stop, so it uses Start's saved backend & co.
- * Separately remembered, Restart kept its own default (backend cpp) and a
- * user who had picked sim on Start launched the real-drone backend -- which,
- * off the Motive network, failed the NatNet discovery (2026-10-09). */
-const PARAM_SHARE = { 'launch.restart': 'launch.stack' };
+/* ---- the single source of truth for every choice: settings.py, server-side.
+ * A param's `key` says what the choice IS (`rviz`, `drone`, or
+ * `<action>.<param>`), not which button showed it, so the Control card, the
+ * dashboard row, a pin and the palette all read and write the same value --
+ * and the backend applies it even to a request that did not carry it. Every
+ * open page hears a change as an SSE `settings` event. (It was per-button
+ * browser storage until 2026-10-09: rviz:=False on a Control card did not
+ * reach the dashboard's Start the stack.) */
+function settingKey(actionId, p) { return p.key || `${actionId}.${p.name}`; }
 
 function savedParam(actionId, p) {
-  actionId = PARAM_SHARE[actionId] || actionId;
-  try {
-    const v = localStorage.getItem(`mc_p_${actionId}_${p.name}`);
-    if (v !== null && (p.type !== 'select' || p.options.map(String).includes(v))) return v;
-  } catch (e) { /* storage unavailable */ }
+  const v = (S.settings || {})[settingKey(actionId, p)];
+  if (v != null && (p.type !== 'select' || p.options.map(String).includes(String(v)))) return v;
   return p.default;
 }
 function saveParam(actionId, name, value) {
-  actionId = PARAM_SHARE[actionId] || actionId;
-  try { localStorage.setItem(`mc_p_${actionId}_${name}`, value); } catch (e) { /* ignore */ }
+  const a = S.catalog.find((x) => x.id === actionId);
+  const p = a && a.params.find((q) => q.name === name);
+  const key = p ? settingKey(actionId, p) : `${actionId}.${name}`;
+  S.settings[key] = value;
+  post('/api/settings', { values: { [key]: value } }).catch((e) => toast(e.message, 'err'));
+}
+
+/* One-time move of the old per-button browser values into the server store.
+ * Only keys the server does not have yet, so a choice made on another page or
+ * browser since then is never overwritten. */
+function migrateLocalSettings() {
+  const moved = {};
+  const drop = [];
+  try {
+    S.catalog.forEach((a) => a.params.forEach((p) => {
+      const lk = `mc_p_${a.id}_${p.name}`;
+      const v = localStorage.getItem(lk);
+      if (v === null) return;
+      drop.push(lk);
+      const k = settingKey(a.id, p);
+      if (S.settings[k] == null && moved[k] == null) moved[k] = v;
+    }));
+  } catch (e) { return; }
+  if (!Object.keys(moved).length && !drop.length) return;
+  post('/api/settings', { values: moved }).then((cur) => {
+    S.settings = cur;
+    try { drop.forEach((k) => localStorage.removeItem(k)); } catch (e) { /* ignore */ }
+    renderSettingsChanged();
+  }).catch(() => {});
+}
+
+/* A setting changed somewhere (this page, another tab, a mission window):
+ * redraw what shows settings -- but never under the operator's cursor. */
+function renderSettingsChanged() {
+  const act = document.activeElement;
+  const typing2 = act && /^(input|textarea|select)$/i.test(act.tagName);
+  if (!(typing2 && act.closest('#dacts'))) { if ($('#dsteps')) $('#dsteps').dataset.sig = ''; renderSession(); }
+  if (!(typing2 && act.closest('#actions'))) renderControl();
 }
 
 /* ---- one navigation vocabulary for every link on the page: data-go="kind:arg" */
@@ -620,16 +662,124 @@ function dashProcId() {
   return p ? p.id : null;
 }
 
+/* Rig processes the console did NOT start -- a terminal launch, a show run by
+ * hand, a test stack on another ROS_DOMAIN_ID -- from the census
+ * (facts.system.outside). One row per process group: a launch and its nodes
+ * are one thing to stop. */
+const ROLE_NAME = { launch: 'stack', server: 'server', mocap: 'mocap node', bridge: 'foxglove bridge',
+  rviz: 'RViz', preflight: 'preflight GUI' };
+function outsideGroups() {
+  const out = ((S.health && S.health.facts && S.health.facts.system) || {}).outside || [];
+  const groups = new Map();
+  out.forEach((p) => {
+    const g = groups.get(p.pgid) || { pgid: p.pgid, procs: [] };
+    g.procs.push(p);
+    groups.set(p.pgid, g);
+  });
+  const rank = { launch: 0, server: 1, mocap: 2, script: 3 };
+  return [...groups.values()].map((g) => {
+    g.procs.sort((a, b) => (rank[a.role] ?? 9) - (rank[b.role] ?? 9));
+    const lead = g.procs[0];
+    const what = lead.role === 'script' ? lead.exe
+      : lead.role === 'launch' ? `${lead.backend || 'cpp'} stack${lead.server ? '' : ' (mocap only)'}`
+        : ROLE_NAME[lead.role] || lead.role;
+    return { ...g, lead, label: what, domain: lead.domain };
+  });
+}
+
 function dashActivity() {
-  if (!S.procs.length) {
-    return '<div class="hint" style="padding:8px">Nothing run yet.</div>';
+  if (S.actView === 'fleet') return fleetRows();
+  const groups = outsideGroups();
+  const myDom = ((S.health && S.health.facts && S.health.facts.system) || {}).my_domain;
+  const outside = groups.map((g) => `<a class="actrow running outside ${S.selOutside === g.lead.pid ? 'sel' : ''}"
+      data-outside="${g.lead.pid}" title="${esc(g.lead.cmdline)}">
+      <span class="adot"></span><span class="alabel">${esc(clip(g.label, 26))}</span>
+      <span class="astate">outside${g.domain && g.domain !== myDom ? ' &middot; dom ' + esc(g.domain) : ''}</span></a>`).join('');
+  if (!S.procs.length && !outside) {
+    return '<div class="hint" style="padding:8px">Nothing running, and nothing run yet.</div>';
   }
-  const sel = dashProcId();
-  return S.procs.slice(-40).reverse().map((p) => `<a class="actrow ${esc(p.state)} ${p.id === sel ? 'sel' : ''}"
+  const sel = S.selOutside ? null : dashProcId();
+  return outside + S.procs.slice(-40).reverse().map((p) => `<a class="actrow ${esc(p.state)} ${p.id === sel ? 'sel' : ''}"
       data-dashproc="${esc(p.id)}" title="${esc(p.cmdline)}">
       <span class="adot"></span><span class="alabel">${esc(clip(p.label, 34))}</span>
       <span class="astate">${esc(p.state === 'running' ? 'live' : p.state)}${
         p.returncode != null && p.state !== 'running' ? ' ' + p.returncode : ''}</span></a>`).join('');
+}
+
+/* ---- the fleet-command journal (journal.py): what the SERVER acted on,
+ * from anyone -- this console, the preflight GUI, a terminal, a show. */
+function fleetRows() {
+  const evs = S.journal.slice(-80).reverse();
+  if (!evs.length) {
+    return `<div class="hint" style="padding:8px">No fleet commands heard yet on ROS_DOMAIN_ID=${esc(S.env.domain_id)}.
+      Listening with <code>ros2 topic echo /rosout --csv</code> (${esc(S.journalState || '?')}).</div>`;
+  }
+  return evs.map((e) => `<div class="fleetrow ${e.verb === 'emergency' ? 'estop' : ''} ${e.backlog ? 'old' : ''}"
+      title="${esc(e.text)}${e.backlog ? '\n(from before this console started)' : ''}">
+      <time>${new Date(e.ts * 1000).toLocaleTimeString([], { hour12: false })}</time>
+      <b>${esc(e.target)}</b> <span>${esc(e.verb.replace('_', ' '))}</span>
+      ${e.sim_noop ? '<em>sim: not implemented</em>' : ''}</div>`).join('');
+}
+
+function onFleetEvent(ev) {
+  S.journal.push(ev);
+  if (S.journal.length > 300) S.journal.splice(0, 100);
+  if (ev.verb === 'emergency' && !ev.backlog) {
+    const ours = S.ownEstopAt && Date.now() - S.ownEstopAt < 6000;
+    const t = new Date(ev.ts * 1000).toLocaleTimeString([], { hour12: false });
+    if (ev.sim_noop) {
+      estopBanner('fail', `E-STOP at ${t} did NOTHING -- the simulator does not implement it`,
+        `crazyflie_server logged "${ev.text}". The simulated drones keep flying: land them, or stop the script.`);
+    } else if (!ours) {
+      estopBanner('ok', `E-STOP fired outside this console at ${t}`,
+        `crazyflie_server: "${ev.text}" -- from the preflight GUI, a terminal or a script. Motors are cut; ` +
+        'the drones need a power-cycle before they arm again.');
+    }
+  }
+  renderDashSoon();
+}
+
+/* the selected OUTSIDE process: what it is, and how to stop it -- no output,
+ * the console did not start it and has no pty to read */
+function outsideDetail(head, tail) {
+  const g = outsideGroups().find((x) => x.lead.pid === S.selOutside);
+  if (!g) { S.selOutside = null; return false; }
+  const sig = `${g.lead.pid}|${g.procs.length}`;
+  if (head.dataset.sig !== 'o' + sig) {
+    head.dataset.sig = 'o' + sig;
+    head.innerHTML = `<span class="nm">${esc(g.label)}</span><span class="st running">outside</span>
+      <span class="cmd" title="${esc(g.lead.cmdline)}">${esc(g.lead.cmdline)}</span>
+      <button class="btn ghost sm" data-osig="int" title="SIGINT to its process group: the same as Ctrl-C in its terminal">Stop</button>
+      <button class="btn danger sm" data-osig="kill" title="SIGKILL to its process group">Kill</button>`;
+    $$('[data-osig]', head).forEach((b) => { b.onclick = () => signalOutside(g, b.dataset.osig); });
+  }
+  tail.dataset.proc = '';
+  const myDom = (S.health.facts.system || {}).my_domain;
+  tail.innerHTML = `<div class="l-meta">Started OUTSIDE this console${g.domain !== myDom
+      ? ` on ROS_DOMAIN_ID=${esc(g.domain)} -- this console is on ${esc(myDom)}, so its ROS graph, topics and
+         services are invisible here; it still holds the machine's Crazyradio / UDP 1511` : ''}.
+    Its output went to wherever it was started; the console can only see that it runs, and stop it.</div>
+    ${g.procs.map((p) => `<div><span class="l-cmd">${esc(p.role)}</span> pid ${p.pid} (group ${p.pgid}),
+      started ${new Date(p.started * 1000).toLocaleTimeString([], { hour12: false })}, domain ${esc(p.domain ?? '?')}
+      <div class="l-meta">${esc(p.cmdline)}</div></div>`).join('')}`;
+  return true;
+}
+
+async function signalOutside(g, mode) {
+  const kill = mode === 'kill';
+  const ok = await confirmRun(`${kill ? 'Kill' : 'Stop'} ${g.label} (started outside the console)`,
+    `<p>${kill ? '<b>SIGKILL ends it with no clean-up.</b> A show will not land.'
+      : g.lead.role === 'script'
+        ? 'One SIGINT -- the same as Ctrl-C in its terminal. A show lands itself (abort.py); nothing follows it up.'
+        : 'SIGINT, then SIGTERM after 6 s and SIGKILL after 10 s if it is still there -- a process started in the background ignores Ctrl-C.'}</p>
+     <div class="cmdline">kill -${kill ? 'KILL' : 'INT'} -${g.pgid}</div>
+     ${g.lead.role === 'launch' || g.lead.role === 'server' ? '<p class="warnline">If drones are flying, this removes their commander -- land first.</p>' : ''}`,
+    kill ? 'Kill it' : 'Stop it');
+  if (!ok) return;
+  try {
+    const r = await post('/api/signal', { pid: g.lead.pid, mode: kill ? 'kill' : 'int' });
+    toast(`${r.signal} sent to process group ${r.pgid}`);
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 /* The output pane is the console's only process view (the Processes tab was
@@ -640,8 +790,9 @@ const OUT_MAX = 2000;
 function dashOutput() {
   const head = $('#dashouthead'); const tail = $('#dashtail');
   if (!head || !tail) return;
-  const p = S.procs.find((x) => x.id === dashProcId());
   const form = $('#dc-stdin');
+  if (S.selOutside && outsideDetail(head, tail)) { if (form) form.hidden = true; return; }
+  const p = S.procs.find((x) => x.id === dashProcId());
   if (!p) {
     head.innerHTML = '';
     tail.dataset.proc = '';
@@ -698,12 +849,23 @@ function dashBlocked(a, f) {
 /* One sentence per precondition, used by the dashboard, the cards and the
  * confirm step alike. */
 function blockedWhy(req, f) {
-  if (req === 'server_running' && !f.server_running) return 'needs the server running';
-  if (req === 'server_stopped' && f.server_running) return 'the server owns the radio -- stop it first';
+  // The radio and UDP 1511 belong to the MACHINE, not to a ROS domain: a
+  // server started in a terminal, or on another ROS_DOMAIN_ID, owns them just
+  // the same. `*_any` comes from the process census (system.py).
+  const sys = f.system || {};
+  const st = sys.stack;
+  const where = st ? (st.by === 'outside' ? ' (started outside this console' +
+    (st.domain && st.domain !== sys.my_domain ? `, on ROS_DOMAIN_ID=${st.domain}` : '') + ')' : '') : '';
+  if (req === 'server_running' && !f.server_running) {
+    return f.server_any ? `the running server is on ROS_DOMAIN_ID=${st && st.domain} -- this console cannot reach it`
+      : 'needs the server running';
+  }
+  if (req === 'server_stopped' && (f.server_any || f.server_running)) return 'a server owns the radio' + where + ' -- stop it first';
   if (req === 'mocap_running' && !f.mocap_running) return 'needs mocap up -- "Start mocap only" first';
-  if (req === 'stack_stopped' && (f.server_running || f.mocap_running)) {
-    return f.server_running ? 'a stack is already running -- stop it, or use "Restart with the server"'
-      : 'mocap-only is running -- use "Restart with the server" (a second launch would start a second mocap node on UDP 1511)';
+  if (req === 'stack_stopped' && (f.stack_any || f.server_running || f.mocap_running)) {
+    return (f.server_any || f.server_running)
+      ? 'a stack is already running' + where + ' -- stop it, or use "Restart with the server"'
+      : 'mocap-only is running' + where + ' -- use "Restart with the server" (a second launch would start a second mocap node on UDP 1511)';
   }
   return '';
 }
@@ -727,8 +889,19 @@ function renderDashSoon() {
 /* Clicking a row in Activity keeps you on the dashboard and shows its output
  * beside it; "full output ->" is there for when you want the whole pane. */
 document.addEventListener('click', (e) => {
+  const view = e.target.closest('[data-actview]');
+  if (view) {
+    S.actView = view.dataset.actview;
+    $$('[data-actview]').forEach((b) => b.classList.toggle('on', b === view));
+    renderDashLive();
+    return;
+  }
+  const out = e.target.closest('[data-outside]');
+  if (out) { S.selOutside = Number(out.dataset.outside); $('#dashtail').dataset.proc = ''; renderDashLive(); return; }
   const el = e.target.closest('[data-dashproc]');
   if (!el) return;
+  S.selOutside = null;
+  $('#dashouthead').dataset.sig = '';
   S.dashProc = el.dataset.dashproc;
   renderDashLive();
 });
@@ -794,8 +967,15 @@ function wireQa(el, a, source) {
   $$('[data-param]', el).forEach((s) => {
     s.onchange = () => {
       saveParam(a.id, s.dataset.param, s.value);
-      const shared = Object.entries(PARAM_SHARE).flat();
-      if (shared.includes(a.id)) { $('#dsteps').dataset.sig = ''; renderSession(); return; }   // keep twins in step
+      // the same setting may be on another button in this row (Start / Restart)
+      $$('#dacts .qa').forEach((other) => {
+        if (other === el) return;
+        const oa = S.catalog.find((x) => x.id === other.dataset.qa);
+        const q = oa && oa.params.find((x) => x.name === s.dataset.param);
+        const me = a.params.find((x) => x.name === s.dataset.param);
+        const os = $(`[data-param="${CSS.escape(s.dataset.param)}"]`, other);
+        if (q && me && os && settingKey(oa.id, q) === settingKey(a.id, me)) os.value = s.value;
+      });
       refresh();
     };
   });
@@ -1080,6 +1260,7 @@ let estopBusy = false;
 async function fireEstop() {
   if (estopBusy) return;          // a second click must not queue a second call
   estopBusy = true;
+  S.ownEstopAt = Date.now();      // so the journal's echo of it is not called "outside"
   const btn = $('#btn-estop');
   btn.classList.add('firing');
   estopBanner('pending', 'E-STOP sent', 'waiting for the crazyflie_server to confirm...');
