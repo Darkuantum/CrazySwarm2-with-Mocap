@@ -117,7 +117,9 @@ scripts/
   deck_check.py       # which LED decks are fitted per drone, over cflib (STOP the server first);
                       #   fleet read from crazyflies.yaml
   sync_initial_positions.py  # rewrite crazyflies.yaml initial_position from live /poses
-pose_bridge.py      # natnet → /poses (NamedPoseArray @ 50 Hz)
+  pose_bridge.py      # natnet → /poses (NamedPoseArray @ 50 Hz). Moved here from the
+                      #   repo root 2026-10-09, with mocap_watchdog.py, safety_watchdog.py,
+                      #   safety_watchdog_cflib.py and plot_estimate.py
 console/            # OPTIONAL mission-console GUI (its own README). Self-contained:
                     #   not a colcon package, nothing in src/ imports it, no build.
                     #   `rm -rf console/` removes the feature and changes nothing else.

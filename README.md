@@ -293,7 +293,7 @@ commit — a fresh clone then reproduces your exact rig. Key files:
   (thresholds and takeoff/land setpoints are constants at the top; see
   [docs/RUNNING.md → Section C](docs/RUNNING.md#c-preflight-gui-preflight_kalman_plotterpy)).
 
-[`pose_bridge.py`](pose_bridge.py) (the alternative natnet_ros2 mocap path only)
+[`scripts/pose_bridge.py`](scripts/pose_bridge.py) (the alternative natnet_ros2 mocap path only)
 reads its roster from `crazyflies.yaml` and publishes at `PUBLISH_HZ = 50.0`,
 matching the Motive streaming rate; there is nothing to keep in sync by hand
 (see [docs/MOCAP.md](docs/MOCAP.md)).
@@ -710,12 +710,11 @@ CrazySwarm2-with-Mocap/
 ├── src/                  # VENDORED, customized source (committed): crazyswarm2 (+ the
 │                         #   crazyflie_shows package), natnet_ros2, motion_capture_tracking
 ├── scripts/              # operator tools: setup/build/install, scan_fleet.sh,
-│                         #   sync_initial_positions.py, led.sh, arena + link diagnostics
+│                         #   sync_initial_positions.py, led.sh, arena + link diagnostics,
+│                         #   pose_bridge.py, the watchdogs, plot_estimate.py
 ├── runbooks/             # per-show OPERATOR run cards (carousel, constellation, escort)
 ├── docs/                 # operating, mocap, troubleshooting, architecture, console, shows, upstream
 ├── console/              # OPTIONAL mission-console GUI (section 8) — nothing depends on it
-├── pose_bridge.py        # alternative natnet → /poses bridge (50 Hz)
-├── mocap_watchdog.py  safety_watchdog*.py  plot_estimate.py   # top-level helpers (see ARCHITECTURE)
 ├── data/  Pics/  video/  # measurements (arena, link stalls), screenshots, demo footage
 ├── CLAUDE.md             # operational ground truth for maintainers and Claude Code
 ├── WORKSPACE-NOTES.md    # the fork itself: branches, upstream relationship, hand-back

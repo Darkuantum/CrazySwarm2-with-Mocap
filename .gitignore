@@ -19,6 +19,12 @@ __pycache__/
 video/*.mov
 
 # ---- crazyflie firmware TOC caches ----
+# cflib also writes a cache/ directory of per-firmware param/log TOC JSON into
+# the working directory (cache/<firmware-hash>.json). Same story as the csv
+# files below: regenerated on connect, per-firmware, never read by this repo.
+# It WAS tracked until 2026-10-09 (docs/ARCHITECTURE.md flagged it).
+/cache/
+
 # crazyflie_server writes these into the working directory on connect (the
 # param/log table-of-contents of whatever firmware it just talked to). They are
 # regenerated every run and are per-firmware, so they are cache, not source.

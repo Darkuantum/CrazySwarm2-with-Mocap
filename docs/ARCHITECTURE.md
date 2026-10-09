@@ -100,14 +100,13 @@ CrazySwarm2-with-Mocap/
 |   |-- measure_arena.py        arena survey; feeds the safety.ARENA_* constants
 |   |-- arena_flight_sweep.py   flown arena-edge sweep
 |   |-- link_stall_recorder.py  dumps the 60 s precursor for EVERY drone the moment one stalls
-|   `-- watch_escort.py         escort demo monitor
-|
-|-- pose_bridge.py            [1P] ALT mocap path: /mocap/<name>/pose -> /poses @ 50 Hz; roster from the yaml
-|-- mocap_watchdog.py         [1P] cuts motors / lands if /poses stalls while flying
-|-- safety_watchdog.py        [1P] mocap-free runaway watchdog over ROS 2
-|-- safety_watchdog_cflib.py  [1P] same idea, standalone, no ROS (owns its own radio)
-|-- plot_estimate.py          [1P] live plot of stateEstimate x/y/z/yaw
-|                               (these five sit at the root beside scripts/; see "Findings" below)
+|   |-- watch_escort.py         escort demo monitor
+|   |                           (the five below moved here from the repo root 2026-10-09)
+|   |-- pose_bridge.py          ALT mocap path: /mocap/<name>/pose -> /poses @ 50 Hz; roster from the yaml
+|   |-- mocap_watchdog.py       cuts motors / lands if /poses stalls while flying
+|   |-- safety_watchdog.py      mocap-free runaway watchdog over ROS 2
+|   |-- safety_watchdog_cflib.py  same idea, standalone, no ROS (owns its own radio)
+|   `-- plot_estimate.py        live plot of stateEstimate x/y/z/yaw
 |
 |-- console/                  [1P] OPTIONAL mission-console web GUI — REMOVABLE (`rm -rf console/`
 |   |                              changes nothing else). docs/CONSOLE.md is the user guide.
@@ -211,15 +210,13 @@ CrazySwarm2-with-Mocap/
 |-- data/                     [1P] measurement artefacts — the evidence behind the docs
 |   |-- arena/                  climb_cf5.csv verify_cf3.csv (arena survey flights)
 |   |-- linkstalls/             stall_cf*.json + link_*.csv written by scripts/link_stall_recorder.py
-|   `-- patch-backups/          UNTRACKED leftover: `trace-627b499/...` is EMPTY DIRECTORIES ONLY
-|                               (verified `find data/patch-backups -type f` -> 0 files). Safe to
-|                               delete; use git to revert traced files, as CLAUDE.md says.
+|                               (patch-backups/ was an untracked leftover of empty directories;
+|                               deleted 2026-10-09 — use git to revert traced files)
 |
 |-- Pics/                     [1P] README / preflight / mocap-axis screenshots (tracked .png/.jpg)
 |-- video/                    [1P] demo media: .mp4 and .gif tracked; video/*.mov is [ign]
-|-- cache/                    TRACKED but probably should not be: two cflib TOC caches
-|                             (9B42C0DF.json, E46BE59F.json) the server wrote into the cwd.
-|                             Regenerated every run. See "Findings" below.
+|-- cache/                    [ign] cflib per-firmware TOC caches written into the cwd.
+|                             Untracked and ignored since 2026-10-09; regenerated on connect.
 |-- .claude/                  [1P] Claude Code config: agents/ (build-doctor, config-editor,
 |                             mocap-doctor, preflight-analyst), workflows/
 |
@@ -242,17 +239,22 @@ Read from `launch.py` (the yaml loads around lines 125–166, the launch argumen
 
 ### Findings from this check (act on them or confirm them)
 
-- `cache/` is **tracked** (`git ls-files cache` returns both files) even though it is
-  regenerated cflib output. `.gitignore` covers `log*.csv` and `params*.csv` but not
-  `cache/`. Recommend `git rm -r --cached cache/` plus an ignore rule.
-- `data/patch-backups/trace-627b499/` contains **zero files** — empty directories only,
-  untracked. Nothing to preserve; deleting it matches CLAUDE.md, which already says that
-  backup set is gone and that git is the way to revert traced files.
-- Root-level `pose_bridge.py`, `mocap_watchdog.py`, `safety_watchdog*.py` and
-  `plot_estimate.py` sit beside `scripts/`. Moving them into `scripts/` is a doc-and-link
-  change, not a code change — decide before any restructuring, not during.
-- The `upstream/main` diff still lists `runcards/` paths because the `git mv` to
-  `runbooks/` is staged, not committed; those line counts shift once it lands.
+**All four findings from this check were acted on, 2026-10-09** (one commit, no code
+changed):
+
+- `cache/` was tracked although it is regenerated cflib output — now `git rm -r --cached`
+  plus a `/cache/` rule in `.gitignore`. The files stay on disk; cflib still uses them.
+- `data/patch-backups/trace-627b499/` held zero files (empty directories only, untracked)
+  — deleted. Git is the way to revert traced files, as CLAUDE.md says.
+- `pose_bridge.py`, `mocap_watchdog.py`, `safety_watchdog*.py` and `plot_estimate.py`
+  moved from the repo root into `scripts/`, with every reference updated in the same
+  commit. No code referenced them by path — only comments — so nothing but docs changed.
+- The `runcards/` → `runbooks/` rename has landed, so the `upstream/main` diff no longer
+  lists the old paths.
+
+Still open, deliberately: `video/` keeps 28 MB of referenced demo media, and the two raw
+captures that no doc referenced were removed from HEAD (they remain in history, which is
+why `.git` is unchanged at ~155 MB — a history rewrite is not worth it on a shared fork).
 
 ### What this check did NOT verify (stated honestly)
 
