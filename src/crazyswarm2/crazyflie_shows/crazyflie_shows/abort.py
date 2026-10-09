@@ -39,8 +39,18 @@ import signal
 ABORT_LAND_DURATION = 4.0      # s -- a gentle descent from wherever they are
 
 
-class ShowAborted(Exception):
-    """Raised by the signal handler installed in :func:`take_signals`."""
+class ShowAborted(BaseException):
+    """Raised by the signal handler installed in :func:`take_signals`.
+
+    A BaseException, like KeyboardInterrupt and for the same reason: the
+    signal arrives wherever the script happens to be, and any ``except
+    Exception`` in its path -- a guarded select(), a marker publish, a light
+    cue -- would otherwise swallow the abort and keep flying. It was an
+    Exception until 2026-10-09, when exactly that was measured in sim: a
+    SIGINT at escort_show's paced ARM gate was eaten by the gate's own
+    ``except Exception`` and the show sat waiting. Every show catches it by
+    name before its ``except BaseException``, so nothing else changes.
+    """
 
 
 def take_signals():
@@ -50,10 +60,11 @@ def take_signals():
     flying. See the module docstring for why rclpy's own handler is the
     problem.
 
-    SIGTERM is covered as well as SIGINT because the mission console's Stop
-    button sends SIGTERM and then escalates to SIGKILL a few seconds later
-    (``console/mission_console/procs.py``) -- an abort landing has to start on
-    the first signal to have any chance of finishing.
+    SIGTERM is covered as well as SIGINT because the mission console's
+    Processes -> Stop escalates SIGINT -> SIGTERM -> SIGKILL
+    (``console/mission_console/procs.py``; a flight script gets 15 s before the
+    SIGTERM) -- an abort landing has to start on the first signal to have any
+    chance of finishing. The mission window's Abort sends one SIGINT only.
 
     A second Ctrl-C during the abort restores the default handler and kills the
     process outright: the operator must always be able to give up on the
@@ -73,9 +84,13 @@ def abort_land(allcfs, cfs, timeHelper, land_height, why):
     to invent a stub class to satisfy it.
 
     Restores the DEFAULT disposition for both signals we claimed, not just
-    SIGINT: the console escalates SIGINT to SIGTERM at 6 s, so a landing that
-    takes longer than that used to have its own disarm loop interrupted by its
-    own handler, leaving the drones on the ground but still armed.
+    SIGINT, so a second Ctrl-C (or SIGTERM) kills the process outright -- the
+    operator can always give up on the script and reach for the E-STOP. Note
+    what that means for a SIGTERM that arrives DURING the landing: it no longer
+    raises into the disarm loop (what used to happen), it terminates the
+    process, which can equally leave drones down but armed. The console
+    therefore waits 15 s after SIGINT before sending SIGTERM to a flight
+    script, and the mission window's Abort never sends one.
     """
     print(f'\n  *** ABORT ({why}) - landing all drones where they are ***', flush=True)
     for sig in (signal.SIGINT, signal.SIGTERM):     # a second signal kills us

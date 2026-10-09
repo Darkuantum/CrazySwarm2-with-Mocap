@@ -390,9 +390,16 @@ FENCE_HYST = 0.25
 
 def operator_said(block=False, timeout=0.0):
     """'' if nothing typed; else the stripped line ('' counts as Enter -> ' ')."""
+    # Only what select() itself raises on a closed or odd stdin means "nothing
+    # typed". This was `except Exception`, and the abort signal almost always
+    # lands while we sit in this select(): it swallowed the ShowAborted that
+    # abort.take_signals() raises, so a Ctrl-C at a paced gate did nothing,
+    # the console's Stop escalated to SIGKILL, and nothing landed (measured
+    # in sim 2026-10-09). ShowAborted is now a BaseException as well, so
+    # either change alone closes it; both stay.
     try:
         r, _, _ = select.select([sys.stdin], [], [], None if block else timeout)
-    except Exception:                                   # noqa: BLE001
+    except (OSError, ValueError):
         return ''
     if not r:
         return ''
