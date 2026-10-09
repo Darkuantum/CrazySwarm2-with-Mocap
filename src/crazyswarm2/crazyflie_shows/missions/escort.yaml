@@ -1,0 +1,126 @@
+# Mission view for the escort demo -- read by the mission console
+# (console/mission_console/missions.py), never by the show itself.
+#
+# Everything the escort needs from an operator, in one window instead of a
+# terminal per process: the choices made before takeoff, the keyboard VIP /
+# adversary, the Enter gates of a paced run, and a 3D view of the ring with
+# the show's own markers. Delete this file and escort_show is unchanged; it is
+# a description of how to RUN the show, not part of it.
+#
+# The format is documented in docs/MISSIONS.md.
+mission: 1
+title: Escort demo
+summary: >
+  Three defenders hold a ring round a VIP and rotate it so one stands on the
+  VIP-adversary bearing; a fourth drone probes. Operator-paced by default:
+  every leg waits for Continue, and Land ends it.
+docs: runbooks/ESCORT.runcard.md
+run: escort_show
+flight: true
+# escort_show calls abort.take_signals(): one SIGINT = land where they are.
+abort: sigint
+
+options:
+  - name: vip_mode
+    label: VIP
+    choices:
+      point: a fixed point at the VIP mark -- nobody in the volume
+      manual: a point you steer with the VIP keyboard below (no person, no DJI)
+      mocap: a person (or the DJI) wearing the rigid body named by vip_name
+    default: point
+  - name: adversary
+    label: Adversary
+    choices:
+      scripted: the proven script -- every leg checked on the ground before takeoff
+      reactive: the reactive attacker (escort_show's own default)
+      manual: you steer it with the adversary keyboard; only floor is 0.80 m off the VIP
+      external: tracks a rigid body somebody else flies; commands nothing
+      none: no adversary -- the ring just escorts
+    default: scripted
+  - name: paced
+    label: Operator-paced (Continue at every leg)
+    type: bool
+    default: true
+  - name: dry_run
+    label: Dry run (verify, arm nothing)
+    type: bool
+    default: false
+    omit_default: true
+  - name: vip_name
+    label: VIP rigid body
+    type: text
+    default: operator
+    when: {vip_mode: mocap}
+  - name: adversary_name
+    label: Adversary rigid body
+    type: text
+    default: adv
+    when: {adversary: external}
+
+helpers:
+  vip_keys:
+    label: VIP keyboard
+    run: escort_teleop
+    params: {target: vip}
+    when: {vip_mode: manual}
+    autostart: true
+    teleop: planar
+    # ESCORT.runcard.md: "Start the teleop, then touch nothing until ESCORT
+    # LIVE appears" -- a target already moving makes the gather refuse.
+    enable_after: 'ESCORT LIVE'
+  adversary_keys:
+    label: Adversary keyboard
+    run: escort_teleop
+    params: {target: adversary}
+    when: {adversary: manual}
+    autostart: true
+    teleop: spatial
+    enable_after: 'ESCORT LIVE'
+
+topics:
+  markers: [/escort/markers]
+
+gate:
+  # operator_gate() and every paced leg print ">>> ..." then CONTINUE_HINT
+  prompt: '^\s*>>>\s*(?P<text>.+)$'
+  until: '\[q\]\s*land'
+  buttons:
+    - {label: Continue, send: '', key: Enter, tone: primary}
+    - {label: Land now (q), send: q, tone: danger}
+
+indicators:
+  - {label: Phase, match: 'ESCORT DEMO', value: verifying, initial: idle}
+  - {label: Phase, match: 'configuration checks out', value: checked}
+  - {label: Phase, match: 'waiting for (rigid bodies|the \w+ teleop)', value: waiting for targets, tone: {waiting for targets: warn}}
+  - {label: Phase, match: '^\s+(VIP|adversary) at \[|all present', value: targets ready}
+  - {label: Phase, match: '>>> ARM and take off', value: ready to arm}
+  - {label: Phase, match: 'gathering onto the ring', value: gathering}
+  - {label: Phase, match: 'ESCORT LIVE', value: LIVE, tone: {LIVE: ok}}
+  - {label: Phase, match: 'landing the defenders|operator ended|last leg done', value: landing}
+  - {label: Phase, match: 'landed and disarmed', value: landed}
+  - {label: Phase, match: '\*\*\* ABORT', value: ABORT, tone: {ABORT: fail}}
+  - {label: Phase, match: 'dry_run - plan and preflight checks done', value: dry run OK, tone: {dry run OK: ok}}
+  - {label: Leg, match: '>>> leg (\d+/\d+) (STARTED|COMPLETE)', value: '$1 $2', initial: '--'}
+  - {label: Ring, match: '(BLOCKING) - wall closing', value: BLOCKING, tone: {BLOCKING: warn}, initial: '--'}
+  - {label: Ring, match: 'clear - wall opening', value: clear, tone: {clear: ok}}
+  - {label: Geofence, match: 'GEOFENCE HOLD', value: HOLD, tone: {HOLD: fail}, initial: ok}
+  - {label: Geofence, match: 'GEOFENCE CLEARED', value: ok, tone: {ok: ok}}
+  - {label: Attacker, match: 'ATTACKER STOOD DOWN', value: stood down, tone: {stood down: ok}, initial: '--'}
+  - {label: Phase, match: 'ended before arming', value: refused before arming, tone: {refused before arming: fail}}
+  - {label: Placement, match: 'all drones within tolerance', value: ok, tone: {ok: ok}, initial: '--'}
+
+# lines worth a row in the timeline (everything is still in the raw output)
+events:
+  - '\[t\+'
+  - 'GEOFENCE'
+  - '>>> leg'
+  - 'ESCORT LIVE'
+  - 'STOOD DOWN'
+  - '\*\*\*'
+  - 'landed and disarmed'
+  - 'ring (CLIMBING|now tracking)'
+
+layout:
+  main: [scene]
+  side: [gate, indicators, teleop, fleet, launch]
+  bottom: [events, output]

@@ -267,43 +267,101 @@ main{flex:1;min-height:0;overflow:hidden}
 .iss.ok{border-color:rgba(63,185,80,.45);background:var(--ok-t);color:#7ee787;cursor:default}
 
 /* --- the four step columns */
-.dashcols{display:grid;gap:10px;grid-template-columns:repeat(4,minmax(0,1fr));flex:none}
-.dcol{background:linear-gradient(180deg,var(--panel),rgba(17,24,35,.55));border:1px solid var(--line);
-  border-radius:var(--r);padding:10px 11px 11px;display:flex;flex-direction:column;gap:7px;
-  min-height:0;box-shadow:var(--sh1)}
-.dcol h2{margin:0;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--fg2);
-  display:flex;align-items:center;gap:8px;font-weight:650}
-.dcol .step{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:50%;
-  background:var(--panel3);color:var(--fg);font-size:10.5px;flex:none;font-weight:700;
-  border:1px solid var(--line2)}
-.dsub{font-size:11px;color:var(--muted);margin-top:-3px}
-.qa{display:flex;flex-direction:column;gap:4px}
-.qa-row{display:flex;gap:4px;align-items:stretch}
-.qa-run{flex:1;min-width:0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  display:flex;align-items:center;gap:7px;background:var(--panel2)}
+/* --- the session row: a stepper, the current step's buttons, pins, More.
+   One step at a time -- the four columns it replaces put twelve buttons on
+   screen for steps the session was not in, and squeezed the live output. */
+.dsession{display:flex;align-items:center;gap:10px;flex:none;flex-wrap:wrap;
+  background:linear-gradient(180deg,var(--panel),rgba(17,24,35,.55));border:1px solid var(--line);
+  border-radius:var(--r);padding:7px 9px;box-shadow:var(--sh1)}
+.dsteps{display:flex;gap:2px;flex:none;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:2px}
+.dstep{display:flex;align-items:center;gap:6px;background:transparent;border:0;color:var(--muted);
+  padding:4px 9px 4px 5px;border-radius:7px;cursor:pointer;font:600 11.5px/1 inherit;white-space:nowrap;
+  transition:background var(--t),color var(--t)}
+.dstep .n{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;
+  border:1px solid var(--line2);font-size:10.5px;color:var(--fg2);background:var(--panel2)}
+.dstep:hover{color:var(--fg);background:var(--panel2)}
+.dstep.past .n{background:var(--ok-t);border-color:rgba(63,185,80,.5);color:#7ee58f}
+.dstep.now .n{border-color:var(--accent);color:var(--accent2)}
+.dstep.on{background:var(--panel3);color:var(--fg)}
+.dstep.on .n{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.dacts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;flex:1 1 auto;min-width:0}
+.qa{display:flex;gap:3px;align-items:stretch}
+.qa select{background:var(--ink);border:1px solid var(--line);color:var(--fg2);border-radius:6px;
+  padding:2px 5px;font-size:11.5px;font-family:inherit;max-width:190px}
+.qa select:hover{border-color:var(--line2)}
+.qa-run{display:flex;align-items:center;gap:7px;background:var(--panel2);white-space:nowrap}
 .qa-run::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--line2);flex:none;
   transition:background var(--t)}
 .qa-run:hover::before{background:var(--accent)}
 .qa-run.flight{border-color:rgba(216,161,29,.45)}
 .qa-run.flight::before{background:var(--warn)}
-.qa-more{flex:none;display:grid;place-items:center;width:26px;border-radius:var(--r-sm);
+.qa-more{flex:none;display:grid;place-items:center;width:22px;border-radius:var(--r-sm);
   color:var(--muted);text-decoration:none;cursor:pointer;font-size:15px;border:1px solid transparent;
   transition:color var(--t),background var(--t)}
 .qa-more:hover{color:var(--accent);background:var(--panel2);border-color:var(--line)}
-.qa-params{display:flex;gap:4px;min-width:0}
-.qa-params select{flex:1;min-width:0;background:var(--ink);border:1px solid var(--line);
-  color:var(--fg2);border-radius:6px;padding:3px 6px;font-size:11.5px;font-family:inherit;
-  transition:border-color var(--t)}
-.qa-params select:hover{border-color:var(--line2)}
-.qa-params select[data-param="sim"],.qa-params select[data-param="backend"]{flex:0 0 auto}
-.qa-desc{font-size:11px;color:var(--muted);line-height:1.35;display:-webkit-box;
-  -webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.qa.blocked .qa-run,.pin.blocked{opacity:.5}
 .qa-why{font-size:10.5px;color:#e3b341;display:flex;align-items:center;gap:4px}
 .qa-why:empty{display:none}
 .qa-why::before{content:"!";display:grid;place-items:center;width:12px;height:12px;flex:none;
   border-radius:50%;border:1px solid currentColor;font-size:9px;font-weight:700}
-.qa.blocked .qa-run{opacity:.5}
-.dcol-why{margin-top:-2px}
+.dpins{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.dpins:empty{display:none}
+.dpins-label{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);
+  border-left:1px solid var(--line2);padding-left:9px}
+.pin.flight{border-color:rgba(216,161,29,.45)}
+.dmorebtn{margin-left:auto;flex:none}
+/* the rig laptop (~1280 px): name only the step you are on, so the row of
+   buttons, the pins and More stay on ONE line. The others keep their number,
+   their colour and their name in the tooltip. */
+@media (max-width:1440px){
+  .dstep:not(.on) .t{display:none}
+  .dstep:not(.on){padding-right:5px}
+  .dsession{flex-wrap:nowrap}
+  .dacts{flex-wrap:nowrap;overflow:hidden}
+}
+
+/* --- missions: each opens its own window (static/mission/) */
+.dmissions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;flex:none}
+.dm-label{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;color:var(--fg2);font-weight:650;margin-right:2px}
+.mchip{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);
+  color:var(--fg);border-radius:999px;padding:4px 11px;font:600 12px/1.2 inherit;cursor:pointer;
+  transition:border-color var(--t),background var(--t)}
+.mchip:hover{border-color:var(--accent);background:var(--panel2)}
+.mchip .ext{color:var(--muted);font-size:11px}
+.mchip.generic{color:var(--fg2);font-weight:500}
+.mchip.live{border-color:rgba(63,185,80,.6);background:var(--ok-t)}
+.mchip.bad{border-color:rgba(240,86,79,.5);color:var(--muted);cursor:not-allowed}
+.mchip .livedot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 6px var(--ok)}
+.dm-all{font-size:11.5px}
+
+/* --- More popover */
+.morepop{position:fixed;z-index:40;width:min(560px,92vw);max-height:min(520px,72vh);display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid var(--line2);border-radius:12px;box-shadow:var(--sh3)}
+.morehead{display:flex;gap:8px;align-items:center;padding:8px;border-bottom:1px solid var(--line)}
+.morehead input{flex:0 0 180px;background:var(--ink);border:1px solid var(--line2);color:var(--fg);border-radius:6px;
+  padding:4px 8px;font:12px inherit}
+.morerows{overflow:auto;padding:4px}
+.morerow{display:grid;grid-template-columns:24px 92px minmax(0,1fr) 34px 22px;gap:6px;align-items:center;
+  padding:4px 6px;border-radius:7px;cursor:pointer}
+.morerow:hover{background:var(--panel2)}
+.morerow.onrow .ml{color:var(--muted)}
+.morerow .mg{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.morerow .ml{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.morerow .mn{font-size:11px;color:var(--accent2);text-align:right;font-variant-numeric:tabular-nums}
+.star{background:transparent;border:0;color:var(--muted);font-size:15px;cursor:pointer;padding:0;line-height:1}
+.star:hover,.star.on{color:#f2c75a}
+
+/* --- usage view (Command log tab) */
+.usagebox{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:8px 12px;margin:0 0 12px}
+.usagebox summary{cursor:pointer;font-weight:650;color:var(--fg2)}
+.utable{border-collapse:collapse;width:100%;max-width:900px;font-size:12.5px;margin:6px 0}
+.utable th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:600;padding:3px 8px}
+.utable td{padding:3px 8px;border-top:1px solid var(--line)}
+.utable td.num{text-align:right;font-variant-numeric:tabular-nums}
+.ubar{width:160px}
+.ubar i{display:block;height:6px;border-radius:3px;background:var(--accent)}
+.urow{margin:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px}
+.utag{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--fg2)}
 
 /* --- the live console strip: what the rig is saying, right now */
 .dconsole{flex:1;min-height:0;display:grid;grid-template-columns:230px minmax(0,1fr);
@@ -619,7 +677,6 @@ pre.term{flex:1;margin:0;border:0;border-radius:0;max-height:none;font-size:11px
   .grouplist button,.proclist button{white-space:nowrap;margin-bottom:0}
   .grouplist button.active,.proclist button.active{box-shadow:inset 0 -2px 0 var(--accent)}
   .actions{grid-template-columns:1fr}
-  .dashcols{grid-template-columns:repeat(2,minmax(0,1fr))}
   .dconsole{grid-template-columns:1fr}
   .dc-list{border-right:0;border-bottom:1px solid var(--line);max-height:170px}
   .fleetrow{flex-wrap:wrap}

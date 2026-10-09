@@ -71,7 +71,18 @@
     <div class="dash">
       <div class="fleetrow" id="dashstrip"></div>
       <div class="dashissues" id="dashissues"></div>
-      <div class="dashcols" id="dashcols"></div>
+      <!-- One step of the session at a time: the stepper follows the rig's
+           state, the row under it holds only that step's buttons, and the
+           operator's pinned shortcuts sit beside them. Everything else is in
+           More (ranked by the usage log) and in the palette. -->
+      <div class="dsession">
+        <div class="dsteps" id="dsteps" role="tablist" aria-label="Session steps"></div>
+        <div class="dacts" id="dacts"></div>
+        <div class="dpins" id="dpins"></div>
+        <button class="btn ghost sm dmorebtn" id="btn-more" aria-haspopup="true"
+          title="Every action, ranked by how often you use it. Star one to pin it here.">More &#9662;</button>
+      </div>
+      <div class="dmissions" id="dmissions"></div>
       <div class="dconsole">
         <div class="dc-list">
           <div class="dc-head">Activity
@@ -155,6 +166,10 @@
         <span class="hint">Every command this console ran, in order. Copy any line into a
           sourced terminal and it does exactly the same thing.</span>
       </div>
+      <details class="usagebox" id="usagebox">
+        <summary>Usage across sessions <span class="hint" id="usage-sub"></span></summary>
+        <div id="usagebody"></div>
+      </details>
       <div id="history"></div>
     </div>
   </section>
@@ -201,6 +216,13 @@
       must never cut the motors, and the button is on every tab, top right. It is also the
       one button with no confirmation step &mdash; one click and it fires.</div>
   </div>
+</div>
+
+<!-- the dashboard's overflow: every catalog action, most used first -->
+<div class="morepop" id="morepop" role="dialog" aria-label="More actions" hidden>
+  <div class="morehead"><input id="more-filter" placeholder="filter..." autocomplete="off" spellcheck="false">
+    <span class="hint" id="more-note"></span></div>
+  <div class="morerows" id="morerows"></div>
 </div>
 
 <div id="toasts" role="status" aria-live="polite"></div>

@@ -12,6 +12,7 @@ const S = {
   catalog: [], groups: [], files: [], health: null, procs: [], history: [],
   lines: {}, selNode: null, selGroup: null, selFile: 'crazyflies', selProc: null, factsSig: '',
   cfg: {}, repo: '', env: {}, dashProc: null, checkedAt: 0, checkedFullAt: 0,
+  missions: [], prefs: { pins: [] }, usage: null, step: null, stepAuto: null,
 };
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -50,6 +51,10 @@ const post = (path, body) => api(path, {
   body: JSON.stringify(body || {}),
 });
 
+/* The usage log (mission_console/usage.py). Fire-and-forget: a lost beacon
+ * costs one row of statistics, never an action. */
+function usage(ev, extra) { post('/api/usage', { ev, ...(extra || {}) }).catch(() => {}); }
+
 function toast(msg, kind = '') {
   const el = document.createElement('div');
   el.className = 'toast ' + kind;
@@ -81,12 +86,15 @@ async function boot() {
   S.health = b.health; S.procs = b.procs; S.history = b.history;
   if (S.procs.length) S.selProc = S.procs[S.procs.length - 1].id;   // show the newest on load
   S.repo = b.repo; S.env = b.env;
+  S.missions = b.missions || []; S.prefs = b.prefs || { pins: [] }; S.usage = b.usage || null;
+  if (!Array.isArray(S.prefs.pins)) S.prefs.pins = [];
   if (b.code_changed) markStale('console code changed since it started');
   S.selGroup = S.groups[0];
   // ?node=<id> selects a health box on load, so a failing check can be linked to.
   S.selNode = new URLSearchParams(location.search).get('node') || null;
   renderTabs(); renderHealth(); renderControl(); renderDash();
   renderProcs(); renderLog(); renderTop();
+  S.booted = true;
   if (!location.search.includes("live=0")) events();
 }
 
@@ -96,7 +104,7 @@ function events() {
     const ev = JSON.parse(e.data);
     if (ev.type === 'health') {
       S.health = ev.health; renderHealth(); renderTop();
-      renderDashLive();
+      renderDashLive(); renderSession();
       const sig = JSON.stringify([ev.health.facts.server_running, ev.health.facts.enabled_drones]);
       if (sig !== S.factsSig) { S.factsSig = sig; renderControl(); }
     }
@@ -128,6 +136,8 @@ function renderTabs() {
       });
       $$('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + b.dataset.tab));
       history.replaceState(null, '', '#' + b.dataset.tab);   // deep-linkable tabs
+      if (S.booted) usage('tab', { tab: b.dataset.tab });
+      if (b.dataset.tab === 'log') loadUsage();
       if (b.dataset.tab === 'config') loadConfig(S.selFile);
       if (b.dataset.tab === 'dash') renderDash();
     };
@@ -147,6 +157,12 @@ function renderTabs() {
   wireZoom();
   wirePalette();
   $('#btn-keys').onclick = openKeyHelp;
+  $('#btn-more').onclick = (e) => { e.stopPropagation(); if ($('#morepop').hidden) openMore(); else closeMore(); };
+  $('#more-filter').oninput = renderMore;
+  $('#more-filter').onkeydown = (e) => { if (e.key === 'Escape') closeMore(); };
+  document.addEventListener('click', (e) => {
+    if (!$('#morepop').hidden && !e.target.closest('#morepop') && !e.target.closest('#btn-more')) closeMore();
+  });
   $('#btn-estop').onclick = fireEstop;
   $('#btn-scan').onclick = scanFleet;
   $('#btn-send').onclick = sendStdin;
@@ -446,9 +462,10 @@ const DASH = [
     { id: 'check.services', label: '/all/* services up?' },
     { id: 'tool.script', label: 'Ground check', params: ['script'] },
   ] },
-  { title: 'Fly', sub: 'E-STOP is top right: one click, no confirm', items: [
+  { title: 'Fly', sub: 'missions open in their own window below', items: [
     { id: 'fly.script', label: 'Fly', params: ['script', 'sim'] },
     { id: 'srv.land_all', label: 'Land all' },
+    { id: 'launch.stop', label: 'Stop the stack' },
   ] },
 ];
 
@@ -509,6 +526,7 @@ function go(target) {
   else if (kind === 'proc') openProc(arg);
   else if (kind === 'config') { S.selFile = arg; gotoTab('config'); }
   else if (kind === 'tab') gotoTab(arg);
+  else if (kind === 'mission') openMission(arg);
 }
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-go]');
@@ -664,31 +682,14 @@ function dashBlocked(a, f) {
 
 function renderDashLive() {
   if (!$('#tab-dash').classList.contains('active')) return;
-  const f = (S.health && S.health.facts) || {};
   $('#dashstrip').innerHTML = dashStrip();
   $('#dashissues').innerHTML = dashIssues();
   $('#dashactivity').innerHTML = dashActivity();
   dashOutput();
-  // when every button in a column is blocked for the same reason, say it once
-  // under the heading instead of repeating the same sentence four times
-  $$('#dashcols .dcol').forEach((col) => {
-    const items = $$('.qa', col);
-    const whys = items.map((el) => {
-      const a = S.catalog.find((x) => x.id === el.dataset.qa);
-      return a ? dashBlocked(a, f) : '';
-    });
-    const shared = whys.length > 1 && whys.every((w) => w && w === whys[0]);
-    const note = $('.dcol-why', col);
-    if (note) note.textContent = shared ? whys[0] : '';
-    let last = '';
-    items.forEach((el, i) => {
-      el.classList.toggle('blocked', !!whys[i]);
-      // say it once per run of buttons blocked by the same thing
-      $('.qa-why', el).textContent = (shared || whys[i] === last) ? '' : whys[i];
-      last = whys[i];
-    });
-  });
+  renderBlocked();
+  renderMissions();
 }
+
 let dashTimer = null;
 function renderDashSoon() {
   if (dashTimer) return;
@@ -704,26 +705,47 @@ document.addEventListener('click', (e) => {
   renderDashLive();
 });
 
-/* ---- structure: the step columns (rebuilt only when the catalog changes) */
+/* ---- structure: ONE step at a time.
+ *
+ * The four steps used to be four columns of buttons on screen at once --
+ * twelve buttons and six dropdowns, most of them for a step the session was
+ * not in, squeezing the live output to a few lines. Now a stepper shows where
+ * the session is and the row under it holds that step's buttons only. The
+ * stepper follows the rig (server down -> scan / bring it up; server up ->
+ * check / fly) until you pick a step yourself; your pick holds until the rig
+ * changes state. Pinned shortcuts sit beside the step; everything else is in
+ * More, ranked by the usage log. */
+function autoStep() {
+  const f = (S.health && S.health.facts) || {};
+  const node = (id) => ((S.health && S.health.nodes) || []).find((n) => n.id === id);
+  if (!f.server_running) {
+    const scan = node('radio.drones');
+    return scan && scan.status === 'ok' ? 1 : 0;
+  }
+  const srv = node('server.services');
+  return srv && srv.status === 'ok' ? 3 : 2;
+}
+function currentStep() {
+  const auto = autoStep();
+  if (S.step != null && S.stepAuto === auto) return S.step;
+  S.step = null;                       // the rig moved on: follow it again
+  return auto;
+}
+
 function qaHtml(it, a) {
   const shown = (it.params || []).map((n) => a.params.find((q) => q.name === n)).filter(Boolean);
   const sel = shown.map((q) => {
     const opts = optionsHtml(q, savedParam(a.id, q));
     return `<select data-param="${esc(q.name)}" title="${esc(q.label + (q.help ? ' -- ' + q.help : ''))}">${opts}</select>`;
   }).join('');
-  const desc = shown.some((q) => Object.keys(q.descriptions || {}).length)
-    ? '<div class="qa-desc"></div>' : '';
   const kind = a.danger === 'flight' ? 'flight' : '';
   return `<div class="qa" data-qa="${esc(a.id)}">
-    <div class="qa-row">
-      <button class="btn sm qa-run ${kind}" data-run>${esc(it.label)}</button>
-      <a class="qa-more" data-go="card:${esc(a.id)}" title="Full card: every option, the exact command and how to read it">&#8943;</a>
-    </div>
-    ${sel ? `<div class="qa-params">${sel}</div>` : ''}
-    ${desc}<div class="qa-why"></div></div>`;
+    <button class="btn sm qa-run ${kind}" data-run>${esc(it.label)}</button>${sel}
+    <a class="qa-more" data-go="card:${esc(a.id)}" title="Full card: every option, the exact command and how to read it">&#8943;</a>
+    </div>`;
 }
 
-function wireQa(el, a) {
+function wireQa(el, a, source) {
   const values = () => {
     const v = {};
     $$('[data-param]', el).forEach((s) => { v[s.dataset.param] = s.value; });
@@ -732,36 +754,177 @@ function wireQa(el, a) {
   const run = $('[data-run]', el);
   const refresh = async () => {
     const v = values();
-    const d = $('.qa-desc', el);
-    if (d) {
-      const q = a.params.find((x) => Object.keys(x.descriptions || {}).length);
-      d.textContent = (q && q.descriptions[v[q.name]]) || '';
-    }
+    const q = a.params.find((x) => Object.keys(x.descriptions || {}).length);
+    const desc = (q && q.descriptions[v[q.name]]) || '';
     try {
       const r = await post('/api/preview', { action_id: a.id, values: v });
-      run.title = `${r.cmdline}\n\n${a.why}`;
+      run.title = `${r.cmdline}\n\n${desc ? desc + '\n\n' : ''}${a.why}`;
     } catch (e) { run.title = a.why; }
   };
   $$('[data-param]', el).forEach((s) => {
     s.onchange = () => { saveParam(a.id, s.dataset.param, s.value); refresh(); };
   });
-  run.onclick = () => runAction(a.id, values(), { stay: true });
+  run.onclick = () => runAction(a.id, values(), { stay: true, source });
   refresh();
 }
 
-function renderDash() {
+function renderSession() {
+  if (!$('#dsteps')) return;
   const byId = Object.fromEntries(S.catalog.map((a) => [a.id, a]));
-  $('#dashcols').innerHTML = DASH.map((c, i) => {
-    const items = c.items.filter((it) => byId[it.id]);
-    return `<section class="dcol"><h2><span class="step">${i + 1}</span>${esc(c.title)}</h2>
-      ${c.sub ? `<div class="dsub">${esc(c.sub)}</div>` : ''}
-      <div class="qa-why dcol-why"></div>
-      ${items.map((it) => qaHtml(it, byId[it.id])).join('')}</section>`;
-  }).join('');
-  DASH.forEach((c) => c.items.forEach((it) => {
-    const el = $(`#dashcols .qa[data-qa="${CSS.escape(it.id)}"]`);
-    if (el) wireQa(el, byId[it.id]);
-  }));
+  const cur = currentStep();
+  const auto = autoStep();
+  if ($('#dsteps').dataset.sig !== `${cur}|${auto}`) {
+    $('#dsteps').dataset.sig = `${cur}|${auto}`;
+    $('#dsteps').innerHTML = DASH.map((c, i) => `<button role="tab" aria-selected="${i === cur}"
+        class="dstep ${i === cur ? 'on' : ''} ${i < auto ? 'past' : ''} ${i === auto ? 'now' : ''}" data-step="${i}"
+        title="${esc(c.title + (c.sub ? ' -- ' + c.sub : '') + (i === auto ? '\n(where the rig is now)' : ''))}">
+        <span class="n">${i + 1}</span><span class="t">${esc(c.title)}</span></button>`).join('');
+    $$('#dsteps [data-step]').forEach((b) => {
+      b.onclick = () => {
+        const i = Number(b.dataset.step);
+        S.step = i === autoStep() ? null : i;
+        S.stepAuto = autoStep();
+        usage('step', { step: DASH[i].title });
+        renderSession();
+      };
+    });
+    const items = DASH[cur].items.filter((it) => byId[it.id]);
+    $('#dacts').innerHTML = items.map((it) => qaHtml(it, byId[it.id])).join('') +
+      '<span class="qa-why dacts-why"></span>';
+    items.forEach((it) => {
+      const el = $(`#dacts .qa[data-qa="${CSS.escape(it.id)}"]`);
+      if (el) wireQa(el, byId[it.id], 'dash');
+    });
+  }
+  renderPins();
+  renderBlocked();
+}
+
+/* every button in the row that cannot work right now says why -- once */
+function renderBlocked() {
+  const f = (S.health && S.health.facts) || {};
+  const els = $$('#dacts .qa, #dpins .pin');
+  const whys = els.map((el) => {
+    const a = S.catalog.find((x) => x.id === (el.dataset.qa || el.dataset.pin));
+    return a ? dashBlocked(a, f) : '';
+  });
+  els.forEach((el, i) => {
+    el.classList.toggle('blocked', !!whys[i]);
+    const b = el.matches('.qa') ? $('[data-run]', el) : el;
+    if (b && whys[i]) b.dataset.why = whys[i]; else if (b) delete b.dataset.why;
+  });
+  const qaWhys = whys.slice(0, $$('#dacts .qa').length).filter(Boolean);
+  const why = $('.dacts-why');
+  if (why) why.textContent = qaWhys.length ? [...new Set(qaWhys)].join('; ') : '';
+}
+
+/* ---- pins: the operator's own shortcuts, kept in console/usage/dashboard.json */
+function savePins() {
+  post('/api/prefs', { pins: S.prefs.pins }).then((p) => { S.prefs = p; }).catch((e) => toast(e.message, 'err'));
+}
+function togglePin(id) {
+  const i = S.prefs.pins.indexOf(id);
+  if (i >= 0) S.prefs.pins.splice(i, 1); else S.prefs.pins.push(id);
+  savePins(); renderPins(); renderMore();
+}
+function renderPins() {
+  const el = $('#dpins');
+  if (!el) return;
+  const onRow = new Set(DASH[currentStep()].items.map((it) => it.id));
+  const pins = S.prefs.pins.map((id) => S.catalog.find((a) => a.id === id))
+    .filter((a) => a && !onRow.has(a.id));
+  el.innerHTML = pins.length
+    ? '<span class="dpins-label">pinned</span>' + pins.map((a) => `<button class="btn sm pin ${a.danger === 'flight' ? 'flight' : ''}"
+        data-pin="${esc(a.id)}" title="${esc(a.label + ' -- ' + a.why)}">${esc(a.label)}</button>`).join('')
+    : '';
+  $$('#dpins [data-pin]').forEach((b) => {
+    b.onclick = () => {
+      const a = S.catalog.find((x) => x.id === b.dataset.pin);
+      const values = {};
+      a.params.forEach((q) => { values[q.name] = savedParam(a.id, q); });
+      runAction(a.id, values, { stay: true, source: 'pin' });
+    };
+  });
+  renderBlocked();
+}
+
+/* ---- More: every action, the ones you actually use first */
+function usageCount(id) {
+  const u = S.usage && S.usage.actions && S.usage.actions.find((x) => x.id === id);
+  return u ? u.count : 0;
+}
+function renderMore() {
+  const rows = $('#morerows');
+  if (!rows || $('#morepop').hidden) return;
+  const q = ($('#more-filter').value || '').trim().toLowerCase();
+  const onRow = new Set(DASH[currentStep()].items.map((it) => it.id));
+  const acts = S.catalog.filter((a) => a.danger !== 'estop')
+    .filter((a) => !q || (a.label + ' ' + a.id + ' ' + a.group).toLowerCase().includes(q))
+    .map((a) => ({ a, n: usageCount(a.id) }))
+    .sort((x, y) => (y.n - x.n) || S.groups.indexOf(x.a.group) - S.groups.indexOf(y.a.group));
+  const days = S.usage && S.usage.since ? Math.max(1, Math.round((Date.now() / 1000 - S.usage.since) / 86400)) : 0;
+  $('#more-note').textContent = S.usage && S.usage.actions && S.usage.actions.length
+    ? `ranked by your use over ${days ? days + ' day' + (days > 1 ? 's' : '') : 'today'}`
+    : 'no usage recorded yet -- the order learns as you work';
+  rows.innerHTML = acts.map(({ a, n }) => {
+    const pinned = S.prefs.pins.includes(a.id);
+    return `<div class="morerow ${onRow.has(a.id) ? 'onrow' : ''}" data-act="${esc(a.id)}">
+      <button class="star ${pinned ? 'on' : ''}" data-star="${esc(a.id)}" title="${pinned ? 'Unpin' : 'Pin to the dashboard'}">${pinned ? '&#9733;' : '&#9734;'}</button>
+      <span class="mg">${esc(a.group)}</span>
+      <span class="ml">${esc(a.label)}${a.danger === 'flight' ? ' <span class="tag flight">drones move</span>' : ''}</span>
+      <span class="mn" title="times run">${n ? n + '&times;' : ''}</span>
+      <a class="qa-more" data-go="card:${esc(a.id)}" title="open the full card">&#8943;</a></div>`;
+  }).join('') || '<div class="hint" style="padding:10px">Nothing matches.</div>';
+  $$('#morerows [data-star]').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); togglePin(b.dataset.star); }; });
+  $$('#morerows .morerow').forEach((r) => {
+    r.onclick = (e) => {
+      if (e.target.closest('[data-go],[data-star]')) { closeMore(); return; }
+      const a = S.catalog.find((x) => x.id === r.dataset.act);
+      const values = {};
+      a.params.forEach((q2) => { values[q2.name] = savedParam(a.id, q2); });
+      closeMore();
+      runAction(a.id, values, { stay: true, source: 'more' });
+    };
+  });
+}
+function openMore() {
+  const pop = $('#morepop');
+  const r = $('#btn-more').getBoundingClientRect();
+  pop.hidden = false;
+  pop.style.top = `${Math.round(r.bottom + 6)}px`;
+  pop.style.right = `${Math.max(8, Math.round(window.innerWidth - r.right))}px`;
+  $('#more-filter').value = '';
+  usage('more');
+  renderMore();
+  $('#more-filter').focus();
+}
+function closeMore() { $('#morepop').hidden = true; }
+
+/* ---- missions: a window per mission, defined by the show package */
+function openMission(id) {
+  window.open('/mission?m=' + encodeURIComponent(id), 'mission-' + id.replace(/\W/g, '_'));
+}
+function renderMissions() {
+  const el = $('#dmissions');
+  if (!el) return;
+  const running = new Set(S.procs.filter((p) => p.state === 'running' || p.state === 'stopping')
+    .map((p) => (p.action_id.match(/^mission:(.+):[^:]+$/) || [])[1]).filter(Boolean));
+  const sig = JSON.stringify([S.missions.map((m) => [m.id, m.error]), [...running]]);
+  if (el.dataset.sig === sig) return;
+  el.dataset.sig = sig;
+  el.innerHTML = `<span class="dm-label" title="Each one is missions/<name>.yaml in a show package (docs/MISSIONS.md)">Missions</span>` +
+    S.missions.map((m) => `<button class="mchip ${m.error ? 'bad' : ''} ${running.has(m.id) ? 'live' : ''} ${m.builtin ? 'generic' : ''}"
+      data-mission="${esc(m.id)}" ${m.error ? 'disabled' : ''}
+      title="${esc(m.error ? 'cannot load: ' + m.error : (m.summary || m.title) + '\n\nopens in its own window')}">
+      ${running.has(m.id) ? '<span class="livedot"></span>' : ''}${esc(m.title)}<span class="ext">&#8599;</span></button>`).join('') +
+    `<a class="hlink dm-all" href="/mission" target="mission-picker">all</a>`;
+  $$('#dmissions [data-mission]').forEach((b) => { b.onclick = () => openMission(b.dataset.mission); });
+}
+
+function renderDash() {
+  $('#dsteps').dataset.sig = '';
+  renderSession();
+  renderMissions();
   renderDashLive();
 }
 
@@ -850,7 +1013,7 @@ function wireCard(a) {
     navigator.clipboard.writeText(card.dataset.cmd || '').then(
       () => toast('command copied'), () => toast('could not copy', 'err'));
   };
-  $('[data-run]', card).onclick = () => runAction(a.id, cardValues(card));
+  $('[data-run]', card).onclick = () => runAction(a.id, cardValues(card), { source: 'card' });
 }
 
 /* --------------------------------------------------------------- e-stop */
@@ -884,7 +1047,7 @@ async function fireEstop() {
   try {
     let r;
     try {
-      r = await post('/api/estop', {});
+      r = await post('/api/estop', { source: 'console' });
     } catch (e) {
       if (e.stale) return await estopLegacy();   // outdated backend: still fire
       throw e;
@@ -980,12 +1143,22 @@ async function runAction(actionId, values, opts = {}) {
     if (!ok) return;
   }
   try {
-    const p = await post('/api/run', { action_id: actionId, values });
+    const p = await post('/api/run', { action_id: actionId, values,
+      source: opts.source || ($('#tab-control').classList.contains('active') ? 'card' : 'other') });
     upsertProc(p); S.selProc = p.id; S.lines[p.id] = S.lines[p.id] || [];
+    bumpUsage(actionId);
     renderProcs();
     toast('started: ' + p.cmdline.slice(0, 70));
     if (opts.stay) renderDashLive(); else gotoTab('procs');
   } catch (e) { toast(e.message, 'err'); }
+}
+
+/* keep the More ranking current without refetching the whole log */
+function bumpUsage(id) {
+  if (!S.usage) S.usage = { actions: [], since: Date.now() / 1000 };
+  if (!S.usage.since) S.usage.since = Date.now() / 1000;
+  const u = S.usage.actions.find((x) => x.id === id);
+  if (u) u.count += 1; else S.usage.actions.push({ id, count: 1, last: Date.now() / 1000 });
 }
 
 function gotoTab(name) {
@@ -1318,6 +1491,43 @@ function renderLog() {
     </div>`).join('') || '<p class="hint">Nothing run yet. Every command will be listed here.</p>';
 }
 
+/* ----------------------------------------------------------- usage view */
+/* What the operator actually uses, across sessions: the data the dashboard's
+ * layout is supposed to follow. Read from console/usage/usage.jsonl. */
+async function loadUsage() {
+  try { S.usage = await api('/api/usage'); } catch (e) { return; }
+  renderUsage();
+}
+function renderUsage() {
+  const u = S.usage;
+  if (!u || !$('#usagebody')) return;
+  const ago = (t) => {
+    const d = Date.now() / 1000 - t;
+    return d < 3600 ? `${Math.max(1, Math.round(d / 60))} min ago` : d < 86400 ? `${Math.round(d / 3600)} h ago` : `${Math.round(d / 86400)} d ago`;
+  };
+  const total = (u.actions || []).reduce((n, a) => n + a.count, 0);
+  $('#usage-sub').textContent = u.since
+    ? `${total} runs in ${u.sessions} session${u.sessions === 1 ? '' : 's'} since ${new Date(u.since * 1000).toLocaleDateString()}`
+    : 'nothing recorded yet';
+  const max = Math.max(1, ...(u.actions || []).map((a) => a.count));
+  const srcs = (o) => Object.entries(o || {}).map(([k, v]) => `${esc(k)} ${v}`).join(', ');
+  const tabs = Object.entries(u.tabs || {}).map(([k, v]) => `<span class="utag">${esc(k)} <b>${v}</b></span>`).join('');
+  const missions = Object.entries(u.missions || {}).map(([k, v]) =>
+    `<span class="utag">${esc(k)} <b>${v.opens}</b> opened, <b>${v.starts}</b> started</span>`).join('');
+  $('#usagebody').innerHTML = `
+    <p class="hint">Every run, stop, e-stop, tab and mission, appended to <code>${esc(u.log || 'console/usage/usage.jsonl')}</code>
+      (git-ignored; stdin is logged only as enter / q / text, never its content). The dashboard's More menu is
+      ranked from this. Read it from a shell, or ask Claude to.</p>
+    <table class="utable"><thead><tr><th>action</th><th>runs</th><th></th><th>started from</th><th>last</th></tr></thead><tbody>
+    ${(u.actions || []).slice(0, 30).map((a) => `<tr><td>${esc(a.label)}</td><td class="num">${a.count}</td>
+      <td class="ubar"><i style="width:${Math.round(a.count / max * 100)}%"></i></td>
+      <td class="hint">${srcs(a.sources)}</td><td class="hint">${ago(a.last)}</td></tr>`).join('') ||
+      '<tr><td colspan="5" class="hint">No runs recorded yet.</td></tr>'}
+    </tbody></table>
+    ${tabs ? `<div class="urow"><b>tabs opened</b> ${tabs}</div>` : ''}
+    ${missions ? `<div class="urow"><b>missions</b> ${missions}</div>` : ''}`;
+}
+
 /* ====================================================== command palette */
 /* One search box over everything the console can do: every catalog action,
  * every health check, every config file, every process, every tab. It is the
@@ -1336,6 +1546,8 @@ function palItems() {
   ((S.health && S.health.nodes) || []).forEach((n) => out.push({
     kind: 'check', label: n.label, desc: n.summary || n.why, go: 'node:' + n.id, key: n.id,
   }));
+  S.missions.filter((m) => !m.error).forEach((m) => out.push({
+    kind: 'mission', label: m.title, desc: 'open the mission window -- ' + (m.summary || ''), go: 'mission:' + m.id, key: m.id }));
   S.files.forEach((f) => out.push({
     kind: 'config', label: f.label, desc: f.path || '', go: 'config:' + f.key, key: f.key }));
   PAL_TABS.forEach(([k, l]) => out.push({ kind: 'tab', label: l, desc: 'go to the ' + l + ' tab', go: 'tab:' + k }));
@@ -1391,6 +1603,7 @@ function palChoose(shift) {
   const it = (S.palRows || [])[S.palSel];
   if (!it) return;
   closePalette();
+  usage('palette', { chose: it.go });
   if (!it.go.startsWith('act:')) { go(it.go); return; }
   const id = it.go.slice(4);
   if (shift) { openCard(id); return; }
@@ -1398,11 +1611,12 @@ function palChoose(shift) {
   if (!a) return;
   const values = {};
   a.params.forEach((q) => { values[q.name] = savedParam(a.id, q); });
-  runAction(id, values, { stay: $('#tab-dash').classList.contains('active') });
+  runAction(id, values, { stay: $('#tab-dash').classList.contains('active'), source: 'palette' });
 }
 
 function openPalette() {
   closeKeyHelp();
+  usage('palette', { opened: true });
   S.palSel = 0;
   const el = $('#palette');
   el.hidden = false;
@@ -1447,7 +1661,8 @@ document.addEventListener('keydown', (e) => {
   }
   if (palOpen) return;                       // the palette input owns the rest
   if (e.key === 'Escape') {
-    if (!$('#keyhelp').hidden) closeKeyHelp();
+    if (!$('#morepop').hidden) closeMore();
+    else if (!$('#keyhelp').hidden) closeKeyHelp();
     else if (!$('#modal').hidden) $('#modal-cancel').click();
     else if (typing(e.target)) e.target.blur();
     return;

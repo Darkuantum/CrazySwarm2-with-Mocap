@@ -92,7 +92,7 @@ known error signatures, and a match is attached to the box it belongs to.
 Boxes that do not apply to the current run (radio and mocap during a
 `backend:=sim` launch) show as "not applicable" rather than red.
 
-**Dashboard** (the default tab) — the cockpit, in four bands, sized to fit the rig
+**Dashboard** (the default tab) — the cockpit, in five bands, sized to fit the rig
 laptop's ~1280x660 viewport (GNOME at 200%) with no scrolling:
 
 * a **fleet row** — one tile per drone plus the radio: the drone's own
@@ -109,9 +109,19 @@ laptop's ~1280x660 viewport (GNOME at 200%) with no scrolling:
   same thresholds the health probe uses (3.8 V warning, 3.7 V critical), so a
   tile can never look reassuring about a voltage the check calls no-fly;
 * a **needs attention** row: every failing or warning check as a chip;
-* the **four steps of a session** as one-line buttons (before the server, bring
-  it up, check, fly) — when a whole run of buttons is blocked by the same thing
-  ("the server owns the radio"), it is said once, not under each button;
+* the **session row** — a stepper over the four steps of a session (before the
+  server, bring it up, check, fly) and, beside it, **only the current step's
+  buttons**. The stepper follows the rig: server down → "before the server"
+  until the fleet scan is green, then "bring it up"; server up → "check" until
+  the `/all/*` services are there, then "fly". Click another step to see its
+  buttons; that choice holds until the rig changes state. A button that cannot
+  work right now is dimmed and the reason is said once at the end of the row.
+  Your **pinned** shortcuts sit to the right, and **More** lists every action,
+  ranked by how often you have actually run it (the usage log, below), with a ☆
+  to pin. This replaced four columns showing all twelve buttons and six
+  dropdowns at once, which left the live output five lines tall;
+* a **Missions** row: one chip per mission window (below), each opening its own
+  browser window;
 * a **live console**: everything the session has run down the left, the selected
   one's output streaming on the right. Running from the dashboard keeps you on
   the dashboard.
@@ -125,6 +135,20 @@ the headline behind it, and the nav bar carries the live telemetry: server,
 mocap, `/poses` (with a sparkline of the last ~40 samples, so a dropout is
 visible as a dive rather than a number that briefly changed), fleet size, ROS
 domain, and how long ago the probes last ran.
+
+**Mission windows** (`/mission?m=<pkg>/<name>`) — a dashboard per demo,
+defined by the demo: a `missions/<name>.yaml` in the show's package says what to
+run, what the operator chooses before starting, which helpers go with it
+(keyboard teleop), how to recognise a prompt that waits for the operator, and
+what to pull out of the output as status. The window renders that with a live 3D
+view (three.js, fed straight from foxglove_bridge on :8765, read-only), the
+prompts as buttons, the teleop as a key pad, and an **Abort & land** that sends
+exactly one SIGINT so the show's own `abort.py` landing is never chased by a
+SIGTERM. A new demo is a new YAML file, not a console change. Spec format,
+safety contract and what was verified: [`docs/MISSIONS.md`](../docs/MISSIONS.md).
+`/mission` alone lists them; a spec that does not validate is listed with its
+error. The built-in **Any flight script** window runs any discovered script
+with the generic `>>>` gate.
 
 **Control** — the reference: one verbose card per action, grouped Launch,
 Preflight, Fleet position, Flight, Commands (service calls), Parameters,
@@ -182,7 +206,19 @@ children on a pty, so output is line-buffered as in a terminal), Stop (SIGINT to
 the whole process group) and Kill (SIGKILL), plus a stdin box for interactive
 helpers such as `scripts/led.sh`.
 
-**Command log** — the session as a shell script.
+**Command log** — the session as a shell script, plus **Usage across
+sessions**: what has been run, how often, started from where (dashboard, card,
+palette, pin, More, mission window), which tabs and missions are used.
+
+**The usage log** (`mission_console/usage.py`) is how the dashboard's layout
+stops being a guess. Every run, stop, e-stop, config write, scan, tab, palette
+use and mission open/start is appended to `console/usage/usage.jsonl`
+(git-ignored, like `backups/`); pins go to `console/usage/dashboard.json`.
+stdin is recorded only as its shape (`enter`, `q`, `text`) because the stdin box
+is also where a sudo password goes, and teleop keystrokes are not recorded one by
+one. It is a plain file on purpose: read it from a shell, or ask Claude to,
+before rearranging anything. `MISSION_CONSOLE_USAGE_DIR` redirects it — set it
+for a test console so test clicks never count as the operator's.
 
 ---
 
@@ -218,10 +254,31 @@ ran to `commands`.
 title, explanation, fix) makes any matching line in any process output surface
 on that box.
 
+*Add a mission window:* **do not touch the console.** Write
+`missions/<name>.yaml` in the show's package ([`docs/MISSIONS.md`](../docs/MISSIONS.md));
+a widget the stock set lacks goes in a `view:` module next to the spec. Change
+the console only for something every mission needs — a new stock widget in
+`static/mission/app.mjs` (register it in `STOCK`, and add its name to
+`missions.WIDGETS` so specs validate), a new marker type in `scene.mjs`, a new
+spec field in `missions.normalise()`.
+
+*Mission API* (`server.py`): `GET /api/missions` (cards), `GET /api/mission?id=`
+(spec + its processes), `POST /api/mission/preview` and `/api/mission/start`
+(`{id, role: main|<helper>, values, sim}` -> argv / a process), `GET /api/arena`
+(arena.yaml + parking marks), `GET /mission-assets/<pkg>/<name>/<file>` (a
+custom view module, path-checked). `POST /api/stop` takes `mode: stop | kill |
+interrupt` (`interrupt` = one SIGINT, no escalation). `GET|POST /api/usage` and
+`/api/prefs` serve the usage log and pins. Every process the window starts uses
+the same pty/process manager as the rest of the console, so it shows up in
+Processes and the Command log.
+
 Probes deliberately go through the `ros2` CLI rather than `rclpy`: the CLI
 daemon keeps the ROS graph warm, while a fresh `rclpy` process on this rig can
 stall in DDS discovery and never return (the same reason `scripts/led.sh` uses
-the CLI). It also means every probe is a command you can run yourself.
+the CLI). It also means every probe is a command you can run yourself. The one
+exception is the mission window's 3D view, which reads foxglove_bridge directly
+from the browser: a 50 Hz stream is not a command, and the bridge is already
+part of the launch.
 
 ## Layout
 
@@ -236,8 +293,15 @@ console/
     catalog.py               the command catalog (every button)
     health.py                the health graph probes and error signatures
     configio.py              YAML read, validation, comment-preserving writes
-    procs.py                 process manager (pty, process groups, ring buffers)
+    procs.py                 process manager (pty, process groups, ring buffers,
+                             partial-prompt events, the SIGINT-only interrupt)
+    missions.py              mission-spec discovery, validation and argv
+    usage.py                 the usage log and dashboard prefs
     static/                  index.html, app.js, style.css
+      mission/               the mission window: index.html app.mjs ros.mjs scene.mjs mission.css
+      vendor/                Preact+htm, three.js (vendored: the rig network is offline)
+  tests/                     python3 -m unittest discover -s tests
+  usage/                     usage.jsonl + dashboard.json (git-ignored)
 ```
 
 Flight scripts are discovered, not hard-coded: `catalog.discover_scripts()` scans
@@ -245,6 +309,13 @@ every `crazyflie_py`-dependent package under `install/` (so the `crazyflie_shows
 scripts appear automatically, with an escort-specific stdin note in `catalog.py`).
 The operator-facing GUI-action-to-command table lives in
 [../docs/CONSOLE.md](../docs/CONSOLE.md); this file is for editing the console.
+
+Tests (stdlib `unittest`, no ROS needed — the spec checks read the installed
+packages, so source the workspace first):
+
+```bash
+cd console && python3 -m unittest discover -s tests -v
+```
 
 `?live=0` on the URL opens the page without the live event stream (a static
 snapshot, useful for a screenshot — and required for a headless-browser capture,

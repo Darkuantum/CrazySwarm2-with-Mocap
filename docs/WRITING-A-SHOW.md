@@ -60,21 +60,31 @@ module instead of copying its body is the whole point.
 The six rules, each with its reason:
 
 1. `take_signals()` goes **after** `Crazyswarm()` has returned, and it claims
-   SIGINT **and SIGTERM**. The mission console's Stop button sends SIGTERM and
-   escalates to SIGKILL a few seconds later
-   (`console/mission_console/procs.py`), so an abort that only handles SIGINT
-   never starts.
+   SIGINT **and SIGTERM**. The console's Processes → Stop sends SIGINT, then
+   SIGTERM, then SIGKILL (`console/mission_console/procs.py`), so an abort that
+   only handles one of them may never start. The mission window's **Abort &
+   land** sends a single SIGINT and nothing after it (docs/MISSIONS.md).
 2. Set `armed = True` **before** the arm loop, not after. A signal arriving
    between the first and the last `cf.arm(True)` would otherwise raise with
    `armed` still `False`, skip the abort entirely, and leave part of the fleet
    armed. Disarming an already-disarmed drone is harmless; the reverse is not.
 3. Clear `armed = False` only after the final `cf.arm(False)`.
 4. `abort_land()` restores `SIG_DFL` for **both** signals before it lands
-   (it does this for you). Two consequences, both deliberate: the console's
-   SIGINT→SIGTERM escalation at 6 s cannot interrupt a slow landing's own
-   disarm loop, and a second Ctrl-C kills the process outright — the operator
-   must always be able to give up on the script and reach for the E-STOP.
-5. `ShowAborted` returns 130 with no traceback; **any other exception lands the
+   (it does this for you), so a second Ctrl-C kills the process outright — the
+   operator must always be able to give up on the script and reach for the
+   E-STOP. The flip side: **any** second signal now kills it, including a
+   console SIGTERM sent during the landing. (This rule used to claim the
+   restore stops the console's escalation from interrupting a slow landing; it
+   does the opposite — `SIG_DFL` for SIGTERM terminates. Corrected 2026-10-09.)
+   That is why the console gives a flight script 15 s after SIGINT before it
+   sends SIGTERM, and why the mission window's abort never escalates at all.
+   Keep your abort landing well inside 15 s.
+5. `ShowAborted` is a **`BaseException`** (like `KeyboardInterrupt`), so an
+   `except Exception` anywhere in your loop — a guarded `select()`, a marker
+   publish — cannot swallow an abort. It was an `Exception` until 2026-10-09,
+   and exactly that happened: `escort_show`'s paced gate wrapped `select()` in
+   `except Exception`, so a Ctrl-C at the gate did nothing. Catch it by name,
+   before your `except BaseException`. It returns 130 with no traceback; **any other exception lands the
    drones and re-raises**, so a real fault stays visible.
 6. `abort_land(allcfs, cfs, timeHelper, land_height, why)` takes a **float**
    height, not a config object. Every caller used to pass a whole config for
@@ -428,6 +438,15 @@ apply — all from `ESCORT.md` and `escort_show.py`:
    ros2 pkg prefix crazyflie            # must print THIS workspace -- apt can shadow it
    ros2 run crazyflie_shows my_show --ros-args -p dry_run:=true
    ```
+4. *(Optional, recommended for anything an operator drives)* give it a **mission
+   window**: `missions/my_show.yaml` in the package — the parameters an operator
+   changes, the prompts it waits on, the status lines worth a tile, any helper
+   (keyboard teleop) it needs. The console renders it with a live 3D view, the
+   prompts as buttons and an abort through your `abort.py` path, and nobody edits
+   the console. Format, worked examples (`escort.yaml`, `carousel.yaml`) and the
+   output conventions that make it work: [MISSIONS.md](MISSIONS.md). The spec is
+   inert data — nothing in the show reads it — but it parses your prints, so
+   change it in the same commit as a print you rephrase.
 
 **What the symlink install does and does not give you.** `build.sh` runs colcon
 with `--symlink-install`. Checked in the install tree on this box (2026-10-08):

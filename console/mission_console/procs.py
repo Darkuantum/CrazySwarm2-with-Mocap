@@ -25,6 +25,7 @@ import itertools
 import os
 import pty
 import re
+import select
 import shlex
 import signal
 import subprocess
@@ -33,6 +34,23 @@ import time
 from collections import deque
 
 MAX_LINES = 4000          # per-process ring buffer
+PARTIAL_IDLE_S = 0.3      # silence before an unterminated line is shown as a prompt
+# A flight script gets longer before the SIGTERM. Its first SIGINT starts the
+# show's own abort landing (crazyflie_shows/abort.py: ~4.5 s of landing, then a
+# disarm per drone), and abort_land() restores the DEFAULT handlers as it
+# starts -- so a SIGTERM that arrives during the landing does not raise into
+# it, it KILLS the process, mid-descent or mid-disarm. 6 s was too close.
+FLIGHT_STOP_ESCALATION = (
+    (signal.SIGINT, 15.0),
+    (signal.SIGTERM, 4.0),
+    (signal.SIGKILL, 2.0),
+)
+
+
+def is_flight(action_id):
+    """Scripts that command drones: the Dashboard's Fly, and a mission's main."""
+    return action_id == 'fly.script' or (action_id.startswith('mission:')
+                                         and action_id.endswith(':main'))
 STOP_ESCALATION = (       # (signal, seconds to wait before the next one)
     (signal.SIGINT, 6.0),
     (signal.SIGTERM, 4.0),
@@ -104,6 +122,7 @@ class Proc:
         self.popen = None
         self.master_fd = None
         self.stop_requested = False
+        self.partial = ''             # an unanswered prompt with no newline yet
         self._lock = threading.Lock()
 
     @property
@@ -139,6 +158,7 @@ class Proc:
             'started': self.started,
             'ended': self.ended,
             'line_count': self.seq,
+            'partial': self.partial,
         }
 
     def tail(self, after=0, limit=MAX_LINES):
@@ -194,9 +214,29 @@ class ProcessManager:
         return proc
 
     def _pump(self, proc):
-        """Read the pty until EOF, split into lines, broadcast each one."""
+        """Read the pty until EOF, split into lines, broadcast each one.
+
+        A prompt printed WITHOUT a newline (``input('Enter to go: ')``) would
+        sit in ``buf`` until the operator answered it -- invisible to anything
+        that watches lines. So after PARTIAL_IDLE_S of silence the unfinished
+        line is published as a ``partial`` event. It is not stored as a line
+        (the complete line still arrives, once, when it is finished), so the
+        ring buffer and the command log are unchanged.
+        """
         buf = b''
+        shown = b''
         while True:
+            try:
+                ready, _, _ = select.select([proc.master_fd], [], [], PARTIAL_IDLE_S)
+            except (OSError, ValueError):
+                ready = [proc.master_fd]
+            if not ready:
+                if buf and buf != shown:
+                    shown = buf
+                    proc.partial = _clean(buf)
+                    self.bus.publish({'type': 'partial', 'proc': proc.id,
+                                      'text': proc.partial})
+                continue
             try:
                 chunk = os.read(proc.master_fd, 65536)
             except OSError as exc:
@@ -206,6 +246,8 @@ class ProcessManager:
             if not chunk:
                 break
             buf += chunk
+            shown = b''
+            proc.partial = ''
             *complete, buf = buf.split(b'\n')
             for raw in complete:
                 self._emit_line(proc, _clean(raw))
@@ -232,7 +274,8 @@ class ProcessManager:
         return True
 
     def _stop_worker(self, proc, hard):
-        steps = STOP_ESCALATION[2:] if hard else STOP_ESCALATION
+        ladder = FLIGHT_STOP_ESCALATION if is_flight(proc.action_id) else STOP_ESCALATION
+        steps = ladder[2:] if hard else ladder
         try:
             pgid = os.getpgid(proc.popen.pid)
         except OSError:
@@ -249,6 +292,30 @@ class ProcessManager:
                     return
                 time.sleep(0.1)
         self._emit_line(proc, '[console] process survived SIGKILL -- check `pgrep -f` by hand')
+
+    def interrupt(self, proc_id):
+        """ONE SIGINT to the process group, and no escalation.
+
+        This is how a show is asked to land: ``crazyflie_shows/abort.py``
+        turns SIGINT into an abort landing, then restores the default
+        handlers so a SECOND signal kills it. ``stop()`` would send that
+        second signal itself, as SIGTERM, 6 s later -- inside or just after a
+        4.5 s abort landing and its disarm loop. Here nothing follows unless
+        the operator presses Kill.
+        """
+        proc = self.procs.get(proc_id)
+        if proc is None or not proc.running:
+            return False
+        proc.stop_requested = True       # shows 'stopping', and a non-zero exit is not a failure
+        self._emit_state(proc)
+        try:
+            pgid = os.getpgid(proc.popen.pid)
+            self._emit_line(proc, f'[console] sending SIGINT to process group {pgid} '
+                                  '(no escalation: the script lands itself)')
+            os.killpg(pgid, signal.SIGINT)
+        except OSError:
+            return False
+        return True
 
     def send_input(self, proc_id, text):
         proc = self.procs.get(proc_id)

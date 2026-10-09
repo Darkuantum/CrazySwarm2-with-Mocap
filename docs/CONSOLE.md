@@ -95,15 +95,27 @@ immediately.
 
 | Tab (keys `1`…`6`) | What it is |
 |---|---|
-| **Dashboard** | Per-drone tiles (supervisor state in words, battery, link), a "needs attention" row, session-step buttons (before the server / bring it up / check / fly) and a live output pane. Every button is a catalog action; what it shows is the real argv. |
+| **Dashboard** | Per-drone tiles (supervisor state in words, battery, link), a "needs attention" row, a **stepper** (before the server / bring it up / check / fly) that follows the rig and shows only the current step's buttons, your **pinned** shortcuts, **More** (every action, ranked by how often you use it, ☆ to pin), a **Missions** row that opens each mission's own window, and a live output pane. Every button is a catalog action; what it shows is the real argv. |
 | **System health** | The probe dependency graph — [section 4](#4-the-health-diagram). |
 | **Control** | The reference: one verbose card per catalog action, grouped Launch, Preflight, Fleet position, Flight, Commands, Parameters, Recovery. Each card carries a `why` and a "how to read this command line". |
 | **Config** | `crazyflies.yaml` as a table, plus a raw editor for each of four config files — [5.3](#53-yaml-writes-are-text-surgical). |
 | **Processes** | Everything the console started, live output, Stop, Kill, and a stdin box. |
-| **Command log** | The session so far; "Download as a shell script" exports it with a prelude. |
+| **Command log** | The session so far; "Download as a shell script" exports it with a prelude. **Usage across sessions** (collapsed) shows what has actually been run, from where, and how often — the data the Dashboard's More menu is ranked by. |
 
-`Ctrl-K` or `/` opens a palette over every action, health check, config file and
-tab. `Enter` runs the highlighted entry through the same confirm step as the
+**Mission windows** — one per demo, each defined by a `missions/<name>.yaml` in
+the show's package and opened from the Dashboard's Missions row — are documented
+in [MISSIONS.md](MISSIONS.md): a live 3D view (through foxglove_bridge), the
+show's prompts as buttons, its keyboard teleop as a key pad, status pulled from
+its output, and an abort that goes through the show's own landing.
+
+**The usage log.** Every run (with where it was started from), stop, e-stop,
+tab, palette use and mission is appended to `console/usage/usage.jsonl`
+(git-ignored; stdin is recorded only as `enter` / `q` / `text`, never its
+content). Pins live next to it in `console/usage/dashboard.json`. Both are plain
+files — `cat` them, or ask Claude to read them before rearranging the Dashboard.
+
+`Ctrl-K` or `/` opens a palette over every action, health check, config file,
+mission and tab. `Enter` runs the highlighted entry through the same confirm step as the
 button; `Shift-Enter` opens its card instead. `r` re-runs every probe, `?` lists
 the keys, `Esc` closes whatever is open. **E-STOP deliberately has no keyboard
 shortcut** — a stray keypress must never cut the motors — and it is the one
@@ -230,13 +242,17 @@ Three things worth carrying away from these rows:
 | **Header E-STOP** (present on every tab) | `POST /api/estop`: runs the `/all/emergency` call and reports within 3 s — confirmed, or NOT CONFIRMED with the reason. One click, no modal. [5.2](#52-e-stop-is-one-click-with-an-answer-within-3-seconds) | The `ros2 service call` above — but you must judge the outcome yourself: it has no timeout and prints nothing against an unreachable server. The preflight GUI's `e` key is the other independent path. |
 | **Config** → table and raw editors | Parse-checked, diffed, backed up, comment-preserving write. [5.3](#53-yaml-writes-are-text-surgical) | Edit the file under `src/crazyswarm2/crazyflie/config/` by hand. |
 | **Command log** → Download as a shell script | Writes the session's commands with a prelude: the two `source` lines as comments, then `cd <repo>`. | n/a — this is how a session becomes a runbook. |
-| **Processes** → Stop | SIGINT to the whole **process group**, escalating SIGINT (6 s) → SIGTERM (4 s) → SIGKILL (2 s); if it survives SIGKILL the pane says so. | `kill -INT -<pgid>`, or `./console/stop_stack.sh` for the stack. |
+| **Processes** → Stop | SIGINT to the whole **process group**, escalating SIGINT (6 s) → SIGTERM (4 s) → SIGKILL (2 s); a **flight script** (Dashboard Fly, a mission's main script) gets **15 s** after the SIGINT, so its own abort landing can finish. If it survives SIGKILL the pane says so. | `kill -INT -<pgid>`, or `./console/stop_stack.sh` for the stack. |
 | **Processes** → Kill | Straight to SIGKILL. | `kill -KILL -<pgid>` |
-| **Processes** → stdin box | Writes what you typed **plus a newline** to the child's pty master. [6.1](#61-operator-paced-and-interactive-runs-belong-in-a-terminal) | The terminal you would have run it in. |
+| **Processes** → stdin box | Writes what you typed **plus a newline** to the child's pty master. [6.1](#61-operator-paced-and-interactive-runs) | The terminal you would have run it in. |
+| **Mission window** → Start | `POST /api/mission/start`: the spec's autostart helpers first, 1.5 s later the script — each `ros2 run <pkg> <exe> --ros-args -p ...`, every argv shown in the confirm step and logged. Refused while another flight script runs. | The same `ros2 run` lines, one terminal each, helpers first. |
+| **Mission window** → gate button | Writes the button's `send` line plus a newline to the script's pty (`Continue` = a bare Enter). | Press Enter (or type `q`) in the script's terminal. |
+| **Mission window** → Abort & land | **One** SIGINT to the script's process group and nothing after it — no SIGTERM at 6 s. The show's `abort.py` lands where they are. Kill is a separate, confirmed SIGKILL. | Ctrl-C **once** in the script's terminal. |
+| **Mission window** → teleop pad / keyboard | Writes the key (no newline) to the helper's pty, re-sent every 90 ms while held; a space on release. | Hold the key in `escort_teleop`'s terminal. |
 
-Anything not in these tables — `server:=False`, `trace_cf:=all`, teleop, a paced
-show — is a terminal operation. See [6.1](#61-operator-paced-and-interactive-runs-belong-in-a-terminal)
-and [6.2](#62-launch-options-the-card-does-not-expose).
+Anything not in these tables — `server:=False`, `trace_cf:=all`, a gamepad — is
+a terminal operation. See [6.1](#61-operator-paced-and-interactive-runs) and
+[6.2](#62-launch-options-the-card-does-not-expose).
 
 ---
 
@@ -383,26 +399,29 @@ the server, the planners and `sync_initial_positions.py` all read.
 
 ## 6. Honest limits
 
-### 6.1 Operator-paced and interactive runs belong in a terminal
+### 6.1 Operator-paced and interactive runs
 
-Run **operator-paced shows** (for example `escort_show` with `paced:=true`) and
-**teleop** in a real terminal.
+**Use the mission window** ([MISSIONS.md](MISSIONS.md)) for an operator-paced
+show and for keyboard teleop: the show's prompts become buttons, and the teleop
+helper runs on its own pty, driven by an on-screen pad or the keyboard.
 
-* The console runs children on a pty and offers a stdin box on the Processes
-  tab. The user reported that a bare Enter could not be sent through it, and a
-  paced show gates on exactly that.
-* **Status of that bug: fixed in committed code, not confirmed in a live run.**
-  Commit `72e54bf` ("console: an empty stdin line is a legitimate message")
-  changed `sendStdin()` to post `value + "\n"` whenever a process is selected,
-  where it previously refused to send an empty box; the backend writes that text
-  straight to the pty master. The fix was read, **not tested against a live
-  paced show**. Treat it as unverified until someone confirms a gate actually
-  advances. It is a front-end file, so a page reload picks it up — no backend
-  restart needed.
-* Even when it works, a pty is not your terminal: raw-mode key handling, `sudo`
-  password prompts and anything reading `/dev/tty` directly are unreliable.
-  `teleop_xbox` needs a gamepad at `/dev/input/js0` and the stack launched with
-  `teleop:=False` — a terminal job either way.
+* **The bare-Enter gate now works, verified.** Commit `72e54bf` made the
+  Processes stdin box send an empty line; it had been read, not tested. On
+  2026-10-09 every gate of a paced `escort_show` run in the simulator was
+  answered from the mission window's Continue button, which posts `"\n"`
+  through the same `/api/input` route — so the backend path is now exercised.
+  The Processes box itself was not separately re-tested.
+* **A pty is still not your terminal**: `sudo` prompts and anything reading
+  `/dev/tty` directly are unreliable. `escort_teleop` works because it reads its
+  own stdin in raw mode, which on a pty is the console. `teleop_xbox` needs a
+  gamepad at `/dev/input/js0` and the stack launched with `teleop:=False` — a
+  terminal job.
+* **Prefer Abort & land to Processes → Stop for a show.** Stop escalates
+  SIGINT → SIGTERM → SIGKILL, and `abort.py` restores the default handlers once
+  its landing begins, so a SIGTERM that arrives during the landing *kills* it. A
+  flight script now gets 15 s before that SIGTERM (it was 6 s, against a ~4.5 s
+  landing plus a disarm per drone). The mission window's **Abort & land** sends
+  one SIGINT and nothing after; Ctrl-C once in a terminal is the same.
 
 ### 6.2 Launch options the card does not expose
 
@@ -482,6 +501,9 @@ The short version:
   belongs to, the severity, and the sentence an operator should read.
 * **A flight script.** None of the above. Build the package; it appears on the
   next page load. Restart the console if it was built after the console started.
+* **A mission window for a demo.** None of the above either: a
+  `missions/<name>.yaml` in the show's package — [MISSIONS.md](MISSIONS.md).
+  The console is not edited per demo.
 
 ---
 

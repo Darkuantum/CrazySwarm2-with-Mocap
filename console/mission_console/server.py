@@ -21,9 +21,9 @@ from urllib.parse import urlparse, parse_qs
 
 import yaml
 
-from . import catalog, configio
+from . import catalog, configio, missions, usage
 from .health import Health
-from .procs import EventBus, ProcessManager
+from .procs import EventBus, ProcessManager, is_flight
 
 STATIC = os.path.join(os.path.dirname(__file__), 'static')
 REPO = configio.REPO
@@ -44,6 +44,7 @@ class App:
         self.history = []
         self._health_lock = threading.Lock()
         self._catalog_cache = (0.0, [])
+        self._missions_cache = (None, [])
         self.started = time.time()
         threading.Thread(target=self._health_loop, daemon=True).start()
 
@@ -68,6 +69,56 @@ class App:
             if a['id'] == action_id:
                 return a
         raise KeyError(action_id)
+
+    def labels(self):
+        return {a['id']: a['label'] for a in self.catalog()}
+
+    # ------------------------------------------------------------ missions
+    def missions(self):
+        """Re-read when a spec file changes or a package is (re)built, so a
+        new mission appears on the next page load with no console restart."""
+        key = (missions.signature(), catalog.scripts_signature())
+        if key != self._missions_cache[0]:
+            self._missions_cache = (key, missions.discover())
+        return self._missions_cache[1]
+
+    def mission(self, mid):
+        for m in self.missions():
+            if m['id'] == mid:
+                if m.get('error'):
+                    raise missions.SpecError(f'{mid}: {m["error"]}')
+                return m
+        raise KeyError(mid)
+
+    def mission_procs(self, mid):
+        prefix = missions.action_id(mid, '')
+        return [p.summary() for p in self.procs.procs.values()
+                if p.action_id.startswith(prefix)]
+
+    def start_mission(self, mid, role, values, sim):
+        m = self.mission(mid)
+        aid = missions.action_id(mid, role)
+        if self.procs.find_running(aid):
+            raise ValueError(f'{role} is already running for this mission')
+        if role == 'main' and m['flight']:
+            # two scripts commanding the same drones fight each other, and the
+            # loser is whichever one the drones obey less
+            other = next((p for p in self.procs.procs.values()
+                          if p.running and is_flight(p.action_id)), None)
+            if other:
+                raise ValueError(f'another flight script is running ({other.label}) -- '
+                                 'stop it first: two scripts must never command the drones at once')
+        argv, cmdline, label = missions.build(m, role, values, sim=sim)
+        proc = self.procs.start(aid, label, argv, kind='service' if role != 'main' else 'task',
+                                note=m['summary'])
+        entry = {'ts': time.time(), 'action_id': aid, 'label': label,
+                 'cmdline': cmdline, 'proc': proc.id}
+        self.history.append(entry)
+        self.bus.publish({'type': 'history', 'entry': entry})
+        usage.record('mission_start', mission=mid, role=role, sim=sim,
+                     values={k: v for k, v in (values or {}).items() if k != 'extra'})
+        threading.Timer(2.0, self.refresh_health).start()
+        return proc.summary()
 
     # -------------------------------------------------------------- health
     def refresh_health(self, full=True):
@@ -100,9 +151,10 @@ class App:
             time.sleep(LIVE_PERIOD)
 
     # ---------------------------------------------------------------- runs
-    def run_action(self, action_id, values):
+    def run_action(self, action_id, values, source=None):
         act = self.action(action_id)
         argv, cmdline = catalog.render(act, values)
+        usage.record('run', action=action_id, source=source, values=values or None)
         proc = self.procs.start(action_id, act['label'], argv,
                                 kind=act.get('kind', 'task'), note=act.get('why', ''))
         entry = {'ts': time.time(), 'action_id': action_id, 'label': act['label'],
@@ -123,7 +175,8 @@ class App:
     ESTOP_ABANDON_S = 15.0   # then stop waiting: a call left pending would
                              # e-stop a server launched LATER, by surprise
 
-    def estop(self):
+    def estop(self, source=None):
+        usage.record('estop', source=source)
         act = self.action('srv.estop')
         argv, cmdline = catalog.render(act, {})
         t0 = time.time()
@@ -240,6 +293,9 @@ class Handler(BaseHTTPRequestHandler):
                     'procs': APP.procs.list(),
                     'history': APP.history,
                     'repo': REPO,
+                    'missions': [_mission_card(m) for m in APP.missions()],
+                    'prefs': usage.load_prefs(),
+                    'usage': usage.summary(days=30, labels=APP.labels()),
                     'env': {
                         'ros_distro': os.environ.get('ROS_DISTRO', ''),
                         'domain_id': os.environ.get('ROS_DOMAIN_ID', '0'),
@@ -273,6 +329,30 @@ class Handler(BaseHTTPRequestHandler):
                 elif key == 'motion_capture' and data['doc']:
                     extra = {'findings': configio.validate_motion_capture(data['doc'])}
                 return self._json({**{k: v for k, v in data.items() if k != 'doc'}, **extra})
+            if path in ('/mission', '/mission/'):
+                return self._static('mission/index.html')
+            if path.startswith('/mission-assets/'):
+                return self._mission_asset(path[len('/mission-assets/'):])
+            if path == '/api/missions':
+                return self._json({'missions': [_mission_card(m) for m in APP.missions()]})
+            if path == '/api/mission':
+                mid = (query.get('id') or [''])[0]
+                try:
+                    m = APP.mission(mid)
+                except KeyError:
+                    return self._json({'error': f'no mission {mid!r}'}, 404)
+                except missions.SpecError as exc:
+                    return self._json({'error': str(exc)}, 422)
+                return self._json({'mission': missions.public(m),
+                                   'procs': APP.mission_procs(mid)})
+            if path == '/api/arena':
+                return self._json(_arena())
+            if path == '/api/usage':
+                days = (query.get('days') or [''])[0]
+                return self._json(usage.summary(days=float(days) if days else None,
+                                                labels=APP.labels()))
+            if path == '/api/prefs':
+                return self._json(usage.load_prefs())
             if path == '/api/history.sh':
                 return self._send(200, APP.history_script(), 'text/plain; charset=utf-8')
             if path == '/api/events':
@@ -291,19 +371,51 @@ class Handler(BaseHTTPRequestHandler):
                 argv, cmdline = catalog.render(act, body.get('values') or {})
                 return self._json({'argv': argv, 'cmdline': cmdline})
             if path == '/api/estop':
-                return self._json(APP.estop())
+                return self._json(APP.estop(source=body.get('source')))
             if path == '/api/run':
-                return self._json(APP.run_action(body['action_id'], body.get('values') or {}))
+                return self._json(APP.run_action(body['action_id'], body.get('values') or {},
+                                                 source=body.get('source')))
             if path == '/api/stop':
-                return self._json({'ok': APP.procs.stop(body['proc'], bool(body.get('hard')))})
+                proc = APP.procs.get(body['proc'])
+                mode = body.get('mode') or ('kill' if body.get('hard') else 'stop')
+                usage.record('stop', action=proc.action_id if proc else None, mode=mode,
+                             source=body.get('source'))
+                if mode == 'interrupt':
+                    return self._json({'ok': APP.procs.interrupt(body['proc'])})
+                return self._json({'ok': APP.procs.stop(body['proc'], mode == 'kill')})
             if path == '/api/input':
+                if body.get('source') != 'teleop':      # keystrokes are not logged one by one
+                    proc = APP.procs.get(body['proc'])
+                    usage.record('input', action=proc.action_id if proc else None,
+                                 shape=usage.stdin_shape(body['text']), source=body.get('source'))
                 return self._json({'ok': APP.procs.send_input(body['proc'], body['text'])})
+            if path == '/api/usage':
+                ev = body.get('ev')
+                if ev in usage.CLIENT_EVENTS:
+                    usage.record(ev, **{k: v for k, v in body.items()
+                                        if k != 'ev' and isinstance(v, (str, int, float, bool))})
+                return self._json({'ok': True})
+            if path == '/api/prefs':
+                return self._json(usage.save_prefs(body))
+            if path == '/api/mission/preview':
+                m = APP.mission(body['id'])
+                argv, cmdline, label = missions.build(m, body.get('role') or 'main',
+                                                      body.get('values') or {},
+                                                      sim=bool(body.get('sim')))
+                return self._json({'argv': argv, 'cmdline': cmdline, 'label': label,
+                                   'helpers': [h['key'] for h in missions.active_helpers(
+                                       m, body.get('values') or {})]})
+            if path == '/api/mission/start':
+                return self._json(APP.start_mission(body['id'], body.get('role') or 'main',
+                                                    body.get('values') or {},
+                                                    bool(body.get('sim'))))
             if path == '/api/prune':
                 APP.procs.prune()
                 return self._json({'procs': APP.procs.list()})
             if path == '/api/scan_fleet':
                 cf = configio.load('crazyflies')
                 fleet = configio.fleet_summary(cf['doc'])
+                usage.record('scan')
                 result = APP.health.scan_fleet(fleet)
                 entry = {'ts': time.time(), 'action_id': 'health.scan_fleet',
                          'label': 'Scan the fleet',
@@ -352,12 +464,35 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             APP.bus.unsubscribe(sub)
 
+    def _mission_asset(self, rest):
+        # /mission-assets/<pkg>/<name>/<file>: a custom view module shipped
+        # next to a mission spec. Path-checked to that spec's directory.
+        parts = rest.split('/', 2)
+        if len(parts) != 3:
+            return self._json({'error': 'not found'}, 404)
+        try:
+            m = APP.mission(parts[0] + '/' + parts[1])
+        except (KeyError, missions.SpecError):
+            return self._json({'error': 'not found'}, 404)
+        full = None if m.get('builtin') else missions.asset_path(m, parts[2])
+        if not full:
+            return self._json({'error': 'not found'}, 404)
+        ctype = mimetypes.guess_type(full)[0] or 'application/octet-stream'
+        if full.endswith('.mjs'):
+            ctype = 'text/javascript'
+        if ctype.startswith('text/') or ctype == 'application/javascript':
+            ctype += '; charset=utf-8'
+        with open(full, 'rb') as fh:
+            return self._send(200, fh.read(), ctype)
+
     def _static(self, rel):
         rel = rel.lstrip('/')
         full = os.path.normpath(os.path.join(STATIC, rel))
         if not full.startswith(STATIC) or not os.path.isfile(full):
             return self._json({'error': 'not found'}, 404)
         ctype = mimetypes.guess_type(full)[0] or 'application/octet-stream'
+        if full.endswith('.mjs'):
+            ctype = 'text/javascript'      # ES modules are refused under any other type
         if ctype.startswith('text/') or ctype in ('application/javascript',):
             ctype += '; charset=utf-8'
         with open(full, 'rb') as fh:
@@ -389,6 +524,7 @@ def _write_raw(body):
                     before.splitlines(keepends=True), text.splitlines(keepends=True),
                     fromfile=spec['label'] + ' (current)', tofile=spec['label'] + ' (new)'))}
     bak, diff = configio.write(spec['path'], text)
+    usage.record('config_write', file=key, how='raw')
     APP.bus.publish({'type': 'config', 'file': key})
     threading.Timer(0.5, APP.refresh_health).start()
     return {'ok': True, 'written': bool(bak), 'backup': bak, 'diff': diff}
@@ -404,6 +540,7 @@ def _edit_robots(body):
     if not body.get('apply'):
         return {'ok': True, 'preview': True, 'diff': diff}
     bak, applied = configio.write(configio.FILES['crazyflies']['path'], text)
+    usage.record('config_write', file='crazyflies', how='fleet')
     APP.bus.publish({'type': 'config', 'file': 'crazyflies'})
     threading.Timer(0.5, APP.refresh_health).start()
     return {'ok': True, 'written': bool(bak), 'backup': bak, 'diff': applied}
@@ -419,8 +556,40 @@ def _edit_kv(body):
     if not body.get('apply'):
         return {'ok': True, 'preview': True, 'diff': diff}
     bak, applied = configio.write(configio.FILES[key]['path'], text)
+    usage.record('config_write', file=key, how='kv')
     APP.bus.publish({'type': 'config', 'file': key})
     return {'ok': True, 'written': bool(bak), 'backup': bak, 'diff': applied}
+
+
+def _mission_card(m):
+    """The list entry for a mission: enough to show and open it."""
+    return {'id': m['id'], 'pkg': m.get('pkg'), 'title': m.get('title'),
+            'summary': m.get('summary', ''), 'error': m.get('error'),
+            'builtin': bool(m.get('builtin')),
+            'flight': m.get('flight', True),
+            'running': [p['id'] for p in APP.mission_procs(m['id'])
+                        if p['state'] in ('running', 'stopping')]}
+
+
+def _arena():
+    """The room (arena.yaml) and the fleet's parking marks, for the 3D view.
+
+    Same file the planners and shows read ($CRAZYSWARM_ARENA overrides it,
+    exactly as in crazyflie_shows/safety.py). The view only DRAWS it -- it
+    enforces nothing, so a missing file is reported, not fatal.
+    """
+    path = os.environ.get('CRAZYSWARM_ARENA') or os.path.join(configio.CFG_DIR, 'arena.yaml')
+    out = {'path': os.path.relpath(path, REPO), 'arena': None, 'error': None}
+    try:
+        with open(path, encoding='utf-8') as fh:
+            doc = yaml.safe_load(fh) or {}
+        out['arena'] = doc.get('arena')
+        out['separation'] = doc.get('separation')
+    except (OSError, yaml.YAMLError) as exc:
+        out['error'] = str(exc)
+    cf = configio.load('crazyflies')
+    out['fleet'] = configio.fleet_summary(cf['doc']) if cf['doc'] else []
+    return out
 
 
 def _code_changed():

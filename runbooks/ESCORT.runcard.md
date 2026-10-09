@@ -61,6 +61,12 @@ ros2 run crazyflie_shows escort_show --ros-args \
 In **sim**, add `-p use_sim_time:=true` to this *and* to any teleop. On
 hardware, never.
 
+**Or from the console:** Dashboard → Missions → **Escort demo** opens the
+escort's own window (docs/MISSIONS.md). The defaults there ARE the paced command
+above; every gate is a button (Continue = Enter, Land now = `q`), the VIP /
+adversary keyboard starts with it and stays locked until `ESCORT LIVE`, the
+simulation clock follows the running stack, and **Abort & land** is one Ctrl-C.
+
 ## Arguments — all of them, with defaults
 
 ```
@@ -100,8 +106,9 @@ does not — run it after changing either radius.
 
 ## Teleop (no DJI, nobody in the room)
 
-Separate terminal, **needs a real TTY**. Publishes a virtual target; commands
-no drone.
+Separate terminal, **needs a real TTY** — or the mission window, where choosing
+VIP `manual` / adversary `manual` starts the teleop for you and gives it a key
+pad. Publishes a virtual target; commands no drone.
 
 ```bash
 # you drive the attacker, VIP is a fixed point

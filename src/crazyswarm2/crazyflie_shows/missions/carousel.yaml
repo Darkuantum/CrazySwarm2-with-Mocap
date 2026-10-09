@@ -1,0 +1,48 @@
+# Mission view for the carousel (swarm_show) -- read by the mission console,
+# never by the show. Format: docs/MISSIONS.md.
+#
+# A choreographed show: the plan is fixed before takeoff, so there are no
+# gates and no teleop. What the window adds over a terminal is the 3D view of
+# the fleet against the arena, the figure currently flying, and an abort that
+# goes through the show's own landing (abort.py) instead of the E-STOP.
+mission: 1
+title: Carousel
+summary: >
+  The five-drone carousel (~63 s), uploaded as trajectories and flown on one
+  clock. Run plan_show after every position sync -- this window does not
+  re-check separation.
+docs: runbooks/CAROUSEL.runcard.md
+run: swarm_show
+flight: true
+abort: sigint
+
+options:
+  - name: dry_run
+    label: Dry run (verify, upload nothing)
+    type: bool
+    default: false
+    omit_default: true
+  - name: check_placement
+    label: Check placement (live pose vs initial_position)
+    type: bool
+    default: true
+    omit_default: true
+
+gate: false
+
+indicators:
+  - {label: Phase, match: 'MOCAP CHECK', value: checking, initial: idle}
+  - {label: Phase, match: 'uploading \d+ figures', value: uploading, tone: {uploading: warn}}
+  - {label: Phase, match: 'SHOW START', value: FLYING, tone: {FLYING: ok}}
+  - {label: Phase, match: 'landed, disarmed', value: landed}
+  - {label: Phase, match: '\*\*\* ABORT', value: ABORT, tone: {ABORT: fail}}
+  - {label: Phase, match: 'dry_run - plan and preflight checks done', value: dry run OK, tone: {dry run OK: ok}}
+  - {label: Figure, match: '^\s*\[t\+\s*[\d.]+s\]\s*(?P<fig>.+)$', value: '$fig', initial: '--'}
+  - {label: Placement, match: 'all drones within tolerance', value: ok, tone: {ok: ok}, initial: '--'}
+
+events: ['\[t\+', 'SHOW START', 'uploads? done', '\*\*\*', 'landed']
+
+layout:
+  main: [scene]
+  side: [indicators, fleet, launch]
+  bottom: [events, output]

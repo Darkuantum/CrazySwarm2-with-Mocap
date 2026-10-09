@@ -19,6 +19,15 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 
+# Mission-console views (one YAML per show; docs/MISSIONS.md). Nothing in the
+# shows reads them. The console prefers the source copy when the install is a
+# --symlink-install, so editing a spec needs no rebuild; this copy is for an
+# install that is not.
+install(DIRECTORY
+  missions
+  DESTINATION share/${PROJECT_NAME}/
+)
+
 # Lab diagnostics, executable in place: ros2 run crazyflie_shows mocap_diag.sh
 install(PROGRAMS
   scripts/mocap_diag.sh

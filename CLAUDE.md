@@ -121,9 +121,13 @@ pose_bridge.py      # natnet → /poses (NamedPoseArray @ 50 Hz)
 console/            # OPTIONAL mission-console GUI (its own README). Self-contained:
                     #   not a colcon package, nothing in src/ imports it, no build.
                     #   `rm -rf console/` removes the feature and changes nothing else.
+                    #   /mission = per-demo MISSION WINDOWS, each defined by a
+                    #   crazyflie_shows/missions/<name>.yaml (docs/MISSIONS.md).
+                    #   console/usage/ (git-ignored) = the operator's usage log.
 runbooks/           # OPERATOR cards, moved out of crazyflie_shows 2026-10-08:
                     #   one per show + the escort's guest narrative and Q&A
-docs/               # RUNNING, MOCAP, TROUBLESHOOTING, plus (2026-10-08)
+docs/               # MISSIONS (2026-10-09: the mission-window spec format),
+                    # RUNNING, MOCAP, TROUBLESHOOTING, plus (2026-10-08)
                     #   ARCHITECTURE (file + data-flow graphs), CONSOLE,
                     #   WRITING-A-SHOW, SERVER-CHANGES, CONTRIBUTING-UPSTREAM
 .claude/            # agents/ (build-doctor, mocap-doctor, ...) and workflows/ (deep-research)
@@ -337,9 +341,18 @@ Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
   `swarm_show` and `demo_show` had no abort path at all — grep for
   `signal|try:|except` in either returned zero hits, and the carousel is the
   show that has actually flown.) Restore `SIG_DFL` for **both** signals once
-  the abort starts, so a second Ctrl-C can still kill the process and the
-  console's SIGINT→SIGTERM escalation at 6 s cannot interrupt a slow landing's
-  own disarm loop. Set `armed = True` **before** the arm loop, not after, or a
+  the abort starts, so a second Ctrl-C can still kill the process. That also
+  means ANY second signal kills it mid-landing — this entry used to say the
+  restore stops the console's SIGTERM escalation from interrupting a slow
+  landing; it does the opposite (`SIG_DFL` SIGTERM terminates). So the console
+  now waits **15 s** after SIGINT before SIGTERM for a flight script
+  (`procs.FLIGHT_STOP_ESCALATION`), and the mission window's Abort sends ONE
+  SIGINT and never escalates (`procs.interrupt`). **`ShowAborted` is a
+  `BaseException`** (since 2026-10-09): as an `Exception` it was swallowed by
+  `escort_show.operator_said()`'s `except Exception` around `select()`, so a
+  Ctrl-C at a paced gate did NOTHING — measured in sim, the show sat at its ARM
+  gate after SIGINT. Never wrap a select/publish in a bare `except Exception`
+  that could catch it either. Set `armed = True` **before** the arm loop, not after, or a
   signal mid-loop skips the abort and leaves part of the fleet armed. Note `ros2 run` does
   NOT forward a signal sent to it alone; a terminal Ctrl-C reaches the child
   because it goes to the whole foreground process group, so test an abort with
@@ -789,6 +802,29 @@ it. These rules hold it together; keep them when editing:
   module docstrings read with `ast` (never import a flight script). Don't add
   per-script cards back — add a module docstring, or a `SCRIPT_NOTES` entry where
   the safety detail matters.
+- **Mission windows: per-demo dashboards, defined by the demo** (2026-10-09,
+  `docs/MISSIONS.md`). `crazyflie_shows/missions/<name>.yaml` (escort, carousel,
+  constellation) is discovered like flight scripts and rendered at
+  `/mission?m=<pkg>/<name>` (`missions.py` + `static/mission/`): 3D view, the
+  script's `>>>` prompts as buttons, teleop key pads driving the helper's pty,
+  status tiles regexed from stdout, Abort & land = one SIGINT. **A new demo is a
+  new YAML file, never a console edit.** The specs are inert data: nothing in
+  `src/` reads them, so the console stays removable. The 3D view reads
+  **foxglove_bridge** straight from the browser (ws :8765, launched by default;
+  read-only) — the one live-data path that is not the CLI, because a 50 Hz
+  stream is not a command. Bridge 3.x speaks only `foxglove.sdk.v1`. Spec regexes
+  run in the browser: `missions._regex` accepts Python `(?P<n>)` and ships JS
+  `(?<n>)`; only a leading `(?i)` inline flag is allowed. The sim publishes ONLY
+  `/tf` for drones (no `/cfX/pose`). Front-end libs (Preact+htm, three.js) are
+  **vendored** in `static/vendor/` because the rig network has no internet — never
+  switch them to a CDN. Tests: `cd console && python3 -m unittest discover -s tests`.
+- **The usage log is the data for dashboard decisions.** `console/usage/usage.jsonl`
+  (git-ignored) records every run with its source (dash / card / palette / pin /
+  more / mission), stops, e-stops, tabs, missions; stdin only as enter/q/text.
+  Pins: `console/usage/dashboard.json`. **Read it before rearranging the
+  Dashboard.** A test console must set `MISSION_CONSOLE_USAGE_DIR` so its clicks
+  are not mistaken for the operator's. The Dashboard shows ONE session step at a
+  time (the stepper follows the rig), pins beside it, More ranked by this log.
 - **`health.py` is where the Gotchas above become executable.** Each known silent
   failure is a graph node (UDP 1511 starvation, apt mocap driver shadowing, server
   blocked mid-connect with no `/all/*`, datarate mismatch, conda python). Adding a

@@ -1,0 +1,53 @@
+# Mission view for the constellation (constellation_show) -- read by the
+# mission console, never by the show. Format: docs/MISSIONS.md.
+#
+# Choreographed on a 120 BPM beat grid: no gates, no teleop. The window shows
+# the bar.beat and figure as they are called, the 3D fleet against the arena,
+# and an abort through the show's own staged landing.
+mission: 1
+title: Constellation
+summary: >
+  Shape changes on a beat grid (76 s). The envelope is set by where the drones
+  are parked -- run plan_constellation after every position sync.
+docs: runbooks/CONSTELLATION.runcard.md
+run: constellation_show
+flight: true
+abort: sigint
+
+options:
+  - name: dry_run
+    label: Dry run (verify, upload nothing)
+    type: bool
+    default: false
+    omit_default: true
+  - name: lights
+    label: Light cues
+    type: bool
+    default: true
+    omit_default: true
+  - name: check_placement
+    label: Check placement (live pose vs initial_position)
+    type: bool
+    default: true
+    omit_default: true
+
+gate: false
+
+indicators:
+  - {label: Phase, match: 'MOCAP CHECK', value: checking, initial: idle}
+  - {label: Phase, match: 'uploading \d+ figures', value: uploading, tone: {uploading: warn}}
+  - {label: Phase, match: 'SHOW START', value: FLYING, tone: {FLYING: ok}}
+  - {label: Phase, match: 'landed, disarmed', value: landed}
+  - {label: Phase, match: '\*\*\* ABORT', value: ABORT, tone: {ABORT: fail}}
+  - {label: Phase, match: 'dry_run - plan and preflight checks done', value: dry run OK, tone: {dry run OK: ok}}
+  - {label: Upload, match: '\[(\d+/\d+)\] id \d+', value: '$1', initial: '--'}
+  - {label: Upload, match: 'uploads done in (\d+)s', value: 'done ($1 s)', tone: {}}
+  - {label: Beat, match: '^\s*\[\s*(?P<bar>\d+\.\d)\s+t\+\s*[\d.]+s\]', value: '$bar', initial: '--'}
+  - {label: Figure, match: '^\s*\[\s*\d+\.\d\s+t\+\s*[\d.]+s\]\s*(?P<fig>.+)$', value: '$fig', initial: '--'}
+
+events: ['SHOW START', 'uploads done', '\*\*\*', 'landed', 'light cue failed']
+
+layout:
+  main: [scene]
+  side: [indicators, fleet, launch]
+  bottom: [events, output]

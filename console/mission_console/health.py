@@ -577,6 +577,15 @@ class Health:
         res = self._record(n, self._ros(
             ['ros2', 'topic', 'echo', f'/{name}/status', '--once'], 6))
         out = res['out']
+        if (res['timeout'] or 'battery_voltage' not in out) and sim:
+            # crazyflie_sim ADVERTISES /cfX/status but never publishes on it, so
+            # this branch -- not the two above -- is the one the simulator hits.
+            # It used to be FAIL, which turned every sim rehearsal into FAULT.
+            n.update(status=OK, summary='sim: no status telemetry',
+                     detail=f'/{name}/status is advertised but silent. Normal on the '
+                            'simulator backend: there is no radio link and no battery, '
+                            'and the drone state is on /tf.')
+            return
         if res['timeout'] or 'battery_voltage' not in out:
             n.update(status=FAIL, summary='no status message',
                      detail=f'/{name}/status produced nothing within 6 s. The server '
@@ -862,6 +871,12 @@ class Health:
                 'server_running': bool(graph.get('server_running')),
                 'mocap_running': bool(graph.get('mocap_running')),
                 'poses_hz': rate,
+                # the mission window needs these two: the sim clock flag for
+                # every script it starts, and whether its live 3D view has a
+                # bridge to talk to (launch.py foxglove:=True, the default)
+                'sim': bool(graph.get('sim')),
+                'foxglove_running': any(l.rstrip('/').endswith('foxglove_bridge')
+                                        for l in graph.get('nodes', [])),
                 'enabled_drones': [d['name'] for d in enabled],
                 'fleet': fleet,
             },

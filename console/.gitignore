@@ -1,3 +1,6 @@
 # Timestamped copies of config files the console has written. Local safety net,
 # not repo content -- the real config lives in src/.../config/.
 backups/
+# The usage log and dashboard prefs (mission_console/usage.py): this laptop's
+# history of what the operator actually uses. Local, like backups/.
+usage/
