@@ -80,7 +80,7 @@ CrazySwarm2-with-Mocap/
 |   |-- README.md               read before editing it
 |   |-- run.sh  stop_stack.sh   start/stop; serves http://localhost:8077
 |   |-- mission_console/        Python backend: server.py procs.py catalog.py configio.py health.py
-|   |   |                                      missions.py usage.py __main__.py __init__.py
+|   |   |                                      missions.py usage.py builds.py __main__.py __init__.py
 |   |   `-- static/             app.js index.html style.css
 |   |       |-- mission/        the MISSION WINDOW (/mission): app.mjs ros.mjs scene.mjs — one
 |   |       |                   per demo, rendered from crazyflie_shows/missions/*.yaml (docs/MISSIONS.md)

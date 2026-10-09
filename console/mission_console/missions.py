@@ -37,7 +37,7 @@ import shlex
 
 import yaml
 
-from . import catalog
+from . import builds, catalog
 
 INSTALL = catalog.INSTALL
 SPEC_VERSION = 1
@@ -86,10 +86,22 @@ class SpecError(ValueError):
 
 # ------------------------------------------------------------- discovery
 def _mission_dirs():
-    """[(pkg, missions_dir)] for every crazyflie_py-dependent package."""
-    out = []
+    """[(pkg, missions_dir)] for every crazyflie_py-dependent package.
+
+    Source packages first (builds.show_packages), so a spec in a package that
+    has never been BUILT is still found -- and then reported as not built,
+    rather than silently missing. Then anything only in install/ (a package
+    whose source lives elsewhere)."""
+    out, seen = [], set()
+    for pkg, src in builds.show_packages().items():
+        d = os.path.join(src, 'missions')
+        seen.add(pkg)
+        if os.path.isdir(d):
+            out.append((pkg, d))
     for xml in sorted(glob.glob(os.path.join(INSTALL, '*', 'share', '*', 'package.xml'))):
         pkg = os.path.basename(os.path.dirname(xml))
+        if pkg in seen:
+            continue
         try:
             with open(xml, encoding='utf-8') as fh:
                 body = fh.read()
@@ -97,12 +109,9 @@ def _mission_dirs():
             continue
         if not re.search(r'<(?:exec_|build_)?depend>\s*crazyflie_py\s*<', body):
             continue
-        src = os.path.dirname(os.path.realpath(xml))
-        for cand in (os.path.join(src, 'missions'),
-                     os.path.join(os.path.dirname(xml), 'missions')):
-            if os.path.isdir(cand):
-                out.append((pkg, cand))
-                break
+        d = os.path.join(os.path.dirname(xml), 'missions')
+        if os.path.isdir(d):
+            out.append((pkg, d))
     return out
 
 
@@ -121,6 +130,65 @@ def discover():
                 found.append({'id': mid, 'pkg': pkg, 'title': stem, 'error': str(exc),
                               'path': path, 'summary': ''})
     return found
+
+
+def build_state(m, statuses=None):
+    """Can this mission's scripts actually be run from this console right now?
+
+    -> {ok, problems, build_cmd, restart_console}. Checks the main script and
+    every helper against builds.status(): package installed, the executable's
+    shim generated, no new module missing from the install, and the package on
+    this console's AMENT_PREFIX_PATH."""
+    if m.get('builtin'):
+        return {'ok': True, 'problems': [], 'build_cmd': '', 'restart_console': False}
+    by_pkg = {st['pkg']: st for st in (statuses if statuses is not None else builds.status())}
+    targets = [(m['run']['pkg'], m['run']['exe'])] + [
+        (h['pkg'], h['exe']) for h in m.get('helpers', {}).values()]
+    problems, pkgs, restart = [], [], False
+    for pkg, exe in targets:
+        st = by_pkg.get(pkg)
+        if st is None:
+            continue                         # not a show package in src/: cannot judge
+        if pkg not in pkgs:
+            pkgs.append(pkg)
+        if not st['installed']:
+            problems.append(f'{pkg} has never been built')
+        elif exe not in st['entry_points']:
+            problems.append(f'{pkg} declares no script called {exe} (setup.cfg)')
+        elif exe in st['missing_exes']:
+            problems.append(f'{exe} is declared but not built')
+        # a new module only breaks THIS script if the script (or what it
+        # imports from its own package) is that module
+        needed = builds.script_modules(pkg, os.path.join(builds.REPO, st['src']), exe)
+        missing = sorted(set(st['new_modules']) & needed)
+        if missing:
+            problems.append(f'{pkg}: module(s) not installed yet: ' + ', '.join(missing))
+        restart = restart or (st['installed'] and not st['on_path'])
+    problems = list(dict.fromkeys(problems))
+    return {'ok': not problems and not restart, 'problems': problems,
+            'build_cmd': ' && '.join(f'./scripts/build.sh {p}' for p in pkgs),
+            'restart_console': restart and not problems}
+
+
+def unviewed(missions_list, statuses=None):
+    """Flight scripts in show packages that no mission spec runs: they open in
+    the generic window. Includes scripts declared in setup.cfg but not built,
+    so a new show is visible -- as 'not built' -- the moment it is declared."""
+    covered = {(m['run']['pkg'], m['run']['exe']) for m in missions_list
+               if not m.get('error') and m.get('run')}
+    # a spec's helpers (escort_teleop) are part of that mission, not shows
+    covered |= {(h['pkg'], h['exe']) for m in missions_list if not m.get('error')
+                for h in m.get('helpers', {}).values()}
+    out = []
+    for st in (statuses if statuses is not None else builds.status()):
+        for exe in st['entry_points']:
+            if (st['pkg'], exe) in covered or catalog._is_ground(exe):
+                continue
+            built = st['installed'] and exe not in st['missing_exes']
+            out.append({'pkg': st['pkg'], 'exe': exe, 'built': built,
+                        'runnable': built and st['on_path'],
+                        'build_cmd': st['build_cmd']})
+    return out
 
 
 def get(mid):

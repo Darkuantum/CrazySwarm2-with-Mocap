@@ -109,11 +109,15 @@ laptop's ~1280x660 viewport (GNOME at 200%) with no scrolling:
   same thresholds the health probe uses (3.8 V warning, 3.7 V critical), so a
   tile can never look reassuring about a voltage the check calls no-fly;
 * a **needs attention** row: every failing or warning check as a chip;
-* the **session row** — a stepper over the four steps of a session (before the
-  server, bring it up, check, fly) and, beside it, **only the current step's
-  buttons**. The stepper follows the rig: server down → "before the server"
-  until the fleet scan is green, then "bring it up"; server up → "check" until
-  the `/all/*` services are there, then "fly". Click another step to see its
+* the **session row** — a stepper over the five steps of a session (before the
+  server, fleet positions, bring it up, check, fly) and, beside it, **only the
+  current step's buttons**. The stepper follows the rig: nothing up → "before
+  the server" (scan, battery, *Start mocap only*); mocap up with no server →
+  "fleet positions" (preview / apply the sync, then *Restart with the server*,
+  because the server reads `crazyflies.yaml` only when it starts); server up →
+  "check" until the `/all/*` services are there, then "fly". A launch is
+  refused-with-a-reason while ANY stack is up, mocap-only included — a second
+  launch would start a second mocap node on UDP 1511. Click another step to see its
   buttons; that choice holds until the rig changes state. A button that cannot
   work right now is dimmed and the reason is said once at the end of the row.
   Your **pinned** shortcuts sit to the right, and **More** lists every action,
@@ -123,8 +127,8 @@ laptop's ~1280x660 viewport (GNOME at 200%) with no scrolling:
 * a **Missions** row: one chip per mission window (below), each opening its own
   browser window;
 * a **live console**: everything the session has run down the left, the selected
-  one's output streaming on the right. Running from the dashboard keeps you on
-  the dashboard.
+  one's output streaming on the right, with Stop / Kill / Copy and a stdin line
+  (see "No Processes tab" below).
 
 Nothing is defined twice: each button runs the catalog action, its tooltip is the
 real argv, and its `⋯` opens the full card in Control. Every tile, chip and pill
@@ -135,6 +139,18 @@ the headline behind it, and the nav bar carries the live telemetry: server,
 mocap, `/poses` (with a sparkline of the last ~40 samples, so a dropout is
 visible as a dive rather than a number that briefly changed), fleet size, ROS
 domain, and how long ago the probes last ran.
+
+**Build status of the shows** (`mission_console/builds.py`). Every
+`crazyflie_py`-dependent package under `src/` is compared with `install/`:
+a package never built, a script declared in `setup.cfg` with no generated
+shim, a new module file with no installed symlink, or a package built after
+the console started (not on its `AMENT_PREFIX_PATH`). The symlink install
+makes *edits* live and hides exactly these. It feeds the **Show packages
+built** box in System health (so it lands in "needs attention"), a *not
+built* badge on mission chips, a Build button in the mission window (the
+catalog's own `./scripts/build.sh <pkg>`), and the picker's list of shows with
+no mission view. A new module blocks only the scripts that import it (their
+same-package import closure, read with `ast`).
 
 **Mission windows** (`/mission?m=<pkg>/<name>`) — a dashboard per demo,
 defined by the demo: a `missions/<name>.yaml` in the show's package says what to
@@ -173,7 +189,7 @@ same confirm step as the buttons — so it can never quietly fly a drone;
 `Shift-Enter` opens its full card in Control instead. Action ids are search keys,
 so "fly" finds `fly.script` even though no word of its label says it.
 
-**Keyboard** (`?` shows the list) — `1`…`6` switch tab, `r` re-runs every probe,
+**Keyboard** (`?` shows the list) — `1`…`5` switch tab, `r` re-runs every probe,
 `Esc` closes whatever is open. E-STOP deliberately has **no** shortcut: a stray
 keypress must never cut the motors.
 
@@ -201,10 +217,16 @@ are **parse-checked**, show you a **diff** before they land, take a timestamped
 rewrite only the lines they touch, never a `yaml.dump()` round-trip. The pane
 reminds you that `crazyflies.yaml` is read only at launch.
 
-**Processes** — every command the console started, with live output (it runs
-children on a pty, so output is line-buffered as in a terminal), Stop (SIGINT to
-the whole process group) and Kill (SIGKILL), plus a stdin box for interactive
-helpers such as `scripts/led.sh`.
+**No Processes tab** (folded into the Dashboard 2026-10-09 — the two showed the
+same thing). The Dashboard's live console is the process view: every command
+the console started down the left (the tab badge counts the ones still
+running), the selected one's output on the right — appended as it arrives, so
+scrolling back is not undone; children run on a pty, so output is line-buffered
+as in a terminal — with Stop (SIGINT to the whole process group, escalating; a
+flight script gets 15 s before the SIGTERM), Kill (SIGKILL), Copy, follow, and
+a stdin line for interactive helpers (`scripts/led.sh`, a paced show's bare
+Enter). An unanswered prompt with no newline (`input('...: ')`) shows at the
+bottom of the pane.
 
 **Command log** — the session as a shell script, plus **Usage across
 sessions**: what has been run, how often, started from where (dashboard, card,
@@ -269,8 +291,8 @@ spec field in `missions.normalise()`.
 custom view module, path-checked). `POST /api/stop` takes `mode: stop | kill |
 interrupt` (`interrupt` = one SIGINT, no escalation). `GET|POST /api/usage` and
 `/api/prefs` serve the usage log and pins. Every process the window starts uses
-the same pty/process manager as the rest of the console, so it shows up in
-Processes and the Command log.
+the same pty/process manager as the rest of the console, so it shows up in the
+Dashboard's activity list and the Command log.
 
 Probes deliberately go through the `ros2` CLI rather than `rclpy`: the CLI
 daemon keeps the ROS graph warm, while a fresh `rclpy` process on this rig can
@@ -296,6 +318,7 @@ console/
     procs.py                 process manager (pty, process groups, ring buffers,
                              partial-prompt events, the SIGINT-only interrupt)
     missions.py              mission-spec discovery, validation and argv
+    builds.py                is every show in src/ built? (no imports, file checks only)
     usage.py                 the usage log and dashboard prefs
     static/                  index.html, app.js, style.css
       mission/               the mission window: index.html app.mjs ros.mjs scene.mjs mission.css
@@ -322,6 +345,5 @@ snapshot, useful for a screenshot — and required for a headless-browser captur
 which otherwise waits forever on the open stream). `?node=<id>` opens with that
 health box selected, which is what the dashboard's links use.
 
-The UI scale control (`A−` / `A+` in the header) is remembered by the console
-itself rather than relying on browser zoom, which is per-site and easily lost;
-this laptop's desktop already scales everything by 200%.
+There is no UI-scale control any more: use the browser's own zoom (Ctrl +/−),
+which Chrome and Firefox remember per site.

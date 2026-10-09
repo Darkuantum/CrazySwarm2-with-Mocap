@@ -39,11 +39,6 @@
     <button class="btn ghost sm" id="btn-palette" title="Command palette: every action, check and file (Ctrl-K)">
       Search <kbd>Ctrl K</kbd>
     </button>
-    <span class="zoomctl" title="UI scale - this display is HiDPI, so the desktop may already be scaling everything up">
-      <button class="btn ghost sm" id="btn-zoom-out" title="Smaller">A&minus;</button>
-      <button class="btn ghost sm" id="btn-zoom-reset" title="Reset to 100%">100%</button>
-      <button class="btn ghost sm" id="btn-zoom-in" title="Bigger">A+</button>
-    </span>
     <button class="btn ghost" id="btn-refresh" title="Re-run every health probe (r)">Re-check</button>
     <button class="btn estop" id="btn-estop" title="One click, no confirmation: ros2 service call /all/emergency std_srvs/srv/Empty {}">E-STOP</button>
   </div>
@@ -53,11 +48,11 @@
 <div id="estop-banner" class="estopban" role="alert" aria-live="assertive" hidden></div>
 
 <nav class="tabs" id="tabs" role="tablist" aria-label="Console sections">
-  <button data-tab="dash" class="active" role="tab" aria-selected="true" aria-controls="tab-dash">Dashboard</button>
+  <button data-tab="dash" class="active" role="tab" aria-selected="true" aria-controls="tab-dash"
+    title="Everything run from the console streams here (the badge counts what is still running)">Dashboard <span class="badge" id="proc-badge"></span></button>
   <button data-tab="health" role="tab" aria-selected="false" aria-controls="tab-health">System health</button>
   <button data-tab="control" role="tab" aria-selected="false" aria-controls="tab-control">Control</button>
   <button data-tab="config" role="tab" aria-selected="false" aria-controls="tab-config">Config</button>
-  <button data-tab="procs" role="tab" aria-selected="false" aria-controls="tab-procs">Processes <span class="badge" id="proc-badge"></span></button>
   <button data-tab="log" role="tab" aria-selected="false" aria-controls="tab-log">Command log</button>
   <span class="tabspacer"></span>
   <div class="pills" id="pills"></div>
@@ -86,14 +81,18 @@
       <div class="dconsole">
         <div class="dc-list">
           <div class="dc-head">Activity
-            <a class="hlink" data-go="tab:procs">all output</a>
-            <a class="hlink" data-go="tab:log">log</a>
+            <a class="hlink" data-go="tab:log" title="every command as a shell script">log</a>
           </div>
           <div class="dc-rows" id="dashactivity"></div>
         </div>
         <div class="dc-out">
           <div class="dc-outhead" id="dashouthead"></div>
-          <pre class="dc-tail" id="dashtail"></pre>
+          <div class="dc-tail" id="dashtail"></div>
+          <form class="dc-stdin" id="dc-stdin" hidden>
+            <input id="stdin" autocomplete="off" spellcheck="false"
+              placeholder="send a line to this process -- empty = Enter (a paced show's gate), or a colour key for led.sh">
+            <button class="btn ghost sm">Send</button>
+          </form>
         </div>
       </div>
     </div>
@@ -139,22 +138,6 @@
     <div class="split">
       <nav class="grouplist" id="filelist"></nav>
       <div class="configpane" id="configpane"></div>
-    </div>
-  </section>
-
-  <!-- ---------------------------------------------------- processes -->
-  <section id="tab-procs" class="tab" role="tabpanel" aria-label="Processes">
-    <div class="split">
-      <nav class="proclist" id="proclist"></nav>
-      <div class="output">
-        <div class="outhead" id="outhead"></div>
-        <pre id="outbody" class="term"></pre>
-        <div class="outfoot">
-          <input id="stdin" placeholder="send a line to this process (e.g. a colour key for led.sh, or a sudo password)">
-          <button class="btn ghost" id="btn-send">Send</button>
-          <label class="chk"><input type="checkbox" id="autoscroll" checked> follow</label>
-        </div>
-      </div>
     </div>
   </section>
 
@@ -207,7 +190,7 @@
     <div class="keygrid">
       <span><kbd>Ctrl K</kbd></span><span class="d">command palette &mdash; every action, health check and config file</span>
       <span><kbd>/</kbd></span><span class="d">the same palette</span>
-      <span><kbd>1</kbd>&hellip;<kbd>6</kbd></span><span class="d">switch tab</span>
+      <span><kbd>1</kbd>&hellip;<kbd>5</kbd></span><span class="d">switch tab</span>
       <span><kbd>r</kbd></span><span class="d">re-run every health probe</span>
       <span><kbd>?</kbd></span><span class="d">this list</span>
       <span><kbd>Esc</kbd></span><span class="d">close whatever is open</span>

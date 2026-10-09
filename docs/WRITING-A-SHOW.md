@@ -444,7 +444,9 @@ apply — all from `ESCORT.md` and `escort_show.py`:
    (keyboard teleop) it needs. The console renders it with a live 3D view, the
    prompts as buttons and an abort through your `abort.py` path, and nobody edits
    the console. Format, worked examples (`escort.yaml`, `carousel.yaml`) and the
-   output conventions that make it work: [MISSIONS.md](MISSIONS.md). The spec is
+   output conventions that make it work: [MISSIONS.md](MISSIONS.md). Until you
+   build, the console flags the new script as **not built** (System health →
+   Show packages built, and the mission window offers the build). The spec is
    inert data — nothing in the show reads it — but it parses your prints, so
    change it in the same commit as a print you rephrase.
 

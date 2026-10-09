@@ -26,7 +26,7 @@ import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from . import configio
+from . import builds, configio
 from .procs import run_capture
 
 REPO = configio.REPO
@@ -700,11 +700,41 @@ class Health:
     # or move the Motive PC -- never while you sit and watch. A live sweep reuses
     # the last full sweep's result for these, which is what makes it cheap:
     # _check_motive alone spends ~1.5 s on a NatNet broadcast ping.
-    STATIC_NODES = ('env.ros', 'env.overlay', 'env.python', 'cfg.parse', 'cfg.fleet',
+    STATIC_NODES = ('env.ros', 'env.overlay', 'env.python', 'env.shows', 'cfg.parse', 'cfg.fleet',
                     'radio.usb', 'mocap.host', 'mocap.port')
     # Carried forward verbatim. NOT 'findings': _check_signatures rebuilds those
     # from the process buffers on every sweep, so copying them would duplicate.
     _CARRY = ('status', 'summary', 'detail', 'fix', 'commands', 'metrics')
+
+    def _check_shows(self, nodes):
+        """builds.status(): every crazyflie_py package in src/ against install/."""
+        n = nodes['env.shows']
+        st = builds.status()
+        n['commands'].append({'cmd': 'ls install/<pkg>/lib/<pkg>/  # vs setup.cfg console_scripts',
+                              'out': '\n'.join(f"{s['pkg']}: {len(s['entry_points'])} scripts declared"
+                                               for s in st)})
+        bad = [s for s in st if s['problems']]
+        stale = [s for s in st if s['restart_console']]
+        if bad:
+            n.update(status=WARN,
+                     summary='; '.join(f"{s['pkg']}: {s['problems'][0]}" for s in bad),
+                     detail='\n'.join(f"{s['pkg']} ({s['src']}):\n  " + '\n  '.join(s['problems'])
+                                      for s in bad) +
+                            '\n\nThe symlink install makes EDITS to an existing module live, '
+                            'but a new package, a new entry point in setup.cfg or a new module '
+                            'file only exists after a build.',
+                     fix=' && '.join(s['build_cmd'] for s in bad) +
+                         ', then restart the console (./console/run.sh) so its environment '
+                         'sees the new install.')
+        elif stale:
+            n.update(status=WARN,
+                     summary='built after the console started: ' + ', '.join(s['pkg'] for s in stale),
+                     detail='install/<pkg> is not on this console\'s AMENT_PREFIX_PATH, so '
+                            '`ros2 run` from the console reports "Package not found".',
+                     fix='Restart ./console/run.sh from a terminal.')
+        else:
+            n.update(status=OK, summary=f'{len(st)} package(s), all built',
+                     detail='\n'.join(f"{s['pkg']}: {', '.join(s['entry_points'])}" for s in st))
 
     def run(self, full=True):
         """Refresh the graph.
@@ -729,6 +759,8 @@ class Health:
              'Is this repo built and sourced ahead of /opt/ros?'),
             ('env.python', 'Python interpreter', 0, 2, 'Workspace',
              'ROS runs nodes with /usr/bin/python3; conda breaks that.'),
+            ('env.shows', 'Show packages built', 0, 3, 'Workspace',
+             'Is every show in src/ built -- new package, new script, new module?'),
             ('cfg.parse', 'Config files', 1, 0, 'Configuration',
              'Do crazyflies.yaml and motion_capture.yaml parse?'),
             ('cfg.fleet', 'Fleet sanity', 1, 1, 'Configuration',
@@ -761,6 +793,7 @@ class Health:
         edges = [
             ('env.ros', 'env.overlay'), ('env.python', 'env.overlay'),
             ('env.overlay', 'cfg.parse'), ('cfg.parse', 'cfg.fleet'),
+            ('env.overlay', 'env.shows'),
             ('cfg.fleet', 'radio.usb'), ('radio.usb', 'radio.drones'),
             ('cfg.fleet', 'mocap.host'), ('mocap.host', 'mocap.pkg'),
             ('mocap.port', 'mocap.pkg'), ('env.overlay', 'mocap.pkg'),
@@ -782,6 +815,7 @@ class Health:
             graph = self._check_graph(nodes, fleet)
         else:
             self._check_env(nodes)
+            self._check_shows(nodes)
             self._check_config(nodes, cf['doc'], cf['parse_error'],
                                mc['doc'], mc['parse_error'])
             with ThreadPoolExecutor(max_workers=4) as pool:

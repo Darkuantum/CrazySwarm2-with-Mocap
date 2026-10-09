@@ -55,7 +55,7 @@ does:
 | What | Source | Why |
 |---|---|---|
 | 3D: drones, rigid bodies, markers | **foxglove_bridge** (`ws://<host>:8765`), which `launch.py` starts by default (`foxglove:=True`). The browser subscribes directly to `/poses`, `/tf`, `/cfX/pose` and the spec's marker topics. | A 3D view needs 50 Hz streams, not CLI calls. The bridge is already in the stack, so this adds no node and no rclpy to the console (the CLI-only rule stands for everything the console *does*). **Read-only**: the window never publishes or calls a service through it. |
-| Starting, stopping, stdin | The console backend — the same `/api/input` and `/api/stop` as the Processes tab, plus `/api/mission/start` | Every command lands in the Command log (and the export script) and the usage log. |
+| Starting, stopping, stdin | The console backend — the same `/api/input` and `/api/stop` as the Dashboard's output pane, plus `/api/mission/start` | Every command lands in the Command log (and the export script) and the usage log. |
 | Gate, indicators, timeline | The script's **own stdout**, matched with the spec's regexes | The show is not modified to feed the window. Delete the spec and the show is byte-identical. |
 | Fleet tiles | The console's health sweep (Server-Sent Events) | Same numbers as the Dashboard tiles. |
 
@@ -184,7 +184,33 @@ adds `use_sim_time:=true` to the main script **and every helper**.
    package's `CMakeLists.txt` (`crazyflie_shows` has it).
 
 Any package that depends on `crazyflie_py` is scanned, the same as for flight
-scripts. And every script — including one with no spec — can run in the built-in
+scripts.
+
+**Is it built?** A new show is easy to half-build: colcon's `--symlink-install`
+makes *edits* to an existing module live, so it is natural to forget that a new
+**package**, a new **script in `setup.cfg`** or a new **module file** only exists
+after `./scripts/build.sh <pkg>` — and then `ros2 run` says "No executable
+found" or the script dies with `ModuleNotFoundError`. The console compares every
+show package in `src/` with `install/` (`console/mission_console/builds.py`;
+file checks only, nothing is imported) and says so in four places:
+
+* **System health → Show packages built** — so it appears under *needs
+  attention* the moment you declare a script you have not built;
+* the Dashboard's **mission chips** carry a *not built* badge;
+* the **mission window** replaces Start with what is missing and a **Build
+  <pkg>** button (the console's own `./scripts/build.sh <pkg>` action, logged
+  like any other); Start is refused by the backend too;
+* the **mission list** (`/mission`) has a section **Shows without a mission
+  view** — every script in a show package that no spec runs, built or not, each
+  opening the generic window — so a new show is visible before anyone writes a
+  spec for it.
+
+A new module blocks only the scripts that need it (the script's same-package
+imports, followed with `ast`). A package that was built *after the console
+started* is reported separately: it is not on the console's
+`AMENT_PREFIX_PATH`, so restart `./console/run.sh`. Verified 2026-10-09 with a
+throwaway show: declared → flagged everywhere → Build button → runnable → run
+with its `>>>` prompt answered from the window. And every script — including one with no spec — can run in the built-in
 **Any flight script** window (`/mission?m=console/script`), which has the 3D view,
 the generic `>>>` gate and the abort.
 
@@ -237,8 +263,8 @@ The window keeps the console's rules, and adds two of its own.
   while another flight script — a Dashboard "Fly" run or another mission — is
   running. Two scripts commanding the same drones fight each other.
 * **E-STOP is one click with an answer**, the same `/api/estop` as the console.
-* **Abort & land is ONE SIGINT, with no escalation.** The console's Processes →
-  Stop sends SIGINT, then SIGTERM 6 s later, then SIGKILL. `abort.py` restores
+* **Abort & land is ONE SIGINT, with no escalation.** The Dashboard output
+  pane's Stop sends SIGINT, then SIGTERM 6 s later, then SIGKILL. `abort.py` restores
   the default handlers once its landing starts, so that SIGTERM would kill a
   landing that runs long. Abort sends the SIGINT and nothing else: the show lands
   itself, the button reads *Landing...*, and **Kill** is a separate,

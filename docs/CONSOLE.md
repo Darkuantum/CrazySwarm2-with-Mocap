@@ -93,13 +93,12 @@ immediately.
 
 ### The tabs
 
-| Tab (keys `1`…`6`) | What it is |
+| Tab (keys `1`…`5`) | What it is |
 |---|---|
-| **Dashboard** | Per-drone tiles (supervisor state in words, battery, link), a "needs attention" row, a **stepper** (before the server / bring it up / check / fly) that follows the rig and shows only the current step's buttons, your **pinned** shortcuts, **More** (every action, ranked by how often you use it, ☆ to pin), a **Missions** row that opens each mission's own window, and a live output pane. Every button is a catalog action; what it shows is the real argv. |
+| **Dashboard** | Per-drone tiles (supervisor state in words, battery, link), a "needs attention" row, a **stepper** (before the server / fleet positions / bring it up / check / fly) that follows the rig and shows only the current step's buttons, your **pinned** shortcuts, **More** (every action, ranked by how often you use it, ☆ to pin), a **Missions** row that opens each mission's own window, and the **only process view**: everything the console started down the left, the selected one's output on the right with Stop, Kill, Copy, follow, and a stdin line. (The separate Processes tab was folded in here on 2026-10-09.) Every button is a catalog action; what it shows is the real argv. |
 | **System health** | The probe dependency graph — [section 4](#4-the-health-diagram). |
 | **Control** | The reference: one verbose card per catalog action, grouped Launch, Preflight, Fleet position, Flight, Commands, Parameters, Recovery. Each card carries a `why` and a "how to read this command line". |
 | **Config** | `crazyflies.yaml` as a table, plus a raw editor for each of four config files — [5.3](#53-yaml-writes-are-text-surgical). |
-| **Processes** | Everything the console started, live output, Stop, Kill, and a stdin box. |
 | **Command log** | The session so far; "Download as a shell script" exports it with a prelude. **Usage across sessions** (collapsed) shows what has actually been run, from where, and how often — the data the Dashboard's More menu is ranked by. |
 
 **Mission windows** — one per demo, each defined by a `missions/<name>.yaml` in
@@ -150,8 +149,10 @@ than emitting `{height: }`, which is invalid YAML and would fail in the parser.
 
 | GUI path | Needs | Exact command | Notes |
 |---|---|---|---|
-| Launch → **Start the stack** | server stopped | `ros2 launch crazyflie launch.py backend:=cpp rviz:=True preflight:=True foxglove:=True teleop:=True mocap:=True gui:=False debug:=False` | One `name:=value` per card field, always all eight. `mocap_hostname:=<ip>` is appended **only** when that field is non-empty. `backend` is `cpp`, `cflib` or `sim`. These are launch arguments, not shell syntax — no spaces around `:=`. |
-| Launch → **Start the simulator stack** | server stopped | `ros2 launch crazyflie launch.py backend:=sim` | Needs `./scripts/setup_sim_firmware.sh` once. Flight scripts then need `use_sim_time:=true` (below). |
+| Launch → **Start the stack** | no stack running (server **or** mocap-only) | `ros2 launch crazyflie launch.py backend:=cpp rviz:=True preflight:=True foxglove:=True teleop:=True mocap:=True gui:=False debug:=False` | One `name:=value` per card field, always all eight. `mocap_hostname:=<ip>` is appended **only** when that field is non-empty. `backend` is `cpp`, `cflib` or `sim`. These are launch arguments, not shell syntax — no spaces around `:=`. |
+| Launch → **Start mocap only (no server)** (Dashboard step 1) | no stack running | `ros2 launch crazyflie launch.py server:=False rviz:=True foxglove:=True` (+ `mocap_hostname:=<ip>` if set) | Mocap, RViz and the bridge, **no server**: nothing owns the radio, nothing can arm. The state the position sync wants. |
+| Launch → **Restart with the server** (Dashboard steps 2 and 3) | any · confirm | `bash -c './console/stop_stack.sh && exec ros2 launch crazyflie launch.py <the eight Start-the-stack arguments>'` | Stops whatever stack runs — verifying UDP 1511 is free — then starts the full stack, so the server reads the `crazyflies.yaml` just synced. One command, so there is no window in which a second launch starts a second mocap node on 1511. `exec` makes Stop on this process signal the launch itself. |
+| Launch → **Start the simulator stack** | no stack running | `ros2 launch crazyflie launch.py backend:=sim` | Needs `./scripts/setup_sim_firmware.sh` once. Flight scripts then need `use_sim_time:=true` (below). |
 | Launch → **Stop the stack** | any · confirm | `./console/stop_stack.sh` — with the "skip to SIGKILL" field set: `./console/stop_stack.sh --hard` | Signals each stack process directly (launcher first, then server, mocap node, preflight GUI, foxglove bridge, RViz), escalates SIGINT → SIGTERM → SIGKILL, and then **verifies UDP 1511 is released**. That verification is the whole point: a bare Ctrl-C on `ros2 launch` routinely leaves the mocap node alive and holding 1511, and the *next* launch starves silently. |
 | Launch → **Rebuild the workspace** | any | `./scripts/build.sh` or `./scripts/build.sh <package>` | Restart the console afterwards — [5.1](#51-restart-the-console-after-changing-its-code). |
 | Recovery → **Kill leftover mocap nodes** | any · confirm | `bash -c 'pkill -f motion_capture_tracking_node; sleep 1; pgrep -af motion_capture_tracking \|\| echo "clear"'` | Killing a `ros2 run` wrapper does not kill the node binary. |
@@ -180,17 +181,20 @@ than emitting `{height: }`, which is invalid YAML and would fail in the parser.
 | Preflight → **Read a battery over the radio** | server stopped | `ros2 run crazyflie battery --uri <that drone's uri from crazyflies.yaml>` — the `crazyflie_tools` binaries talk to the dongle directly, so the server must be stopped. |
 | Preflight → **Run a ground check** | any | `ros2 run <package> <script>` — the dropdown holds only scripts that never command a drone (name starts `plan_`, ends `.sh`, or is `color_led` / `set_param`), so there is no "area clear" prompt. This is where `plan_show`, `plan_constellation` and `plan_escort` live. |
 
-### Fleet position
+### Fleet position — Dashboard step 2, "Fleet positions"
 
 | GUI path | Needs | Exact command |
 |---|---|---|
-| Fleet position → **Preview initial_position sync** | any (but: mocap up, server **not** started) | `python3 scripts/sync_initial_positions.py --dry-run` |
-| Fleet position → **Apply initial_position sync** | any · confirm | `python3 scripts/sync_initial_positions.py --yes` |
+| Fleet position → **Preview initial_position sync** | mocap running | `python3 scripts/sync_initial_positions.py --dry-run` |
+| Fleet position → **Apply initial_position sync** | mocap running · confirm | `python3 scripts/sync_initial_positions.py --yes` |
 
-Neither card declares a machine precondition, so the console will not stop you
-running these with the server up — but the script wants mocap running and the
-server **not** running (`ros2 launch crazyflie launch.py server:=False` is that
-state, and it is terminal-only; see [6.2](#62-launch-options-the-card-does-not-expose)).
+The order is forced by two facts: the script reads `/poses`, so **mocap must be
+up**; and the server reads `crazyflies.yaml` **only when it starts**, so it must
+start *after* the sync. Hence: **Start mocap only** → Preview → Apply →
+**Restart with the server**. Syncing with the full stack up works too, but the
+running server keeps the old marks until it is restarted — which is the same
+Restart button. The precondition is a warning (the button dims and says why),
+not a lock.
 The script rewrites only the `initial_position` triples in `crazyflies.yaml`,
 comments preserved, and refuses on its own safety rules (an enabled drone not
 streamed, a drone moving, above 0.5 m, or two drones under 1 m apart). `--force`
@@ -242,15 +246,15 @@ Three things worth carrying away from these rows:
 | **Header E-STOP** (present on every tab) | `POST /api/estop`: runs the `/all/emergency` call and reports within 3 s — confirmed, or NOT CONFIRMED with the reason. One click, no modal. [5.2](#52-e-stop-is-one-click-with-an-answer-within-3-seconds) | The `ros2 service call` above — but you must judge the outcome yourself: it has no timeout and prints nothing against an unreachable server. The preflight GUI's `e` key is the other independent path. |
 | **Config** → table and raw editors | Parse-checked, diffed, backed up, comment-preserving write. [5.3](#53-yaml-writes-are-text-surgical) | Edit the file under `src/crazyswarm2/crazyflie/config/` by hand. |
 | **Command log** → Download as a shell script | Writes the session's commands with a prelude: the two `source` lines as comments, then `cd <repo>`. | n/a — this is how a session becomes a runbook. |
-| **Processes** → Stop | SIGINT to the whole **process group**, escalating SIGINT (6 s) → SIGTERM (4 s) → SIGKILL (2 s); a **flight script** (Dashboard Fly, a mission's main script) gets **15 s** after the SIGINT, so its own abort landing can finish. If it survives SIGKILL the pane says so. | `kill -INT -<pgid>`, or `./console/stop_stack.sh` for the stack. |
-| **Processes** → Kill | Straight to SIGKILL. | `kill -KILL -<pgid>` |
-| **Processes** → stdin box | Writes what you typed **plus a newline** to the child's pty master. [6.1](#61-operator-paced-and-interactive-runs) | The terminal you would have run it in. |
+| **Dashboard output pane** → Stop | SIGINT to the whole **process group**, escalating SIGINT (6 s) → SIGTERM (4 s) → SIGKILL (2 s); a **flight script** (Dashboard Fly, a mission's main script) gets **15 s** after the SIGINT, so its own abort landing can finish. If it survives SIGKILL the pane says so. | `kill -INT -<pgid>`, or `./console/stop_stack.sh` for the stack. |
+| **Dashboard output pane** → Kill | Straight to SIGKILL. | `kill -KILL -<pgid>` |
+| **Dashboard output pane** → stdin line (shown while the selected process runs) | Writes what you typed **plus a newline** to the child's pty master. [6.1](#61-operator-paced-and-interactive-runs) | The terminal you would have run it in. |
 | **Mission window** → Start | `POST /api/mission/start`: the spec's autostart helpers first, 1.5 s later the script — each `ros2 run <pkg> <exe> --ros-args -p ...`, every argv shown in the confirm step and logged. Refused while another flight script runs. | The same `ros2 run` lines, one terminal each, helpers first. |
 | **Mission window** → gate button | Writes the button's `send` line plus a newline to the script's pty (`Continue` = a bare Enter). | Press Enter (or type `q`) in the script's terminal. |
 | **Mission window** → Abort & land | **One** SIGINT to the script's process group and nothing after it — no SIGTERM at 6 s. The show's `abort.py` lands where they are. Kill is a separate, confirmed SIGKILL. | Ctrl-C **once** in the script's terminal. |
 | **Mission window** → teleop pad / keyboard | Writes the key (no newline) to the helper's pty, re-sent every 90 ms while held; a space on release. | Hold the key in `escort_teleop`'s terminal. |
 
-Anything not in these tables — `server:=False`, `trace_cf:=all`, a gamepad — is
+Anything not in these tables — `trace_cf:=all`, a gamepad — is
 a terminal operation. See [6.1](#61-operator-paced-and-interactive-runs) and
 [6.2](#62-launch-options-the-card-does-not-expose).
 
@@ -406,17 +410,18 @@ show and for keyboard teleop: the show's prompts become buttons, and the teleop
 helper runs on its own pty, driven by an on-screen pad or the keyboard.
 
 * **The bare-Enter gate now works, verified.** Commit `72e54bf` made the
-  Processes stdin box send an empty line; it had been read, not tested. On
+  stdin box send an empty line; it had been read, not tested. On
   2026-10-09 every gate of a paced `escort_show` run in the simulator was
   answered from the mission window's Continue button, which posts `"\n"`
   through the same `/api/input` route — so the backend path is now exercised.
-  The Processes box itself was not separately re-tested.
+  The same line, now on the Dashboard's output pane, was exercised on
+  2026-10-09 against a running launch (logged as `enter`).
 * **A pty is still not your terminal**: `sudo` prompts and anything reading
   `/dev/tty` directly are unreliable. `escort_teleop` works because it reads its
   own stdin in raw mode, which on a pty is the console. `teleop_xbox` needs a
   gamepad at `/dev/input/js0` and the stack launched with `teleop:=False` — a
   terminal job.
-* **Prefer Abort & land to Processes → Stop for a show.** Stop escalates
+* **Prefer Abort & land to the output pane's Stop for a show.** Stop escalates
   SIGINT → SIGTERM → SIGKILL, and `abort.py` restores the default handlers once
   its landing begins, so a SIGTERM that arrives during the landing *kills* it. A
   flight script now gets 15 s before that SIGTERM (it was 6 s, against a ~4.5 s
@@ -429,10 +434,9 @@ The launch card passes eight arguments plus an optional `mocap_hostname`. The
 remaining `launch.py` arguments have **no field**; use a terminal. The ones that
 matter:
 
-* **`server:=False`** — mocap, RViz and the preflight GUI with **no** server, so
-  nothing owns the radio and nothing is armable. That is the state
-  `sync_initial_positions.py` wants, and it is the most conspicuous gap in the
-  card.
+* ~~`server:=False`~~ — **now a button** (2026-10-09): Launch → *Start mocap
+  only*, the state `sync_initial_positions.py` wants. It leaves the preflight GUI
+  off; use a terminal if you want it with no server.
 * **`trace_cf:=all`** (or a comma-separated subset) — per-second packet-trace
   summaries from the link layer. It is a *launch argument*, not a `--ros-args`
   flag, and it is read at connect.

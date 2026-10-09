@@ -30,7 +30,7 @@ const MID = Q.get('m') || '';
 const BRIDGE_URL = Q.get('bridge') || `ws://${location.hostname || 'localhost'}:8765`;
 
 const S = {
-  mission: null, error: '', missions: [], arena: null,
+  mission: null, error: '', missions: [], unviewed: [], build: null, arena: null,
   health: null, procs: new Map(), lines: new Map(), sse: 'connecting',
   derived: new Map(),            // procId -> derived state of a MAIN run
   heldBy: null,                  // which teleop owns the keyboard
@@ -148,9 +148,31 @@ async function loadLines(procId) {
   } catch (e) { /* pruned */ }
 }
 
+async function refreshBuild() {
+  try {
+    if (MID) S.build = (await api('/api/mission?id=' + encodeURIComponent(MID))).build;
+    else { const ml = await api('/api/missions'); S.missions = ml.missions; S.unviewed = ml.unviewed || []; }
+    changed();
+  } catch (e) { /* next event */ }
+}
+
+/* Build a package with the console's own catalog action (./scripts/build.sh
+ * <pkg>), so it lands in the Command log like any other command. */
+async function buildPkg(pkg) {
+  const ok = await confirmBox(`Build ${pkg}`, html`<p>This runs the workspace build for one package:</p>
+    <div class="cmdline">./scripts/build.sh ${pkg}</div>
+    <p class="hint">A brand-new package also needs the console restarted afterwards (./console/run.sh) --
+    its install is not on the running console's environment yet. This window says so when that is the case.</p>`,
+  'Build', 'primary');
+  if (!ok) return;
+  try { await post('/api/run', { action_id: 'build.workspace', values: { package: pkg }, source: 'mission' }); }
+  catch (e) { alert(e.message); }
+}
+
 function upsertProc(p) {
   const prev = S.procs.get(p.id);
   S.procs.set(p.id, p);
+  if (p.action_id === 'build.workspace' && prev && alive(prev) && !alive(p)) refreshBuild();
   const role = roleOf(p);
   if (role && !prev) loadLines(p.id);
   // the main script ended: the helpers it needed have nothing left to do
@@ -168,6 +190,10 @@ async function boot() {
     const b = await api('/api/bootstrap');
     S.health = b.health;
     S.missions = b.missions || [];
+    if (!MID) {
+      const ml = await api('/api/missions');
+      S.missions = ml.missions; S.unviewed = ml.unviewed || [];
+    }
     b.procs.forEach((p) => S.procs.set(p.id, p));
   } catch (e) { S.error = 'console backend unreachable: ' + e.message; }
   try { S.arena = await api('/api/arena'); } catch (e) { S.arena = { error: e.message }; }
@@ -175,6 +201,7 @@ async function boot() {
     try {
       const r = await api('/api/mission?id=' + encodeURIComponent(MID));
       S.mission = r.mission;
+      S.build = r.build;
       document.title = `${S.mission.title} - mission`;
       for (const p of r.procs) { S.procs.set(p.id, p); loadLines(p.id); }
       usage('mission_open', { mission: MID });
@@ -570,6 +597,10 @@ function Launch() {
       v[o.name] = sv != null && (o.type !== 'select' || o.choices.includes(sv)) ? sv : (o.type === 'bool' ? !!o.default : (o.default ?? ''));
     }
     v.extra = saved.extra || '';
+    // ?script=<pkg exe> (from the picker's "shows without a mission view")
+    const want = Q.get('script');
+    const so = spec.options.find((o) => o.name === 'script');
+    if (want && so && so.choices.includes(want)) v.script = want;
     return v;
   });
   const [sim, setSim] = useState(null);
@@ -640,6 +671,22 @@ function Launch() {
   }
 
   const set = (k, v) => setValues((x) => ({ ...x, [k]: v }));
+  const bs = s.build;
+  const building = [...s.procs.values()].some((q) => q.action_id === 'build.workspace' && alive(q));
+  if (bs && !bs.ok && !running) {
+    return html`<${Panel} title="Run" cls="hot" right=${html`<span class="st failed">not runnable</span>`}>
+      ${bs.problems.length
+        ? html`<div class="warnline"><b>Not built.</b> ${bs.problems.map((x) => html`<div>${x}</div>`)}</div>
+          <div class="hint">colcon's symlink install makes EDITS to an existing module live, but a new package, a new
+            script in setup.cfg or a new module file only exists after a build.</div>
+          <div class="cmdline">${bs.build_cmd}</div>
+          <div class="runbtns">${[...new Set(bs.build_cmd.split(' && ').map((c) => c.split(' ').pop()))].map((pkg) => html`
+            <button class="btn primary big" disabled=${building} onClick=${() => buildPkg(pkg)}>${building ? 'building...' : 'Build ' + pkg}</button>`)}</div>`
+        : html`<div class="warnline"><b>Built after this console started.</b> Its install is not on the console's
+            environment, so <code>ros2 run</code> from here would say "Package not found".
+            Restart <code>./console/run.sh</code>, then reload this window.</div>`}
+    <//>`;
+  }
   return html`<${Panel} title="Run" right=${main ? html`<span class="st ${main.state}">${main.state}${main.returncode != null && !running ? ' ' + main.returncode : ''}</span>` : ''}>
     <div class="opts">
       ${spec.options.filter(visible).map((o) => html`<label class="opt ${o.type}">
@@ -719,7 +766,7 @@ function Output() {
   });
   return html`<${Panel} title="Output" cls="output" right=${html`<span class="tabs">${roles.map((r) => html`
       <button class=${r === cur ? 'on' : ''} onClick=${() => setRole(r)}>${r === 'main' ? s.mission.title : s.mission.helpers[r].label}</button>`)}
-      ${p && html`<a href=${'/#procs'} target="console" title="the same process in the console's Processes tab">console</a>`}</span>`}>
+      ${p && html`<a href=${'/#dash'} target="console" title="the same process in the console dashboard's output pane">console</a>`}</span>`}>
     <div class="term" ref=${ref}>${lines.slice(-500).map((l) => html`<div class=${lineClass(l.text)}>${l.text || '\u00a0'}</div>`)}${p && p.partial ? html`<div class="l-gate">${p.partial}</div>` : ''}</div>
     ${p && alive(p) && cur === 'main' && html`<form class="stdin" onSubmit=${(e) => { e.preventDefault(); sendLine(p.id, text); setText(''); }}>
       <input value=${text} onInput=${(e) => setText(e.target.value)} placeholder="send a line to the script (empty = Enter)" />
@@ -768,12 +815,28 @@ function Picker() {
   const s = useStore();
   return html`<div class="picker">
     <p class="lead">A mission view is a window built for one demo: its own controls, a live 3D view, the
-      prompts it waits on as buttons. Each one is a <code>missions/&lt;name&gt;.yaml</code> in the show's package
+      prompts it waits on as buttons. Each one is a <code>${'missions/<name>.yaml'}</code> in the show's package
       (docs/MISSIONS.md) -- add a file and it appears here.</p>
-    <div class="cards">${s.missions.map((m) => html`<a class=${'mcard ' + (m.error ? 'bad' : '')} href=${m.error ? undefined : '/mission?m=' + encodeURIComponent(m.id)}>
-      <div class="mt">${m.title}${m.running.length ? html` <span class="st running">running</span>` : ''}</div>
+    <div class="cards">${s.missions.map((m) => html`<a class=${'mcard ' + (m.error ? 'bad' : '') + (m.build && !m.build.ok ? ' unbuilt' : '')} href=${m.error ? undefined : '/mission?m=' + encodeURIComponent(m.id)}>
+      <div class="mt">${m.title}${m.running.length ? html` <span class="st running">running</span>` : ''}
+        ${m.build && !m.build.ok ? html` <span class="st failed">${m.build.problems.length ? 'not built' : 'restart console'}</span>` : ''}</div>
       <div class="mid">${m.id}</div>
-      <div class="ms">${m.error ? 'cannot load: ' + m.error : m.summary}</div></a>`)}</div></div>`;
+      <div class="ms">${m.error ? 'cannot load: ' + m.error : m.summary}</div>
+      ${m.build && m.build.problems.length > 0 && html`<div class="ms warn">${m.build.problems.join('; ')}</div>`}</a>`)}</div>
+    ${s.unviewed.length > 0 && html`<h3 class="sect">Shows without a mission view</h3>
+      <p class="lead">Every script in a show package (anything that depends on crazyflie_py) that no${' '}
+        <code>missions/*.yaml</code> runs. They open in the generic window; a script declared in${' '}
+        <code>setup.cfg</code> but not built yet is listed too, with its build.</p>
+      <div class="cards small">${Object.entries(s.unviewed.reduce((g, u) => ((g[u.pkg] = g[u.pkg] || []).push(u), g), {}))
+        .sort(([a], [b]) => (a === 'crazyflie_examples') - (b === 'crazyflie_examples'))
+        .map(([pkg, list]) => html`<div class="mcard pkg"><div class="mt">${pkg}</div>
+          ${list.map((u) => html`<div class="urow">
+            ${u.runnable
+              ? html`<a href=${'/mission?m=console/script&script=' + encodeURIComponent(u.pkg + ' ' + u.exe)}>${u.exe}</a>`
+              : html`<span>${u.exe}</span> <span class="st failed">${u.built ? 'restart console' : 'not built'}</span>`}</div>`)}
+          ${list.some((u) => !u.built) && html`<button class="btn primary sm" onClick=${() => buildPkg(pkg)}>Build ${pkg}</button>`}
+        </div>`)}</div>`}
+    </div>`;
 }
 
 let CUSTOM = null;

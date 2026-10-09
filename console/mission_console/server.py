@@ -21,7 +21,7 @@ from urllib.parse import urlparse, parse_qs
 
 import yaml
 
-from . import catalog, configio, missions, usage
+from . import builds, catalog, configio, missions, usage
 from .health import Health
 from .procs import EventBus, ProcessManager, is_flight
 
@@ -77,7 +77,7 @@ class App:
     def missions(self):
         """Re-read when a spec file changes or a package is (re)built, so a
         new mission appears on the next page load with no console restart."""
-        key = (missions.signature(), catalog.scripts_signature())
+        key = (missions.signature(), catalog.scripts_signature(), builds.signature())
         if key != self._missions_cache[0]:
             self._missions_cache = (key, missions.discover())
         return self._missions_cache[1]
@@ -108,6 +108,13 @@ class App:
             if other:
                 raise ValueError(f'another flight script is running ({other.label}) -- '
                                  'stop it first: two scripts must never command the drones at once')
+        bs = missions.build_state(m)
+        if bs['problems']:
+            raise ValueError('not built: ' + '; '.join(bs['problems']) +
+                             f' -- run {bs["build_cmd"]}, then restart the console')
+        if bs['restart_console']:
+            raise ValueError('built after this console started, so `ros2 run` from here '
+                             'cannot see it -- restart ./console/run.sh')
         argv, cmdline, label = missions.build(m, role, values, sim=sim)
         proc = self.procs.start(aid, label, argv, kind='service' if role != 'main' else 'task',
                                 note=m['summary'])
@@ -293,7 +300,7 @@ class Handler(BaseHTTPRequestHandler):
                     'procs': APP.procs.list(),
                     'history': APP.history,
                     'repo': REPO,
-                    'missions': [_mission_card(m) for m in APP.missions()],
+                    'missions': _mission_cards(),
                     'prefs': usage.load_prefs(),
                     'usage': usage.summary(days=30, labels=APP.labels()),
                     'env': {
@@ -334,7 +341,10 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith('/mission-assets/'):
                 return self._mission_asset(path[len('/mission-assets/'):])
             if path == '/api/missions':
-                return self._json({'missions': [_mission_card(m) for m in APP.missions()]})
+                st = builds.status()
+                return self._json({'missions': _mission_cards(st),
+                                   'unviewed': missions.unviewed(APP.missions(), st),
+                                   'packages': st})
             if path == '/api/mission':
                 mid = (query.get('id') or [''])[0]
                 try:
@@ -344,6 +354,7 @@ class Handler(BaseHTTPRequestHandler):
                 except missions.SpecError as exc:
                     return self._json({'error': str(exc)}, 422)
                 return self._json({'mission': missions.public(m),
+                                   'build': missions.build_state(m),
                                    'procs': APP.mission_procs(mid)})
             if path == '/api/arena':
                 return self._json(_arena())
@@ -561,9 +572,16 @@ def _edit_kv(body):
     return {'ok': True, 'written': bool(bak), 'backup': bak, 'diff': applied}
 
 
-def _mission_card(m):
-    """The list entry for a mission: enough to show and open it."""
+def _mission_cards(statuses=None):
+    st = statuses if statuses is not None else builds.status()
+    return [_mission_card(m, st) for m in APP.missions()]
+
+
+def _mission_card(m, statuses):
+    """The list entry for a mission: enough to show and open it -- and whether
+    its scripts are built (a new show declared but not built says so here)."""
     return {'id': m['id'], 'pkg': m.get('pkg'), 'title': m.get('title'),
+            'build': None if m.get('error') else missions.build_state(m, statuses),
             'summary': m.get('summary', ''), 'error': m.get('error'),
             'builtin': bool(m.get('builtin')),
             'flight': m.get('flight', True),

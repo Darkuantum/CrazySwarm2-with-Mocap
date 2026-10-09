@@ -637,10 +637,13 @@ Everything in sections 4–7 can also be driven from a browser:
 
 It sources ROS and this workspace for you, then runs the **same `ros2` commands**
 as child processes — and shows each one before it runs, so you can copy it into a
-terminal instead of memorising it. Six tabs (Dashboard is the default):
+terminal instead of memorising it. Five tabs (Dashboard is the default):
 
 - **Dashboard** — per-drone tiles (supervisor state in words, battery, link),
-  a "needs attention" row and the session steps as buttons.
+  a "needs attention" row, the session steps (one at a time, following the
+  rig), a row of **mission windows** — a dashboard per demo, defined by a
+  `missions/*.yaml` in the show package ([docs/MISSIONS.md](docs/MISSIONS.md)) —
+  and the live output of everything it started, with stop/kill and a stdin line.
 - **System health** — a diagram of the real data path (workspace → config →
   radio + Motive → `/poses` → `crazyflie_server` → each drone). Each box is its
   own probe; click one for what was measured, the command behind it and the fix.
@@ -655,7 +658,6 @@ terminal instead of memorising it. Six tabs (Dashboard is the default):
 - **Config** — edit `crazyflies.yaml` as a table (enable/disable, URI,
   `initial_position`, type, add/remove a drone) or any config file as raw text.
   Writes are parse-checked, diffed, backed up, and **keep the comments**.
-- **Processes** — live output of everything it started, with stop/kill.
 - **Command log** — every command of the session, downloadable as a runnable
   shell script.
 

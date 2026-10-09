@@ -251,6 +251,24 @@ def build_catalog(fleet):
             argv.append(f'mocap_hostname:={v["mocap_hostname"]}')
         return argv
 
+    stack_params = [
+        p('backend', 'backend', 'select', 'cpp', ['cpp', 'cflib', 'sim'],
+          'cpp = the real drones over the Crazyradio. sim = no hardware, no mocap.'),
+        p('mocap', 'mocap', 'select', 'True', ['True', 'False'],
+          'False skips motion_capture_tracking entirely (no /poses).'),
+        p('rviz', 'rviz', 'select', 'True', ['True', 'False']),
+        p('preflight', 'preflight GUI', 'select', 'True', ['True', 'False']),
+        p('foxglove', 'foxglove bridge', 'select', 'True', ['True', 'False'],
+          'Not a window: connect Foxglove Studio to ws://localhost:8765. The mission '
+          'windows\' 3D view needs it too.'),
+        p('teleop', 'teleop + joy', 'select', 'True', ['True', 'False'],
+          'Set False when a script wants sole control of the drones.'),
+        p('gui', 'upstream gui.py', 'select', 'False', ['True', 'False']),
+        p('debug', 'debug (gdb in xterm)', 'select', 'False', ['True', 'False']),
+        p('mocap_hostname', 'Motive IP override', 'text', '', None,
+          'Empty = use motion_capture.yaml ("auto" there = NatNet discovery ping).'),
+    ]
+
     acts.append(action(
         'launch.stack', 'Launch', 'Start the stack', launch_build,
         why='Starts everything in one process tree: mocap tracking, the crazyflie '
@@ -259,23 +277,42 @@ def build_catalog(fleet):
         teaches='`ros2 launch <package> <file>` runs a launch file. Everything after '
                 'it is a launch ARGUMENT in name:=value form -- that is launch syntax, '
                 'not shell syntax, so there are no spaces around :=.',
-        kind='service', requires='server_stopped', docs='docs/RUNNING.md',
-        params=[
-            p('backend', 'backend', 'select', 'cpp', ['cpp', 'cflib', 'sim'],
-              'cpp = the real drones over the Crazyradio. sim = no hardware, no mocap.'),
-            p('mocap', 'mocap', 'select', 'True', ['True', 'False'],
-              'False skips motion_capture_tracking entirely (no /poses).'),
-            p('rviz', 'rviz', 'select', 'True', ['True', 'False']),
-            p('preflight', 'preflight GUI', 'select', 'True', ['True', 'False']),
-            p('foxglove', 'foxglove bridge', 'select', 'True', ['True', 'False'],
-              'Not a window: connect Foxglove Studio to ws://localhost:8765.'),
-            p('teleop', 'teleop + joy', 'select', 'True', ['True', 'False'],
-              'Set False when a script wants sole control of the drones.'),
-            p('gui', 'upstream gui.py', 'select', 'False', ['True', 'False']),
-            p('debug', 'debug (gdb in xterm)', 'select', 'False', ['True', 'False']),
-            p('mocap_hostname', 'Motive IP override', 'text', '', None,
-              'Empty = use motion_capture.yaml ("auto" there = NatNet discovery ping).'),
-        ]))
+        kind='service', requires='stack_stopped', docs='docs/RUNNING.md',
+        params=stack_params))
+
+    def mocap_only_build(v):
+        argv = ['ros2', 'launch', 'crazyflie', 'launch.py', 'server:=False',
+                f'rviz:={v.get("rviz")}', f'foxglove:={v.get("foxglove")}']
+        if v.get('mocap_hostname'):
+            argv.append(f'mocap_hostname:={v["mocap_hostname"]}')
+        return argv
+
+    acts.append(action(
+        'launch.mocap', 'Launch', 'Start mocap only (no server)', mocap_only_build,
+        why='Mocap, RViz and the bridge with NO crazyflie_server: nothing owns the radio and '
+            'nothing can be armed. This is the state the position sync wants -- it reads '
+            '/poses, and the server reads crazyflies.yaml only when IT starts, so syncing '
+            'before the server exists means the server starts with the new marks. Follow '
+            'with "Restart with the server".',
+        teaches='server:=False is a launch argument of crazyflie/launch.py. The preflight GUI '
+                'is left off: with no server there is nothing for it to show.',
+        kind='service', requires='stack_stopped', docs='docs/MOCAP.md#2b-setting-initial_position-from-poses',
+        params=[q for q in stack_params if q['name'] in ('rviz', 'foxglove', 'mocap_hostname')]))
+
+    acts.append(action(
+        'launch.restart', 'Launch', 'Restart with the server',
+        lambda v: _bashc('./console/stop_stack.sh && exec ' +
+                         ' '.join(shlex.quote(a) for a in launch_build(v))),
+        why='Stops whatever stack is running (mocap-only included) with stop_stack.sh -- which '
+            'VERIFIES UDP 1511 is released -- then starts the full stack, so the server reads '
+            'the crazyflies.yaml you just synced. Doing it as one command closes the window '
+            'where a second launch could start a second mocap node on 1511, the silent '
+            'starvation bug.',
+        teaches='`a && exec b`: b runs only if a succeeded, and exec replaces the shell with '
+                'the launch, so Stop on this process signals the launch itself.',
+        kind='service', requires='any', danger='flight',
+        confirm='Restart the stack? Anything flying loses its commander -- land first.',
+        docs='docs/RUNNING.md', params=stack_params))
 
     acts.append(action(
         'launch.sim', 'Launch', 'Start the simulator stack',
@@ -285,7 +322,7 @@ def build_catalog(fleet):
         teaches='Same launch file, one argument different. Flight scripts then need '
                 '--ros-args -p use_sim_time:=true, because the sim clock runs ~4x '
                 'slower than wall time.',
-        kind='service', requires='server_stopped', docs='docs/RUNNING.md#a-simulation-no-hardware-no-mocap'))
+        kind='service', requires='stack_stopped', docs='docs/RUNNING.md#a-simulation-no-hardware-no-mocap'))
 
     acts.append(action(
         'launch.stop', 'Launch', 'Stop the stack', 
@@ -463,7 +500,10 @@ def build_catalog(fleet):
         'pos.sync_dry', 'Fleet position', 'Preview initial_position sync',
         lambda v: ['python3', 'scripts/sync_initial_positions.py', '--dry-run'],
         why='Samples the live /poses stream and shows what initial_position WOULD become '
-            'for every enabled drone. Mocap must be up; the server should not be.',
+            'for every drone mocap streams. Needs mocap UP ("Start mocap only"); the server '
+            'should not be running, because it read the yaml when it started and will not '
+            'see the new marks until it restarts.',
+        requires='mocap_running',
         teaches='initial_position seeds the onboard estimate at connect. It must come '
                 'from /poses (the mocap\'s view), never from /cfX/pose -- the onboard '
                 'estimate was seeded by this same yaml, so copying it back is circular.',
@@ -474,8 +514,9 @@ def build_catalog(fleet):
         lambda v: ['python3', 'scripts/sync_initial_positions.py', '--yes'],
         why='Writes the measured positions into crazyflies.yaml (comments preserved). It '
             'REFUSES if a drone is not streamed, is moving, sits above 0.5 m, or if two '
-            'drones are under 1 m apart. Restart the server afterwards -- the yaml is '
-            'read only at launch.',
+            'drones are under 1 m apart. Then "Restart with the server" -- the yaml is '
+            'read only at launch. Re-run the show\'s planner after every sync.',
+        requires='mocap_running',
         confirm='This rewrites crazyflies.yaml from the live mocap. Continue?',
         docs='docs/MOCAP.md#2b-setting-initial_position-from-poses'))
 

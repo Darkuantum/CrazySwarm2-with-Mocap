@@ -160,6 +160,72 @@ class Usage(unittest.TestCase):
         self.assertNotIn('junk', p)
 
 
+class Builds(unittest.TestCase):
+    """builds.py against a fake src/ + install/ tree."""
+
+    def setUp(self):
+        from mission_console import builds
+        self.b = builds
+        self.tmp = tempfile.TemporaryDirectory()
+        root = self.tmp.name
+        self.saved = (builds.SRC, builds.INSTALL, builds.REPO)
+        builds.SRC, builds.INSTALL, builds.REPO = (os.path.join(root, 'src'),
+                                                   os.path.join(root, 'install'), root)
+        src = os.path.join(root, 'src', 'myshows')
+        os.makedirs(os.path.join(src, 'myshows'))
+        with open(os.path.join(src, 'package.xml'), 'w') as fh:
+            fh.write('<package><name>myshows</name><exec_depend>crazyflie_py</exec_depend></package>')
+        with open(os.path.join(src, 'setup.cfg'), 'w') as fh:
+            fh.write('[options.entry_points]\nconsole_scripts =\n'
+                     '    old_show = myshows.old_show:main\n    new_show = myshows.new_show:main\n')
+        for mod, body in (('old_show', 'from myshows import util\n'), ('util', ''),
+                          ('new_show', 'from . import fresh\n'), ('fresh', '')):
+            with open(os.path.join(src, 'myshows', mod + '.py'), 'w') as fh:
+                fh.write(body)
+        self.src = src
+
+    def tearDown(self):
+        self.b.SRC, self.b.INSTALL, self.b.REPO = self.saved
+        self.tmp.cleanup()
+
+    def install(self, exes, mods):
+        inst = os.path.join(self.b.INSTALL, 'myshows')
+        os.makedirs(os.path.join(inst, 'share', 'myshows'), exist_ok=True)
+        open(os.path.join(inst, 'share', 'myshows', 'package.xml'), 'w').close()
+        os.makedirs(os.path.join(inst, 'lib', 'myshows'), exist_ok=True)
+        moddir = os.path.join(inst, 'local', 'lib', 'python3.10', 'dist-packages', 'myshows')
+        os.makedirs(moddir, exist_ok=True)
+        for e in exes:
+            open(os.path.join(inst, 'lib', 'myshows', e), 'w').close()
+        for m in mods:
+            open(os.path.join(moddir, m), 'w').close()
+
+    def test_never_built(self):
+        (st,) = self.b.status()
+        self.assertFalse(st['installed'])
+        self.assertIn('never built', st['problems'][0])
+        self.assertEqual(st['build_cmd'], './scripts/build.sh myshows')
+
+    def test_new_script_and_module(self):
+        self.install(['old_show'], ['old_show.py', 'util.py'])
+        (st,) = self.b.status()
+        self.assertEqual(st['missing_exes'], ['new_show'])
+        self.assertEqual(st['new_modules'], ['fresh.py', 'new_show.py'])
+        self.assertFalse(st['built'])
+
+    def test_fully_built(self):
+        self.install(['old_show', 'new_show'],
+                     ['old_show.py', 'util.py', 'new_show.py', 'fresh.py'])
+        (st,) = self.b.status()
+        self.assertTrue(st['built'], st['problems'])
+
+    def test_imports_decide_which_scripts_a_new_module_breaks(self):
+        self.assertEqual(self.b.script_modules('myshows', self.src, 'old_show'),
+                         {'old_show.py', 'util.py'})
+        self.assertEqual(self.b.script_modules('myshows', self.src, 'new_show'),
+                         {'new_show.py', 'fresh.py'})
+
+
 class Procs(unittest.TestCase):
     CHILD = textwrap.dedent('''
         import signal, sys, time

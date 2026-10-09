@@ -825,6 +825,19 @@ it. These rules hold it together; keep them when editing:
   Dashboard.** A test console must set `MISSION_CONSOLE_USAGE_DIR` so its clicks
   are not mistaken for the operator's. The Dashboard shows ONE session step at a
   time (the stepper follows the rig), pins beside it, More ranked by this log.
+  Five steps: before the server (scan, battery, **Start mocap only** =
+  `server:=False`) → **fleet positions** (sync needs mocap UP; the server reads
+  the yaml only at start, so **Restart with the server** = `stop_stack.sh && exec
+  ros2 launch ...` follows) → bring it up → check → fly. Every launch requires
+  `stack_stopped` (server OR mocap): a second launch beside a mocap-only one is a
+  second mocap node on UDP 1511. There is **no Processes tab** (folded into the
+  Dashboard output pane with stdin, 2026-10-09) and **no UI-zoom control** (the
+  user uses browser zoom).
+- **`builds.py`: is every show in src/ built?** New package / new setup.cfg
+  script / new module file are invisible under `--symlink-install` until a build.
+  Surfaced as health node `env.shows`, *not built* mission chips, a Build button
+  in the mission window, and "Shows without a mission view" in `/mission`. A new
+  module blocks only scripts whose same-package import closure (ast) needs it.
 - **`health.py` is where the Gotchas above become executable.** Each known silent
   failure is a graph node (UDP 1511 starvation, apt mocap driver shadowing, server
   blocked mid-connect with no `/all/*`, datarate mismatch, conda python). Adding a

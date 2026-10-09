@@ -220,6 +220,13 @@ a{color:var(--accent)}
 .mid{font:11px var(--mono);color:var(--muted);margin:2px 0 6px}
 .ms{color:var(--fg2);font-size:12.5px}
 .fatal{padding:30px;color:var(--fg2)}
+.mcard.unbuilt{border-color:rgba(216,161,29,.55)}
+.ms.warn{color:#f2c75a;margin-top:4px}
+.sect{margin:26px 0 4px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--fg2)}
+.cards.small{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+.mcard.pkg{cursor:default;display:flex;flex-direction:column;gap:3px}
+.mcard.pkg:hover{transform:none}
+.mcard.pkg .urow{font:12px var(--mono)} .mcard.pkg .btn{align-self:flex-start;margin-top:6px}
 
 /* -------------------------------------------------------------- modal */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:50}

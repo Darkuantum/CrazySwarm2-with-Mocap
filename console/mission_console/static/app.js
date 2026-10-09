@@ -10,7 +10,7 @@
 
 const S = {
   catalog: [], groups: [], files: [], health: null, procs: [], history: [],
-  lines: {}, selNode: null, selGroup: null, selFile: 'crazyflies', selProc: null, factsSig: '',
+  lines: {}, selNode: null, selGroup: null, selFile: 'crazyflies', factsSig: '', follow: true,
   cfg: {}, repo: '', env: {}, dashProc: null, checkedAt: 0, checkedFullAt: 0,
   missions: [], prefs: { pins: [] }, usage: null, step: null, stepAuto: null,
 };
@@ -84,7 +84,6 @@ async function boot() {
   const b = await api('/api/bootstrap');
   S.catalog = b.catalog; S.groups = b.groups; S.files = b.files;
   S.health = b.health; S.procs = b.procs; S.history = b.history;
-  if (S.procs.length) S.selProc = S.procs[S.procs.length - 1].id;   // show the newest on load
   S.repo = b.repo; S.env = b.env;
   S.missions = b.missions || []; S.prefs = b.prefs || { pins: [] }; S.usage = b.usage || null;
   if (!Array.isArray(S.prefs.pins)) S.prefs.pins = [];
@@ -154,7 +153,6 @@ function renderTabs() {
     catch (e) { toast(e.message, 'err'); }
     finally { $('#btn-refresh').disabled = false; }
   };
-  wireZoom();
   wirePalette();
   $('#btn-keys').onclick = openKeyHelp;
   $('#btn-more').onclick = (e) => { e.stopPropagation(); if ($('#morepop').hidden) openMore(); else closeMore(); };
@@ -165,39 +163,7 @@ function renderTabs() {
   });
   $('#btn-estop').onclick = fireEstop;
   $('#btn-scan').onclick = scanFleet;
-  $('#btn-send').onclick = sendStdin;
-  $('#stdin').onkeydown = (e) => { if (e.key === 'Enter') sendStdin(); };
-}
-
-/* --------------------------------------------------------------- ui scale */
-/* Remembered here rather than relying on browser zoom, which is per-site and
- * silently lost when you open the console from a different host or profile. */
-const ZOOM_STEPS = [0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5];
-
-function applyZoom(z) {
-  document.documentElement.style.setProperty('--ui-zoom', String(z));
-  const pct = Math.round(z * 100) + '%';
-  const b = $('#btn-zoom-reset');
-  if (b) b.textContent = pct;
-  try { localStorage.setItem('mc_zoom', String(z)); } catch (e) { /* private mode */ }
-}
-
-function currentZoom() {
-  let z = 1;
-  try { z = parseFloat(localStorage.getItem('mc_zoom')) || 1; } catch (e) { z = 1; }
-  return ZOOM_STEPS.includes(z) ? z : 1;
-}
-
-function wireZoom() {
-  const step = (dir) => {
-    const i = ZOOM_STEPS.indexOf(currentZoom());
-    const next = ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, i + dir))];
-    applyZoom(next);
-  };
-  $('#btn-zoom-out').onclick = () => step(-1);
-  $('#btn-zoom-in').onclick = () => step(1);
-  $('#btn-zoom-reset').onclick = () => applyZoom(1.0);
-  applyZoom(currentZoom());
+  $('#dc-stdin').onsubmit = (e) => { e.preventDefault(); sendStdin(); };
 }
 
 /* ------------------------------------------------------------- top bar */
@@ -449,11 +415,19 @@ const DASH = [
   { title: 'Before the server', sub: 'needs the radio free', items: [
     { id: 'check.scan_all', label: 'Scan the fleet' },
     { id: 'check.battery', label: 'Battery', params: ['drone'] },
-    { id: 'pos.sync_dry', label: 'Preview position sync' },
-    { id: 'pos.sync_apply', label: 'Apply position sync' },
+    { id: 'launch.mocap', label: 'Start mocap only' },
+  ] },
+  /* The sync reads /poses, so mocap must be UP -- and the server reads
+   * crazyflies.yaml only when it starts, so it must start AFTER the sync.
+   * Hence its own step between the two: mocap only, sync, then restart. */
+  { title: 'Fleet positions', sub: 'mocap up, no server: sync, then restart', items: [
+    { id: 'pos.sync_dry', label: 'Preview sync' },
+    { id: 'pos.sync_apply', label: 'Apply sync' },
+    { id: 'launch.restart', label: 'Restart with the server' },
   ] },
   { title: 'Bring it up', items: [
     { id: 'launch.stack', label: 'Start the stack', params: ['backend'] },
+    { id: 'launch.restart', label: 'Restart' },
     { id: 'launch.stop', label: 'Stop the stack' },
   ] },
   { title: 'Check', items: [
@@ -514,8 +488,8 @@ function openCard(actionId) {
   }
 }
 function openProc(id) {
-  S.selProc = id;
-  gotoTab('procs');
+  S.dashProc = id;
+  gotoTab('dash');
   renderProcs();
 }
 function go(target) {
@@ -649,34 +623,79 @@ function dashActivity() {
         p.returncode != null && p.state !== 'running' ? ' ' + p.returncode : ''}</span></a>`).join('');
 }
 
+/* The output pane is the console's only process view (the Processes tab was
+ * folded in here on 2026-10-09): stop, kill, copy, follow, and the stdin line.
+ * New lines are APPENDED, so scrolling back through a long log is not undone
+ * by the next line arriving. */
+const OUT_MAX = 2000;
 function dashOutput() {
   const head = $('#dashouthead'); const tail = $('#dashtail');
   if (!head || !tail) return;
   const p = S.procs.find((x) => x.id === dashProcId());
+  const form = $('#dc-stdin');
   if (!p) {
     head.innerHTML = '';
+    tail.dataset.proc = '';
     tail.innerHTML = '<div class="dc-empty"><span class="big">No output yet.</span>' +
       'Run anything above and it streams here &mdash; without leaving the dashboard.</div>';
+    if (form) form.hidden = true;
     return;
   }
-  head.innerHTML = `<span class="nm">${esc(clip(p.label, 26))}</span>
-    <span class="st ${esc(p.state)}">${esc(p.state)}</span>
-    <span class="cmd" title="${esc(p.cmdline)}">${esc(p.cmdline)}</span>
-    ${p.state === 'running' || p.state === 'stopping'
-      ? `<button class="btn ghost sm" onclick="window.__stop('${esc(p.id)}',false)">Stop</button>` : ''}
-    <a class="hlink" data-go="proc:${esc(p.id)}">full output &rarr;</a>`;
+  const live = p.state === 'running' || p.state === 'stopping';
+  const headSig = `${p.id}|${p.state}|${p.returncode}`;
+  if (head.dataset.sig !== headSig) {
+    head.dataset.sig = headSig;
+    head.innerHTML = `<span class="nm">${esc(clip(p.label, 26))}</span>
+      <span class="st ${esc(p.state)}">${esc(p.state)}${p.returncode != null && !live ? ' ' + p.returncode : ''}</span>
+      <span class="cmd" title="${esc(p.cmdline)}">${esc(p.cmdline)}</span>
+      ${live ? `<button class="btn ghost sm" onclick="window.__stop('${esc(p.id)}',false)"
+          title="SIGINT to the process group, escalating to SIGTERM and SIGKILL (a flight script gets 15 s first)">Stop</button>
+        <button class="btn danger sm" onclick="window.__stop('${esc(p.id)}',true)" title="SIGKILL now">Kill</button>` : ''}
+      <button class="btn ghost sm" onclick="window.__copy('${esc(p.id)}')">Copy</button>
+      <label class="chk" title="keep the newest line in view"><input type="checkbox" id="dc-follow" ${S.follow === false ? '' : 'checked'}> follow</label>`;
+    const fl = $('#dc-follow');
+    if (fl) fl.onchange = () => { S.follow = fl.checked; if (fl.checked) tail.scrollTop = tail.scrollHeight; };
+  }
+  if (form) form.hidden = !live;
   const rows = S.lines[p.id];
-  if (!rows) { loadProcLines(p.id); tail.innerHTML = '<span class="l-meta">loading output...</span>'; return; }
-  const near = tail.scrollHeight - tail.scrollTop - tail.clientHeight < 40;
-  tail.innerHTML = rows.slice(-80).map((l) =>
-    `<span class="${lineClass(l.text)}">${esc(l.text)}</span>`).join('\n') ||
-    '<span class="l-meta">waiting for output...</span>';
-  if (near) tail.scrollTop = tail.scrollHeight;
+  if (!rows) { tail.dataset.proc = ''; loadProcLines(p.id); tail.innerHTML = '<span class="l-meta">loading output...</span>'; return; }
+  const follow = S.follow !== false;
+  const line = (l) => `<div class="${lineClass(l.text)}">${esc(l.text) || '&nbsp;'}</div>`;
+  const lastSeq = Number(tail.dataset.seq || 0);
+  if (tail.dataset.proc !== p.id || !rows.length || rows[0].seq > lastSeq + 1 && lastSeq) {
+    tail.dataset.proc = p.id;
+    tail.innerHTML = rows.slice(-OUT_MAX).map(line).join('') ||
+      '<span class="l-meta">waiting for output...</span>';
+  } else {
+    const fresh = rows.filter((l) => l.seq > lastSeq);
+    if (fresh.length) {
+      if (!tail.querySelector('div')) tail.innerHTML = '';
+      tail.insertAdjacentHTML('beforeend', fresh.map(line).join(''));
+      while (tail.childElementCount > OUT_MAX) tail.firstElementChild.remove();
+    }
+  }
+  tail.dataset.seq = rows.length ? rows[rows.length - 1].seq : 0;
+  if (p.partial) {
+    let pr = $('.dc-partial', tail);
+    if (!pr) { pr = document.createElement('div'); pr.className = 'dc-partial l-gate'; tail.appendChild(pr); }
+    pr.textContent = p.partial;
+  } else { const pr = $('.dc-partial', tail); if (pr) pr.remove(); }
+  if (follow) tail.scrollTop = tail.scrollHeight;
 }
 
 function dashBlocked(a, f) {
-  if (a.requires === 'server_running' && !f.server_running) return 'needs the server running';
-  if (a.requires === 'server_stopped' && f.server_running) return 'the server owns the radio -- stop it first';
+  return blockedWhy(a.requires, f);
+}
+/* One sentence per precondition, used by the dashboard, the cards and the
+ * confirm step alike. */
+function blockedWhy(req, f) {
+  if (req === 'server_running' && !f.server_running) return 'needs the server running';
+  if (req === 'server_stopped' && f.server_running) return 'the server owns the radio -- stop it first';
+  if (req === 'mocap_running' && !f.mocap_running) return 'needs mocap up -- "Start mocap only" first';
+  if (req === 'stack_stopped' && (f.server_running || f.mocap_running)) {
+    return f.server_running ? 'a stack is already running -- stop it, or use "Restart with the server"'
+      : 'mocap-only is running -- use "Restart with the server" (a second launch would start a second mocap node on UDP 1511)';
+  }
   return '';
 }
 
@@ -719,11 +738,13 @@ function autoStep() {
   const f = (S.health && S.health.facts) || {};
   const node = (id) => ((S.health && S.health.nodes) || []).find((n) => n.id === id);
   if (!f.server_running) {
-    const scan = node('radio.drones');
-    return scan && scan.status === 'ok' ? 1 : 0;
+    if (f.mocap_running) return 1;               // mocap only: the sync step
+    // nothing up: stay here -- "Start mocap only" (the route with the sync)
+    // is in this step; "Bring it up" is one click for a launch without a sync
+    return 0;
   }
   const srv = node('server.services');
-  return srv && srv.status === 'ok' ? 3 : 2;
+  return srv && srv.status === 'ok' ? 4 : 3;
 }
 function currentStep() {
   const auto = autoStep();
@@ -791,10 +812,7 @@ function renderSession() {
     const items = DASH[cur].items.filter((it) => byId[it.id]);
     $('#dacts').innerHTML = items.map((it) => qaHtml(it, byId[it.id])).join('') +
       '<span class="qa-why dacts-why"></span>';
-    items.forEach((it) => {
-      const el = $(`#dacts .qa[data-qa="${CSS.escape(it.id)}"]`);
-      if (el) wireQa(el, byId[it.id], 'dash');
-    });
+    $$('#dacts .qa').forEach((el, i) => wireQa(el, byId[items[i].id], 'dash'));
   }
   renderPins();
   renderBlocked();
@@ -909,14 +927,19 @@ function renderMissions() {
   if (!el) return;
   const running = new Set(S.procs.filter((p) => p.state === 'running' || p.state === 'stopping')
     .map((p) => (p.action_id.match(/^mission:(.+):[^:]+$/) || [])[1]).filter(Boolean));
-  const sig = JSON.stringify([S.missions.map((m) => [m.id, m.error]), [...running]]);
+  const sig = JSON.stringify([S.missions.map((m) => [m.id, m.error, m.build && m.build.ok]), [...running]]);
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
   el.innerHTML = `<span class="dm-label" title="Each one is missions/<name>.yaml in a show package (docs/MISSIONS.md)">Missions</span>` +
-    S.missions.map((m) => `<button class="mchip ${m.error ? 'bad' : ''} ${running.has(m.id) ? 'live' : ''} ${m.builtin ? 'generic' : ''}"
+    S.missions.map((m) => {
+      const nb = m.build && !m.build.ok;
+      const why = nb ? (m.build.problems.length ? 'NOT BUILT: ' + m.build.problems.join('; ') + '\nfix: ' + m.build.build_cmd
+        : 'built after this console started -- restart ./console/run.sh') + '\n\n' : '';
+      return `<button class="mchip ${m.error ? 'bad' : ''} ${nb ? 'unbuilt' : ''} ${running.has(m.id) ? 'live' : ''} ${m.builtin ? 'generic' : ''}"
       data-mission="${esc(m.id)}" ${m.error ? 'disabled' : ''}
-      title="${esc(m.error ? 'cannot load: ' + m.error : (m.summary || m.title) + '\n\nopens in its own window')}">
-      ${running.has(m.id) ? '<span class="livedot"></span>' : ''}${esc(m.title)}<span class="ext">&#8599;</span></button>`).join('') +
+      title="${esc(m.error ? 'cannot load: ' + m.error : why + (m.summary || m.title) + '\n\nopens in its own window')}">
+      ${running.has(m.id) ? '<span class="livedot"></span>' : ''}${esc(m.title)}${nb ? '<span class="nb">not built</span>' : ''}<span class="ext">&#8599;</span></button>`;
+    }).join('') +
     `<a class="hlink dm-all" href="/mission" target="mission-picker">all</a>`;
   $$('#dmissions [data-mission]').forEach((b) => { b.onclick = () => openMission(b.dataset.mission); });
 }
@@ -950,6 +973,8 @@ function cardHtml(a, f) {
     warn = 'The crazyflie_server is not running, so this has nothing to talk to.';
   } else if (a.requires === 'server_stopped' && f.server_running) {
     warn = 'The server is running and owns the Crazyradio. Stop the stack first, or this will fail.';
+  } else if (blockedWhy(a.requires, f)) {
+    warn = blockedWhy(a.requires, f) + '.';
   }
   return `<div class="card" data-act="${esc(a.id)}">
     <h3>${esc(a.label)} ${tags.join(' ')}</h3>
@@ -1033,7 +1058,7 @@ function estopBanner(kind, title, detail, procId) {
       <button class="btn ghost sm" data-eb-close>dismiss</button></div>`;
   b.hidden = false;
   const po = $('[data-eb-proc]', b);
-  if (po) po.onclick = () => { S.selProc = po.dataset.ebProc; renderProcs(); gotoTab('procs'); };
+  if (po) po.onclick = () => openProc(po.dataset.ebProc);
   $('[data-eb-close]', b).onclick = () => { b.hidden = true; };
 }
 
@@ -1135,6 +1160,9 @@ async function runAction(actionId, values, opts = {}) {
   if (a.requires === 'server_stopped' && f.server_running) {
     notes.push('<p class="warnline">The server is running and owns the radio; this will probably fail.</p>');
   }
+  if (['mocap_running', 'stack_stopped'].includes(a.requires) && blockedWhy(a.requires, f)) {
+    notes.push(`<p class="warnline">${esc(blockedWhy(a.requires, f))}.</p>`);
+  }
   if (a.danger !== 'none' || notes.length) {
     const ok = await confirmRun(a.label,
       `${notes.join('')}<p>This runs:</p><div class="cmdline">${esc(cmd)}</div>
@@ -1145,11 +1173,11 @@ async function runAction(actionId, values, opts = {}) {
   try {
     const p = await post('/api/run', { action_id: actionId, values,
       source: opts.source || ($('#tab-control').classList.contains('active') ? 'card' : 'other') });
-    upsertProc(p); S.selProc = p.id; S.lines[p.id] = S.lines[p.id] || [];
+    upsertProc(p); S.dashProc = p.id; S.lines[p.id] = S.lines[p.id] || [];
     bumpUsage(actionId);
     renderProcs();
     toast('started: ' + p.cmdline.slice(0, 70));
-    if (opts.stay) renderDashLive(); else gotoTab('procs');
+    if (opts.stay) renderDashLive(); else gotoTab('dash');      // its output is on the dashboard
   } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -1384,18 +1412,25 @@ function showDiff(sel, diff) {
 }
 
 /* ----------------------------------------------------------- processes */
+async function refreshMissions() {
+  try { S.missions = (await api('/api/missions')).missions; renderMissions(); } catch (e) { /* next sweep */ }
+}
+
 function upsertProc(p) {
+  const prev = S.procs.find((x) => x.id === p.id);
+  if (p.action_id === 'build.workspace' && prev && prev.state === 'running' && p.state !== 'running') refreshMissions();
   const i = S.procs.findIndex((x) => x.id === p.id);
   if (i >= 0) S.procs[i] = p; else S.procs.push(p);
   estopLate(p);
+  renderProcBadge();
   renderDashSoon();
-  if (!S.selProc) S.selProc = p.id;
 }
 
 function pushLine(ev) {
   (S.lines[ev.proc] = S.lines[ev.proc] || []).push({ seq: ev.seq, text: ev.text });
   if (S.lines[ev.proc].length > 3000) S.lines[ev.proc].splice(0, 500);
-  if (ev.proc === S.selProc) appendLine(ev.text);
+  const p = S.procs.find((x) => x.id === ev.proc);
+  if (p && p.partial) p.partial = '';
   renderDashSoon();
 }
 
@@ -1404,61 +1439,30 @@ function lineClass(t) {
   if (/^\[(console|exit)/.test(t)) return 'l-meta';
   if (/\b(error|ERROR|Traceback|FATAL|failed|refused|cannot)\b/.test(t)) return 'l-err';
   if (/\b(warn|WARN|WARNING)\b/.test(t)) return 'l-warn';
+  if (/^\s*>>>/.test(t)) return 'l-gate';
   return '';
 }
 
-function appendLine(text) {
-  const body = $('#outbody');
-  const span = document.createElement('span');
-  span.className = lineClass(text);
-  span.textContent = text + '\n';
-  body.appendChild(span);
-  if ($('#autoscroll').checked) body.scrollTop = body.scrollHeight;
-}
-
-function renderProcs() {
-  const alive = (p) => p.state === 'running' || p.state === 'stopping';
-  const live = S.procs.filter(alive).length;
+/* the count of live processes rides on the Dashboard tab */
+function renderProcBadge() {
+  const live = S.procs.filter((p) => p.state === 'running' || p.state === 'stopping').length;
   $('#proc-badge').textContent = live || '';
   document.body.classList.toggle('busy', live > 0);
-  $('#proclist').innerHTML = S.procs.slice().reverse().map((p) =>
-    `<button class="${p.id === S.selProc ? 'active' : ''}" data-p="${esc(p.id)}">
-      <div>${esc(clip(p.label, 26))}</div>
-      <div class="st ${p.state}">${esc(p.state)}${p.returncode != null && !alive(p) ? ' (' + p.returncode + ')' : ''}</div>
-    </button>`).join('') || '<div class="hint" style="padding:12px">Nothing has been run yet.</div>';
-  $$('#proclist button').forEach((b) => {
-    b.onclick = () => { S.selProc = b.dataset.p; renderProcs(); loadProcLines(b.dataset.p); };
-  });
-  const p = S.procs.find((x) => x.id === S.selProc);
-  $('#outhead').innerHTML = p
-    ? `<b>${esc(p.label)}</b><span class="st ${p.state}">${esc(p.state)}</span>
-       <div class="cmdline" style="flex:1 0 100%">${esc(p.cmdline)}</div>
-       ${alive(p)
-        ? `<button class="btn ghost sm" onclick="window.__stop('${p.id}',false)">Stop (SIGINT)</button>
-           <button class="btn danger sm" onclick="window.__stop('${p.id}',true)">Kill (SIGKILL)</button>` : ''}
-       <button class="btn ghost sm" onclick="window.__copy('${p.id}')">Copy command</button>`
-    : '<span class="hint">No process selected.</span>';
-  if (p && !S.lines[p.id]) loadProcLines(p.id);
-  else if (p) redrawLines();
 }
-
-function redrawLines() {
-  const body = $('#outbody');
-  body.textContent = '';
-  (S.lines[S.selProc] || []).forEach((l) => appendLine(l.text));
-}
+function renderProcs() { renderProcBadge(); renderDashSoon(); }
 
 async function loadProcLines(id) {
   try {
     const r = await api('/api/proc/' + id);
     S.lines[id] = r.lines.map((l) => ({ seq: l.seq, text: l.text }));
-    if (id === S.selProc) redrawLines();
+    const i = S.procs.findIndex((x) => x.id === id);
+    if (i >= 0) S.procs[i] = r.proc;
     renderDashSoon();
   } catch (e) { /* the process may have been pruned */ }
 }
 
 window.__stop = async (id, hard) => {
-  try { await post('/api/stop', { proc: id, hard }); toast(hard ? 'SIGKILL sent' : 'SIGINT sent'); }
+  try { await post('/api/stop', { proc: id, hard, source: 'dash' }); toast(hard ? 'SIGKILL sent' : 'SIGINT sent'); }
   catch (e) { toast(e.message, 'err'); }
 };
 window.__copy = (id) => {
@@ -1472,8 +1476,9 @@ function sendStdin() {
      Enter, so refusing to send one made every gate unreachable from here and
      operators typed a stray letter to get past it. Only a missing process is
      a reason not to send. */
-  if (!S.selProc) return;
-  post('/api/input', { proc: S.selProc, text: el.value + '\n' })
+  const id = dashProcId();
+  if (!id) return;
+  post('/api/input', { proc: id, text: el.value + '\n', source: 'dash' })
     .then(() => { el.value = ''; })
     .catch((e) => toast(e.message, 'err'));
 }
@@ -1535,7 +1540,7 @@ function renderUsage() {
  * SAME catalog action as the buttons -- including the confirm step, so Enter
  * can never quietly fly a drone. */
 const PAL_TABS = [['dash', 'Dashboard'], ['health', 'System health'], ['control', 'Control'],
-                  ['config', 'Config'], ['procs', 'Processes'], ['log', 'Command log']];
+                  ['config', 'Config'], ['log', 'Command log']];
 
 function palItems() {
   const out = [];
@@ -1672,7 +1677,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === '/') { e.preventDefault(); openPalette(); }
   else if (e.key === '?') { e.preventDefault(); if ($('#keyhelp').hidden) openKeyHelp(); else closeKeyHelp(); }
   else if (e.key === 'r') { $('#btn-refresh').click(); }
-  else if (/^[1-6]$/.test(e.key)) {
+  else if (/^[1-5]$/.test(e.key)) {
     const b = $$('#tabs button')[Number(e.key) - 1];
     if (b) b.click();
   }
