@@ -1,4 +1,5 @@
 #include <memory>
+#include <limits>
 #include <atomic>
 #include <mutex>
 #include <set>
@@ -735,9 +736,67 @@ public:
   {
     last_mocap_z_ = z;
     last_mocap_z_valid_ = true;
+    // C3, 2026-10-09: TIMESTAMPED. Without this, a body that vanished from
+    // /poses left last_mocap_z_ frozen at its final value forever, so
+    // may_be_airborne() kept answering from a reading of unknown age. The
+    // dangerous direction was already covered (a drone that vanishes while
+    // airborne reads z > 0.10 and still counts as airborne), but "I measured
+    // this at some point" is not the same claim as "this is where it is".
+    last_mocap_z_at_.store(std::chrono::steady_clock::now().time_since_epoch().count());
     if (z <= 0.10f) {
       commanded_flight_ = false;        // provably on the floor again
     }
+  }
+
+  //: C3: one WARN per transition when a drone that may be flying stops being
+  //: tracked. DETECTION ONLY -- it never commands. Landing from here would
+  //: issue a service call from a timer on callback_group_cf_srv, which is
+  //: fleet-wide and mutually exclusive and carries every drone's
+  //: land/takeoff/arm/emergency plus the 1 ms spin_once that dispatches all
+  //: log data; that is the documented wedge that cost a show on 2026-10-05.
+  //: The decision to land stays in the show, which owns the geometry.
+  void check_mocap_tracking()
+  {
+    const double age = mocap_age_s();
+    const bool lost = age > MOCAP_TRACKING_WARN_S;
+    if (lost == mocap_lost_warned_) {
+      return;                      // only on the transition, either direction
+    }
+    mocap_lost_warned_ = lost;
+    if (lost) {
+      if (commanded_flight_) {
+        RCLCPP_WARN(logger_,
+                    "[%s] NOT TRACKED: no /poses entry for %.1f s while it may "
+                    "be airborne. The onboard estimate is now dead-reckoning.",
+                    name_.c_str(), age);
+      } else {
+        RCLCPP_WARN(logger_,
+                    "[%s] not tracked: no /poses entry for %.1f s (not in "
+                    "commanded flight)", name_.c_str(), age);
+      }
+    } else {
+      RCLCPP_INFO(logger_, "[%s] tracking restored", name_.c_str());
+    }
+  }
+
+  //: Above this a drone counts as untracked for the warning above. Larger
+  //: than a dropped frame at 50 Hz, smaller than the show's own land trigger.
+  static constexpr double MOCAP_TRACKING_WARN_S = 0.3;
+
+  //: How old a mocap altitude may be and still be treated as knowledge.
+  static constexpr double MOCAP_Z_FRESH_S = 1.0;
+
+  //: Seconds since this drone was last seen on /poses, or infinity if never.
+  double mocap_age_s() const
+  {
+    const auto at = last_mocap_z_at_.load();
+    if (at == 0) {
+      return std::numeric_limits<double>::infinity();
+    }
+    const std::chrono::steady_clock::time_point t{
+        std::chrono::steady_clock::duration(at)};
+    return std::chrono::duration<double>(
+               std::chrono::steady_clock::now() - t).count();
   }
 
   uint8_t id() const
@@ -1242,9 +1301,14 @@ private:
   {
     if (commanded_flight_) return true;
     if (!last_mocap_z_valid_) return true;
+    // C3: a STALE reading is not evidence of being on the floor. Unknown
+    // altitude counts as airborne, which is the same rule an absent reading
+    // already followed.
+    if (mocap_age_s() > MOCAP_Z_FRESH_S) return true;
     if (last_mocap_z_ > 0.10f) return true;
     return false;
   }
+
 
   //: Create a log block AND remember how, so it can be created again later.
   void add_log_builder(std::function<void()> build)
@@ -1531,6 +1595,10 @@ private:
   std::atomic<bool> commanded_flight_{false};
   std::atomic<bool> last_mocap_z_valid_{false};
   std::atomic<float> last_mocap_z_{0.0f};
+  //: steady_clock ticks when last_mocap_z_ was written; 0 = never. Stored as
+  //: a raw count because std::atomic<time_point> is not lock-free everywhere.
+  std::atomic<std::chrono::steady_clock::duration::rep> last_mocap_z_at_{0};
+  bool mocap_lost_warned_{false};
   uint8_t period_pose_{0}, period_scan_{0}, period_odom_{0}, period_status_{0};
   std::vector<uint8_t> periods_generic_;
   std::chrono::steady_clock::time_point last_rebuild_attempt_{std::chrono::steady_clock::now()};
@@ -2066,6 +2134,17 @@ private:
     }
 
     mocap_data_received_timepoints_.clear();
+
+    // C3: per-drone tracking warning. The block above only ever reported the
+    // FLEET-WIDE mocap rate ("[all] Motion capture did not receive data!"),
+    // which stays silent while four drones stream and one vanishes -- the
+    // exact shape of the 2026-10-07 fly-away. Warn-only; see
+    // check_mocap_tracking().
+    for (auto &kv : crazyflies_) {
+      if (kv.second) {
+        kv.second->check_mocap_tracking();
+      }
+    }
 
     if (publish_stats_) {
 

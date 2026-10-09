@@ -156,7 +156,8 @@ from crazyflie_shows.escort_viz import EscortViz
 from crazyflie_shows.abort import ShowAborted, abort_land, take_signals
 from crazyflie_shows.constellation_show import cue
 from crazyflie_shows.preflight import report_supervisor
-from crazyflie_shows.swarm_show import _param, check_placement
+from crazyflie_shows.swarm_show import (_param, check_placement,
+                                        wait_for_mocap)
 
 #: wrgb8888 values for the Color LED deck. The adversary must be obviously
 #: different from every defender at a glance, from across the room, on video.
@@ -635,9 +636,17 @@ def main():
         print(f'    {what} at {np.round(cache.pos, 2).tolist()}\n')
 
     if want_placement and not sim:
-        print('  PLACEMENT CHECK (live pose vs initial_position)')
+        # C2: the drones themselves must be on /poses, not just the VIP. The
+        # `need` gate above only ever waited for the VIP body (and the
+        # adversary when `external`), so a defender whose Motive body was
+        # missing or misnamed sailed through preflight -- /cfX/pose is the
+        # yaml-seeded onboard estimate and looks healthy regardless.
+        print('  MOCAP CHECK (every flying drone must be on /poses)')
+        live = wait_for_mocap(node, list(names))
+        print('    all tracked\n')
+        print('  PLACEMENT CHECK (mocap vs initial_position)')
         check_placement(node, cfs, names, _YamlStarts(cfs),
-                        float(_param(node, 'placement_tol', 0.25)))
+                        float(_param(node, 'placement_tol', 0.25)), live=live)
         print('    all drones within tolerance\n')
 
     # ------------------------------------------------- supervisor go/no-go
@@ -902,7 +911,23 @@ def main():
                 pairs.append((adv_drone, adv_guard.sp))
             for name, sp_c in pairs:
                 if name not in poses.stamp:
-                    continue        # never tracked: sim, or reported elsewhere
+                    # C1, 2026-10-09. This used to `continue` unconditionally,
+                    # which meant a drone NEVER seen on /poses in a session was
+                    # skipped by the watchdog FOREVER -- no hold, no land, for
+                    # the whole flight. The machinery below already handles it
+                    # (poses.age() returns inf for an unseen name and
+                    # contain_check lands at self_stale_land_s), so the guard
+                    # was the only thing standing between a misnamed or
+                    # missing Motive body and an uncontained drone. That is
+                    # the configuration that produced the 2026-10-07 fly-away.
+                    # Skipping is correct ONLY in sim, where there is no
+                    # /poses at all; on hardware an untracked drone is the
+                    # hazard, not an absence of information.
+                    if sim:
+                        continue
+                    return 'land', (f'{name}: never seen on /poses -- no mocap '
+                                    'body with that name, so nothing can '
+                                    'contain it')
                 act, why = escort.contain_check(
                     cfg, poses.pos.get(name), poses.age(name, now_c),
                     sp_c, dt_c, _watch[name])

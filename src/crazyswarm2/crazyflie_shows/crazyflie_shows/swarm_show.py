@@ -38,6 +38,8 @@ Parameters (``--ros-args -p name:=value``)
 
 import sys
 
+import time
+
 import numpy as np
 import rclpy
 from crazyflie_py import Crazyswarm
@@ -99,8 +101,86 @@ def wait_for_poses(node, cfs, timeout=25.0, report_every=5.0):
 #: How long a drone gets to produce its first /cfX/pose. See wait_for_poses.
 POSE_WAIT_S = 25.0
 
+#: How long a drone gets to appear on /poses, and how stale its entry may be.
+MOCAP_WAIT_S = 15.0
+MOCAP_FRESH_S = 0.5
 
-def check_placement(node, cfs, names, plan, tol):
+
+def wait_for_mocap(node, names, timeout=MOCAP_WAIT_S, fresh=MOCAP_FRESH_S):
+    """Positions from ``/poses`` for ``names``, or SystemExit saying who is missing.
+
+    C2, 2026-10-09. THE CHECK YOU THOUGHT YOU HAD, YOU DID NOT.
+
+    ``wait_for_poses`` tests ``/cfX/pose``, which is the drone's ONBOARD
+    estimate forwarded by the server. Its docstring claimed a sane pose
+    "proved the whole chain -- Motive, the multicast join, the server, the
+    radio link -- end to end". That is false at rest, which is exactly when
+    the gate runs: the onboard EKF is SEEDED from ``initial_position`` in the
+    yaml, so a parked drone Motive has never seen still publishes a perfectly
+    sane pose equal to its seed. ``check_placement`` then compared that same
+    estimate against the yaml -- circular by construction, agreeing because
+    one seeded the other. An untracked drone passed BOTH, which is how one got
+    armed on 2026-10-08.
+
+    This subscribes to ``/poses`` itself and demands a POSITIVE, FRESH entry
+    per name. ``/poses`` is published BEST_EFFORT (sensor QoS); subscribing
+    with the default RELIABLE profile receives NOTHING, which already cost a
+    whole show once -- so the profile here is not incidental.
+
+    Returns ``{name: np.array([x, y, z])}``.
+    """
+    from rclpy.qos import qos_profile_sensor_data
+    from motion_capture_tracking_interfaces.msg import NamedPoseArray
+
+    seen, stamp = {}, {}
+
+    def on_poses(msg):
+        now = node.get_clock().now().nanoseconds * 1e-9
+        for p in msg.poses:
+            if p.name:
+                seen[p.name] = np.array([p.pose.position.x, p.pose.position.y,
+                                         p.pose.position.z])
+                stamp[p.name] = now
+
+    sub = node.create_subscription(NamedPoseArray, '/poses', on_poses,
+                                   qos_profile_sensor_data)
+    try:
+        t0 = time.time()
+        said = 0.0
+        while time.time() - t0 < timeout:
+            rclpy.spin_once(node, timeout_sec=0.1)
+            now = node.get_clock().now().nanoseconds * 1e-9
+            if all(n in stamp and (now - stamp[n]) <= fresh for n in names):
+                return {n: seen[n] for n in names}
+            if time.time() - t0 - said > 5.0:
+                said = time.time() - t0
+                missing = [n for n in names if n not in stamp]
+                print(f'    waiting for {", ".join(missing) or "fresh poses"} '
+                      f'on /poses ({said:.0f}/{timeout:.0f} s)', flush=True)
+    finally:
+        node.destroy_subscription(sub)
+
+    now = node.get_clock().now().nanoseconds * 1e-9
+    missing = [n for n in names if n not in stamp]
+    stale = [f'{n} ({now - stamp[n]:.1f} s old)'
+             for n in names if n in stamp and (now - stamp[n]) > fresh]
+    raise SystemExit(
+        '\n  NOT TRACKED BY MOCAP: '
+        + ', '.join(missing + stale)
+        + '\n  These drones have no fresh entry on /poses, so Motive is not\n'
+        '  tracking them under these names. Flying an untracked drone is the\n'
+        '  fly-away case: the server injects no external position, the onboard\n'
+        '  EKF dead-reckons, and the drone leaves.\n'
+        '  NOTE /cfX/pose is NOT evidence here -- it is the onboard estimate,\n'
+        '  seeded from the yaml, and it looks healthy for a drone Motive has\n'
+        '  never seen. Check, in this order:\n'
+        '    ros2 topic hz /poses                   # is the stream alive at all?\n'
+        '    ros2 topic echo --once /poses | grep name:   # what NAMES does it carry?\n'
+        '  The commonest cause is a Motive rigid body whose name does not match\n'
+        '  the yaml key exactly (case-sensitive), e.g. after an airframe swap.\n')
+
+
+def check_placement(node, cfs, names, plan, tol, **kwargs):
     """Refuse to fly if any drone is not where its ``initial_position`` says.
 
     This is the check that the 2026-08-04 collision needed (HANDOVER.md
@@ -116,6 +196,7 @@ def check_placement(node, cfs, names, plan, tol):
     so the default 0.25 m leaves 0.86 m, still over the 0.80 m budget. Raising
     it eats that margin directly.
     """
+    live = kwargs.get('live')
     silent = wait_for_poses(node, cfs, timeout=POSE_WAIT_S)
     if silent:
         raise SystemExit(
@@ -131,13 +212,22 @@ def check_placement(node, cfs, names, plan, tol):
             '  A receive rate near 0.1 with thousands of packets sent is a radio\n'
             '  problem (antenna placement, 2.4 GHz interference), not a mocap one.\n')
 
+    # Prefer MOCAP over the onboard estimate. Passing `live` makes this a real
+    # check; without it the comparison is the circular one described in
+    # wait_for_mocap -- the yaml-seeded estimate against the yaml. Callers on
+    # hardware should always pass it; sim has no /poses so it cannot.
     bad = []
     for cf, nm, want in zip(cfs, names, plan.starts):
-        got = np.array(cf.get_position(), float)
+        src = 'mocap'
+        if live and nm in live:
+            got = np.asarray(live[nm], float)
+        else:
+            got = np.array(cf.get_position(), float)
+            src = 'onboard'          # circular vs the yaml -- see wait_for_mocap
         d = float(np.linalg.norm(got[:2] - np.asarray(want, float)[:2]))
         flag = 'OK ' if d <= tol else 'BAD'
         print(f'    {flag} {nm:>6}  yaml ({want[0]:+.2f},{want[1]:+.2f})  '
-              f'live ({got[0]:+.2f},{got[1]:+.2f})  off by {d:.2f} m')
+              f'{src} ({got[0]:+.2f},{got[1]:+.2f})  off by {d:.2f} m')
         if d > tol:
             bad.append((nm, d))
     if bad:
@@ -185,8 +275,13 @@ def main():
 
     # ------------------------------------------------------------ preflight
     if want_placement and not sim:
-        print('  PLACEMENT CHECK (live pose vs initial_position)')
-        check_placement(node, cfs, names, plan, tol)
+        # C2: prove MOCAP first. /cfX/pose is the onboard estimate and
+        # proves nothing about tracking -- see wait_for_mocap.
+        print('  MOCAP CHECK (every flying drone must be on /poses)')
+        live = wait_for_mocap(node, list(names))
+        print('    all tracked\n')
+        print('  PLACEMENT CHECK (mocap vs initial_position)')
+        check_placement(node, cfs, names, plan, tol, live=live)
         print('    all drones within tolerance\n')
     elif sim:
         # The topic is advertised on backend:=sim but nothing is ever

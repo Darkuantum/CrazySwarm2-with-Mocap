@@ -63,7 +63,8 @@ from crazyflie_shows.abort import (ABORT_LAND_DURATION, ShowAborted,  # noqa: F4
                                    abort_land, take_signals)
 from crazyflie_shows.preflight import (check_supervisor,  # noqa: F401
                                        report_supervisor)
-from crazyflie_shows.swarm_show import _param, check_placement
+from crazyflie_shows.swarm_show import (_param, check_placement,
+                                        wait_for_mocap)
 
 LED_PARAM = 'colorLedBot.wrgb8888'
 
@@ -134,8 +135,13 @@ def main():
 
     # ------------------------------------------------------------ preflight
     if want_placement and not sim:
-        print('  PLACEMENT CHECK (live pose vs initial_position)')
-        check_placement(node, cfs, names, plan, tol)
+        # C2: prove MOCAP first. /cfX/pose is the onboard estimate and
+        # proves nothing about tracking -- see wait_for_mocap.
+        print('  MOCAP CHECK (every flying drone must be on /poses)')
+        live = wait_for_mocap(node, list(names))
+        print('    all tracked\n')
+        print('  PLACEMENT CHECK (mocap vs initial_position)')
+        check_placement(node, cfs, names, plan, tol, live=live)
         print('    all drones within tolerance\n')
     elif sim:
         print('  placement check skipped: backend:=sim never publishes '
