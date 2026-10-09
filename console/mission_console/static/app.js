@@ -423,11 +423,11 @@ const DASH = [
   { title: 'Fleet positions', sub: 'mocap up, no server: sync, then restart', items: [
     { id: 'pos.sync_dry', label: 'Preview sync' },
     { id: 'pos.sync_apply', label: 'Apply sync' },
-    { id: 'launch.restart', label: 'Restart with the server' },
+    { id: 'launch.restart', label: 'Restart with the server', params: ['backend'] },
   ] },
   { title: 'Bring it up', items: [
     { id: 'launch.stack', label: 'Start the stack', params: ['backend'] },
-    { id: 'launch.restart', label: 'Restart' },
+    { id: 'launch.restart', label: 'Restart', params: ['backend'] },
     { id: 'launch.stop', label: 'Stop the stack' },
   ] },
   { title: 'Check', items: [
@@ -457,7 +457,15 @@ function optionsHtml(p, cur) {
     `<optgroup label="${esc(g)}">${opts.map((o) => one(o, String(o).slice(g.length + 1))).join('')}</optgroup>`).join('');
 }
 
+/* Actions that must remember the SAME choices: "Restart with the server" is
+ * "Start the stack" preceded by a stop, so it uses Start's saved backend & co.
+ * Separately remembered, Restart kept its own default (backend cpp) and a
+ * user who had picked sim on Start launched the real-drone backend -- which,
+ * off the Motive network, failed the NatNet discovery (2026-10-09). */
+const PARAM_SHARE = { 'launch.restart': 'launch.stack' };
+
 function savedParam(actionId, p) {
+  actionId = PARAM_SHARE[actionId] || actionId;
   try {
     const v = localStorage.getItem(`mc_p_${actionId}_${p.name}`);
     if (v !== null && (p.type !== 'select' || p.options.map(String).includes(v))) return v;
@@ -465,6 +473,7 @@ function savedParam(actionId, p) {
   return p.default;
 }
 function saveParam(actionId, name, value) {
+  actionId = PARAM_SHARE[actionId] || actionId;
   try { localStorage.setItem(`mc_p_${actionId}_${name}`, value); } catch (e) { /* ignore */ }
 }
 
@@ -783,7 +792,12 @@ function wireQa(el, a, source) {
     } catch (e) { run.title = a.why; }
   };
   $$('[data-param]', el).forEach((s) => {
-    s.onchange = () => { saveParam(a.id, s.dataset.param, s.value); refresh(); };
+    s.onchange = () => {
+      saveParam(a.id, s.dataset.param, s.value);
+      const shared = Object.entries(PARAM_SHARE).flat();
+      if (shared.includes(a.id)) { $('#dsteps').dataset.sig = ''; renderSession(); return; }   // keep twins in step
+      refresh();
+    };
   });
   run.onclick = () => runAction(a.id, values(), { stay: true, source });
   refresh();
