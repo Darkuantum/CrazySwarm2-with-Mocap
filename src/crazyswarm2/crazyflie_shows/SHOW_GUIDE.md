@@ -588,7 +588,7 @@ These are additions to HANDOVER §8, not replacements.
    obsolete: Motive streams 50 Hz here and `/poses` carries it (check with
    `ros2 topic hz /poses`). A dropped frame at 1.87 m/s is still about 7 cm of
    stale position per 40 ms.
-4. **Battery draw at speed.** ~63 s of continuous motion with a 9.5 s
+4. **Battery draw at speed.** ~63 s of continuous motion with a 10.5 s
    counterflow is more demanding than a hover test. Watch the 3.8 V warning on
    the first full run.
 5. **Trajectory upload time on hardware.** 5 figures × 5 drones = 25 blocking

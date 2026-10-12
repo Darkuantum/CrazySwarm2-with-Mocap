@@ -405,9 +405,8 @@ reading `swarm_show.py`; no doc records a sim abort test of it, so test with
 `kill -INT <script pid>` in sim before relying on it. See
 [WRITING-A-SHOW §1.1](WRITING-A-SHOW.md).)
 
-> The runbooks under `runbooks/` were written when `swarm_show` had no abort
-> path and still say "Ctrl-C will not land it" for the carousel. That text is
-> out of date; see the open patch list in the 2026-10-08 documentation audit.
+> The runcards agree: `runbooks/CAROUSEL.runcard.md` was corrected on
+> 2026-10-08 and says Ctrl-C lands the carousel.
 
 
 ## F. Useful checks

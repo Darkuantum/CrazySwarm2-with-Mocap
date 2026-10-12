@@ -63,7 +63,7 @@ All **[measured]** on 2026-10-08 against `upstream/main` = `9ed4bae`.
 | Package deps | `package.xml` declares `rclpy`, `crazyflie_py`, `crazyflie_interfaces`, `geometry_msgs`, numpy, yaml (+ matplotlib exec) **[source]** | An ordinary `ament_cmake` package; nothing exotic to negotiate |
 | **Undeclared dependency** | `escort_show.py:150` does `from motion_capture_tracking_interfaces.msg import NamedPoseArray`; `package.xml` declares no such depend **[measured:** grep + cat**]** | Builds fine, then fails at import on a clean checkout. **Fix before the PR** |
 | Fork-only server/client changes | `crazyflie_server.cpp` 445 added / 22 removed, `server.yaml` 54/3, `launch.py` 26/3 (`git diff --numstat upstream/main HEAD`; the +467/+57/+29 figures quoted elsewhere are added-plus-removed sums), plus `crazyflies.yaml` and `config.rviz` edits. Full list: `docs/SERVER-CHANGES.md` | The shows do **not** need these to build — but see the safety note in §5 |
-| Rig-specific constants | `crazyflie_shows/safety.py` carries `ARENA_CENTRE`, `ARENA_RADIUS_TESTED`, `ARENA_RADIUS_LOST` measured for **this room** (`ESCORT.md` §4, 8067 samples, 2026-10-01) **[source]** | An upstream user inherits our geofence. The single biggest open design question (§5) |
+| Rig-specific constants | `crazyflie/config/arena.yaml` (read by `crazyflie_shows/safety.py` since 2026-10-09) carries `ARENA_CENTRE`, `ARENA_RADIUS_TESTED`, `ARENA_RADIUS_LOST` measured for **this room** (`ESCORT.md` §4, 8067 samples, 2026-10-01) **[source]** | An upstream user inherits our geofence. The single biggest open design question (§5) |
 | Fleet addresses leak into donated docs | `grep -rln E7E7E7E7 console src/crazyswarm2/crazyflie_shows` → `SHOW_GUIDE.md`, `HANDOVER.md`, `console/mission_console/catalog.py`, `console/mission_console/static/app.js` **[measured]** | House rule: no roster in prose. Audit these four before donating |
 | Upstream CI | repo-root `.github/` does **not** exist upstream; the workflows under `src/crazyswarm2/.github/` are vendored crazyswarm2's own **[measured:** `git ls-tree -r upstream/main --name-only`**]** | No repo-level CI will gate the PR. No `CONTRIBUTING` file was found either — ask the maintainers what they want |
 | Show git history | already a fold-in of a retired repo (`PROVENANCE.md`, `archive/swarm-shows-714affe`) **[source]** | Preserving per-commit history upstream buys little; the messages are written for this rig. Donate as a squashed, re-written commit |
@@ -161,11 +161,11 @@ the `upstream` remote in every `git log` and `git push` you type afterwards.)
 * [ ] **Declare `motion_capture_tracking_interfaces` in `package.xml`.** `escort_show.py:150`
       imports it; the manifest does not list it (§1). Whether upstream's tree even provides
       that package was **not checked** — confirm before the PR.
-* [ ] **Un-rig the arena.** `safety.py`'s `ARENA_CENTRE` / `ARENA_RADIUS_TESTED` /
-      `ARENA_RADIUS_LOST` are *this* room, measured 2026-10-01. Either make them a launch /
-      config parameter, or keep the constants and **fail loudly on the shipped default** with
-      a banner telling the operator to re-measure. This is the one decision that needs the
-      AI-DA maintainers' input, not ours — raise it in the draft PR rather than guessing.
+* [x] **Un-rig the arena.** Done 2026-10-09 (`c53b688`): the room lives in
+      `crazyflie/config/arena.yaml`, overridable with `$CRAZYSWARM_ARENA`, and
+      `measured: false` makes every planner and show refuse. Still worth raising in the
+      draft PR: whether upstream wants the shipped file to carry OUR room with
+      `measured: true`, or a template with `measured: false`.
 * [ ] **Carry the containment watchdog across.** The `escort_show` containment check
       (`escort_show.py` ~line 884) watches every flying drone's **actual** pose, and exists
       because of the **2026-10-07 fly-away**: the VIP had a geofence and a staleness

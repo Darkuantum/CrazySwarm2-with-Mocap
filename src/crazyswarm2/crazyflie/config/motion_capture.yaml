@@ -15,7 +15,7 @@
       poses:
         qos:
           mode: "sensor"
-          deadline: 50.0 # 240.0 Hz
+          deadline: 50.0 # Hz, = the Motive streaming rate
       tf:
         child_frame_id: "{}_mocap" #"cf1" 
 

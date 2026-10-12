@@ -28,8 +28,9 @@ NOT edit files or kill/restart processes yourself unless the caller explicitly a
 - **Ping to the Motive PC proves nothing** — unicast keeps working while multicast is
   starved. Never conclude "network is fine" from a successful ping.
 - **Transmission type is read once, at connect.** After changing Multicast/Unicast in
-  Motive you must fully restart the launch. The apt `motion_capture_tracking` requires
-  **Multicast**.
+  Motive you must fully restart the launch. The VENDORED `motion_capture_tracking`
+  (`src/motion_capture_tracking/VENDORED.md`) needs **Multicast or Broadcast** frame data;
+  never apt-install the driver (1.0.9 hard-codes a foreign interface IP → no `/poses`).
 - A **frozen mocap node ignores SIGINT** (blocked in `recv`); launch escalates to
   SIGKILL, but a leftover `motion_capture_tracking` can make the next connect SIGABRT.
 - **Yaw fly-away with ~1 mm position error**: `locSrv.extPosStdDev=1e-3` force-fuses
@@ -56,8 +57,9 @@ ros2 node list                    # natnet is a LifecycleNode — must be ACTIVE
 - `/<body>/pose` silent → check `serverIP`/`clientIP` vs Motive "Local Interface",
   firewall, multicast address/ports, **Broadcast Frame** enabled in Motive.
 - natnet up but no topics → not ACTIVE; launch with `activate:=true`.
-- `/<body>/pose` flows but `/poses` silent → `DRONES` in `pose_bridge.py` ≠ rigid-body
-  names (hand to **config-editor**).
+- `/mocap/<body>/pose` flows but `/poses` silent → the Motive rigid-body names do not
+  match the drone names in `crazyflies.yaml`, which `scripts/pose_bridge.py` reads its
+  roster from (rename the bodies in Motive, or hand to **config-editor**).
 - `/poses` flows but drone still drifts → rate/QoS mismatch or marker geometry in
   `motion_capture.yaml` (hand to **config-editor**); asymmetric marker patterns fix
   orientation flips.

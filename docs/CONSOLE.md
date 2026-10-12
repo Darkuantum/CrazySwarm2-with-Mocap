@@ -661,12 +661,10 @@ matter:
 * **No authentication** — [section 2](#2-starting-it).
 * **It is only as current as its catalog.** A flag added to a script after its
   card was written is not offered. The argv shown is always what runs.
-* **Known drift, not yet fixed:** `catalog.py`'s `SCRIPT_NOTES` hardcodes numbers
-  for a few demos (for example the formation demo's "R=1.2 m", "~2.24 m radius"
-  and "~58 s"). CLAUDE.md is explicit that this demo's geometry depends on each
-  drone's `initial_position` and that no fixed excursion should be quoted for
-  it. Those notes should become pointers to the planner output rather than
-  figures. Trust `plan_show` / `plan_constellation` / `plan_escort`, not the card.
+* `catalog.py`'s `SCRIPT_NOTES` carries no geometry figures: a demo's reach
+  depends on `initial_position`, so the cards point at the planner/banner output
+  instead (the formation card quoted R=1.2 m and 2.24 m until 2026-10-12, while the
+  code orbits at 0.80 m).
 
 ---
 

@@ -3,7 +3,7 @@ name: config-editor
 description: >-
   Safely edits the vendored config in this CrazySwarm2 workspace — crazyflies.yaml
   (drone list/URIs/types, firmware logging + the kalman_preflight custom topic),
-  motion_capture.yaml, server.yaml, teleop.yaml, and pose_bridge.py's DRONES/PUBLISH_HZ.
+  motion_capture.yaml, server.yaml, teleop.yaml, arena.yaml, and scripts/pose_bridge.py's PUBLISH_HZ.
   Use when adding/removing a drone, changing logging, or editing mocap/server settings.
   Knows the log-block byte budget and TOC constraint that make the C++ server abort at
   connect. Rebuilds the changed package after editing.
@@ -24,7 +24,12 @@ constraints below or the rig breaks at connect or in flight.
 - `src/crazyswarm2/crazyflie/config/server.yaml` — warning thresholds, sim
   backend/controller.
 - `src/crazyswarm2/crazyflie/config/teleop.yaml` — gamepad mapping.
-- `pose_bridge.py` — `DRONES`, `PUBLISH_HZ` (alternative natnet path only).
+- `src/crazyswarm2/crazyflie/config/arena.yaml` — THE ROOM (centre, tested/lost radius,
+  ceilings, separation floor + tracking margin), read by `crazyflie_shows/safety.py`.
+  Measured, not chosen: only change it from a new survey; `measured: false` makes every
+  planner refuse.
+- `scripts/pose_bridge.py` — `PUBLISH_HZ` (alternative natnet path only). It has no roster
+  of its own: it reads the drone names from `crazyflies.yaml`.
 
 ## Hard constraints (violating these breaks the rig — do not re-derive)
 
@@ -38,9 +43,9 @@ constraints below or the rig breaks at connect or in flight.
 - **`enabled: false`** hides a drone from the server AND the preflight GUI — intended,
   not a bug.
 - Each drone needs a **unique radio address** in its `uri`.
-- **`pose_bridge.py` `DRONES` and `PUBLISH_HZ` must stay in sync** with
-  `crazyflies.yaml` (rigid-body names) and the Motive streaming rate (**50 Hz**). A
-  mismatch here is a classic "`/<body>/pose` flows but `/poses` silent" or drift bug.
+- **`scripts/pose_bridge.py` `PUBLISH_HZ` must match the Motive streaming rate
+  (50 Hz).** Its roster comes from `crazyflies.yaml`, so the Motive rigid-body names must
+  match the drone names there (it subscribes to `/mocap/<name>/pose`).
 - **Marker geometry** in `motion_capture.yaml` must match the physical layout; make
   marker patterns **asymmetric** to avoid orientation flips.
 - **Keep distro parameterized** (`ros-${ROS_DISTRO}-…`) anywhere it appears — never

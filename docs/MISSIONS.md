@@ -405,7 +405,8 @@ The window keeps the console's rules, and adds two of its own.
   running. Two scripts commanding the same drones fight each other.
 * **E-STOP is one click with an answer**, the same `/api/estop` as the console.
 * **Abort & land is ONE SIGINT, with no escalation.** The Dashboard output
-  pane's Stop sends SIGINT, then SIGTERM 6 s later, then SIGKILL. `abort.py` restores
+  pane's Stop sends SIGINT, then SIGTERM (after 15 s for a flight script, 6 s
+  for anything else; `procs.py`, docs/CONSOLE.md), then SIGKILL. `abort.py` restores
   the default handlers once its landing starts, so that SIGTERM would kill a
   landing that runs long. Abort sends the SIGINT and nothing else: the show lands
   itself, the button reads *Landing...*, and **Kill** is a separate,

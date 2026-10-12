@@ -128,7 +128,8 @@ Rules — each one is load-bearing:
 ## 2c. The world frame, the measured arena, and what a recalibration breaks
 
 Everything the shows and the planners know about the room is in
-`src/crazyswarm2/crazyflie_shows/crazyflie_shows/safety.py` (print it, do not
+`src/crazyswarm2/crazyflie/config/arena.yaml` (since 2026-10-09), which
+`src/crazyswarm2/crazyflie_shows/crazyflie_shows/safety.py` reads at import (print it, do not
 copy it: `python3 -c "from crazyflie_shows import safety as s; print(s.ARENA_CENTRE, s.ARENA_RADIUS_TESTED, s.ARENA_RADIUS_PLAN, s.ARENA_RADIUS_LOST)"`).
 
 - **The frame is whatever Motive's ground plane defines.** Z is up (a ground

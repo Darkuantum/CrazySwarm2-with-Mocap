@@ -315,8 +315,9 @@ the speed the defenders fly at next to whatever they are escorting.
 
 **The arena lever has now been pulled, and it went the wrong way.** The volume
 measures 2.24 m to first dropout, not the 3.5 m that would have made this
-comfortable, so `arena_radius = 2.0 m` and every other number was fitted down
-to it rather than up. There is no more room to find by measuring; the next
+comfortable, so the arena was set from the 2.00 m tested radius -- planned to
+`ARENA_RADIUS_PLAN` = 1.90 m, keeping the 0.10 m tracking margin -- and every
+other number was fitted down to it rather than up. There is no more room to find by measuring; the next
 0.1 m would have to come from a verification sweep out to ~2.15 m.
 
 **`ring_radius` is also the chord the wall closes to.** The lead and each wing

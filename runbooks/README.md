@@ -25,9 +25,11 @@ accidents happened:
 plan (no radio)  ->  sim  ->  dry_run on hardware  ->  fly
 ```
 
-**Re-run the planner after every `sync_initial_positions.py`.** The carousel
-sits at 99 % of its separation budget; a position sync can invalidate a plan
-that passed an hour ago.
+**Re-run the planner after every `sync_initial_positions.py`.** The carousel's
+separation margin is thin and depends on the marks (99 % of budget on the
+2026-10-06 five-drone marks, 94 % on the 2026-10-08 four-drone fleet; read
+`plan_show` for today's); a position sync can invalidate a plan that passed an
+hour ago.
 
 ## Two rules that apply to all three
 

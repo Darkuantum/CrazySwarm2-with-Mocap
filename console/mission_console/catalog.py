@@ -87,8 +87,10 @@ SCRIPT_NOTES = {
     'multi_trajectory': 'Every drone flies the same relative traj1.csv (~50 s) and '
                         'returns over its own initial_position.',
     'multi_trajectory_formation': 'Waypoint tour, pentagon gather, 360 spin, triangle '
-                                  'morph, rigid orbit at R=1.2 m (~58 s). Keep a '
-                                  '~2.24 m radius around the room centre clear.',
+                                  'morph, rigid orbit about the arena centre. Checks '
+                                  'the whole plan against the arena BEFORE arming and '
+                                  'refuses if it does not fit; its reach depends on '
+                                  'initial_position, so read its banner, not a number.',
     'figure8': 'Classic single-drone figure-eight.',
     'nice_hover': 'Smooth hover demo.',
     'swap': 'Drones exchange positions -- watch the clearances.',

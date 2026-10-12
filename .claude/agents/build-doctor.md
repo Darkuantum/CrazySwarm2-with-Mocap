@@ -25,8 +25,11 @@ config-editor.**
   If `setup.sh` "built" but there's no workspace, this (or an early abort) is why.
 - **Mismatched distro at build vs runtime** → typesupport/ABI errors. Keep `$ROS_DISTRO`
   consistent between `build.sh` and every runtime shell.
-- **`motion_capture_tracking` not found by rosdep/apt** → clone into `src/` and rebuild:
-  `git clone --branch ros2 --recursive https://github.com/IMRCLab/motion_capture_tracking.git src/motion_capture_tracking`.
+- **`motion_capture_tracking` not found** → it is VENDORED and patched in
+  `src/motion_capture_tracking/` (see its `VENDORED.md`). **Never clone over it and never
+  apt-install it** (apt 1.0.9 hard-codes a foreign interface IP → no `/poses`). If the
+  directory is missing or damaged, restore it from git (`git checkout -- src/motion_capture_tracking`)
+  and rebuild that package.
 - **cffirmware (SIMULATOR ONLY — `backend:=sim`).** Not a pip package. Built by
   `setup_sim_firmware.sh` from crazyflie-firmware (tag 2025.02). NOT needed for hardware.
   - Its **CMSIS submodule needs `git-lfs`** or the checkout drops `arm_add_f32.c`:

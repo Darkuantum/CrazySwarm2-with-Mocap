@@ -60,8 +60,8 @@ module instead of copying its body is the whole point.
 The six rules, each with its reason:
 
 1. `take_signals()` goes **after** `Crazyswarm()` has returned, and it claims
-   SIGINT **and SIGTERM**. The console's Processes → Stop sends SIGINT, then
-   SIGTERM, then SIGKILL (`console/mission_console/procs.py`), so an abort that
+   SIGINT **and SIGTERM**. The console's Stop (the Dashboard output pane;
+   the Processes tab is gone) sends SIGINT, then SIGTERM, then SIGKILL (`console/mission_console/procs.py`), so an abort that
    only handles one of them may never start. The mission window's **Abort &
    land** sends a single SIGINT and nothing after it (docs/MISSIONS.md).
 2. Set `armed = True` **before** the arm loop, not after. A signal arriving
@@ -136,7 +136,9 @@ a flat battery, and is reported as a note.
 ### 1.3 Plan against the measured arena — `safety.py`
 
 `safety.py` is pure numpy — no ROS, no radio — so a planner can run on a laptop
-with nothing powered on. Print the live values rather than trusting this guide:
+with nothing powered on. The ROOM numbers (centre, radii, ceilings, separation floor and
+tracking margin) are not literals in it: it loads them from `src/crazyswarm2/crazyflie/config/arena.yaml` at import, and
+refuses to plan if that file says `measured: false`. Print the live values rather than trusting this guide:
 
 ```bash
 python3 -c "from crazyflie_shows import safety as s; \
@@ -217,9 +219,9 @@ new show gets one too. The pattern, as `plan_show.py` implements it:
 
 **Re-run the planner after every position sync. This is not optional.** The plan
 is a function of `initial_position`, so moving one mark changes every separation
-number, and the margins are thin — the carousel sits at ~99 % of its separation
-budget (`CLAUDE.md`; re-run `plan_show` for today's number rather than quoting
-that one). Re-run it also after any edit to `safety.py`, any Motive
+number, and the margins are thin — the carousel read 99 % of its separation budget on the
+2026-10-06 five-drone marks and 94 % on the 2026-10-08 four-drone fleet
+(`SHOW_GUIDE.md` §1; re-run `plan_show` for today's number). Re-run it also after any edit to `safety.py`, any Motive
 recalibration, and any change to the enabled fleet.
 
 ```bash
@@ -715,8 +717,6 @@ Stated so the next editor does not mistake confidence for verification:
   scripts import. `plan_escort`'s and `plan_constellation`'s internals, and
   `choreography.py` / `constellation.py` in full, were not read line by line for
   this guide.
-* The carousel's "~99 % of its separation budget" is quoted from `CLAUDE.md`,
-  not re-measured here. Run `plan_show` for the current number.
 * The entry-point rebuild requirement in §4 is inferred from the generated
   scripts under `build/`; the module-symlink behaviour was confirmed directly
   from the install tree. Adding a new entry point was not tested end to end.

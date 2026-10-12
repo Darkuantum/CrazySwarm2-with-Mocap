@@ -30,8 +30,10 @@ ros2 run crazyflie_shows plan_show
 ros2 run crazyflie_shows plan_show --plot        # writes show_plan.png
 ```
 
-**This show sits at ~99 % of its separation budget.** A plan that passed before
-a position sync can fail after one. Re-run it every time.
+**This show's separation margin is thin** (99 % of budget on the 2026-10-06
+five-drone marks, 94 % on the 2026-10-08 four-drone fleet; it depends on the
+marks, so read `plan_show`'s separation line). A plan that passed before a
+position sync can fail after one. Re-run it every time.
 
 ## 1. Place the drones and sync
 

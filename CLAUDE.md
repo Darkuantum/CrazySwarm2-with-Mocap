@@ -240,7 +240,9 @@ ros2 launch crazyflie launch.py backend:=sim        # rviz + preflight GUI on by
 ros2 run crazyflie_examples hello_world             # takeoff/hover/land
 ```
 Supported: **Ubuntu 22.04 + Humble** and **24.04 + Jazzy** (auto-detected from
-`/etc/os-release`). Tested by running on Jazzy; Humble is verified by inspection.
+`/etc/os-release`). **The rig runs Ubuntu 22.04 + Humble** (the only distro in
+`/opt/ros` here, and every flight so far); Jazzy is supported by the scripts but is not
+what this laptop runs. (This line said the opposite until 2026-10-12.)
 
 ## Gotchas (hard-won — don't re-derive)
 

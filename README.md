@@ -93,8 +93,8 @@ carry the bottom-mounted **Color LED deck** (`bcColorLedBot`) — see
 
 | Ubuntu | ROS 2 | Status |
 |--------|-------|--------|
-| 22.04 (Jammy) | Humble | supported |
-| 24.04 (Noble) | Jazzy | supported |
+| 22.04 (Jammy) | Humble | supported — **what the rig laptop runs** |
+| 24.04 (Noble) | Jazzy | supported by the scripts; not the rig's distro |
 
 The scripts auto-detect the pair from `/etc/os-release` (or an already-sourced
 `$ROS_DISTRO`). Other combinations are rejected with a clear error.
