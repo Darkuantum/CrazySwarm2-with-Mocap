@@ -259,7 +259,7 @@ returns, the ring spins out again.
 The phase follows its target through a **slew-rate limiter**:
 
 $$
-\psi_{t+1} = \psi_t + \operatorname{clamp}\!\big(\operatorname{wrap}(\psi^{\ast} - \psi_t),\ -\omega\,\Delta t,\ +\omega\,\Delta t\big)
+\psi_{t+1} = \psi_t + \mathrm{clamp}\!\big(\mathrm{wrap}(\psi^{\ast} - \psi_t),\ -\omega\,\Delta t,\ +\omega\,\Delta t\big)
 $$
 
 This bounds how fast any slot can move ($R\omega$), it makes the motion readable for an
@@ -424,7 +424,7 @@ Three design ideas worth naming:
   curve for each. Every drone is therefore at the same *fraction* $\sigma(t)$ of its
   straight-line leg at every instant, so each pair's relative position is linear in σ. The
   minimum distance is then the closed-form **closest point of approach**,
-  $s^\ast = \operatorname{clamp}\!\big(-\tfrac{d_0\cdot\Delta}{\lVert\Delta\rVert^2},0,1\big)$,
+  $s^\ast = \mathrm{clamp}\!\big(-\tfrac{d_0\cdot\Delta}{\lVert\Delta\rVert^2},0,1\big)$,
   and it is *exact*, not sampled.
 * **Graceful, ordered responses.** Lose the VIP briefly and the ring holds. Lose it longer and
   everything lands. Let the VIP stray and the ring **parks** rather than chasing it into a
