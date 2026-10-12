@@ -86,8 +86,11 @@ src/                # VENDORED source (committed)
                       #     plan_escort) - ESCORT.md. 3 defenders hold a ring around a
                       #     VIP (static point, then a person in a mocap hat) and ROTATE
                       #     the ring so a defender lands on the VIP-adversary bearing;
-                      #     4th drone is the adversary (scripted, or `external` = a
-                      #     rigid body someone else flies). Streams cmdFullState (NOT
+                      #     4th drone is the adversary (REACTIVE by default and on
+                      #     the 2026-10-08 demo; `scripted` = fixed 3-leg probe;
+                      #     `external` = a rigid body someone else flies). The
+                      #     attacker's setpoint goes through the defenders' guard,
+                      #     so it flies at 0.6 m/s max although it plans at 0.8. Streams cmdFullState (NOT
                       #     cmdPosition: crazyflie_sil has no cmd_position, so a
                       #     cmdPosition demo cannot be flown in sim at all). Slot order
                       #     is fixed at gather so defenders never swap places. Built
@@ -95,8 +98,9 @@ src/                # VENDORED source (committed)
                       #     hardware 2026-10-07 and DEMONSTRATED TO GUESTS
                       #     2026-10-08 (several runs, last one clean). The open numbers (speed cap vs walking speed above
                       #     all) are listed in ESCORT.md "Decisions still open" -- with
-                      #     the shipped defaults plan_escort --sweep measures the ring
-                      #     holding only up to a 0.20 m/s walk.
+                      #     the shipped defaults plan_escort --sweep clears 0.00 m/s
+                      #     against the reactive attacker (0.15 scripted; re-run
+                      #     2026-10-12): hold the VIP still during the attack.
                       #   Folded in 2026-09-18 from ~/near-intern/swarm-shows (retired,
                       #   commit 714affe). Rig knowledge: its HANDOVER.md. Always re-run
                       #   the planner (plan_show AND plan_constellation) after a position

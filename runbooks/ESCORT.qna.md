@@ -54,8 +54,9 @@ They have minimum separations enforced in software on every single command
 before it is sent, so a command that would put two drones too close is
 modified before it leaves the laptop. There is also a geofence, automatic
 landing if the cameras lose an aircraft, and a one-click emergency stop.
-*Push:* the floors are 0.8 m between defenders, 0.8 m defender-to-attacker,
-1.0 m defender-to-protected-aircraft.
+*Push:* the floors are 0.8 m between defenders and 1.0 m
+defender-to-protected-aircraft. The attacker keeps itself 0.8 m from every
+defender; a defender only gives way if the attacker gets inside 0.7 m.
 
 **"How does it know where everything is?"**
 Motion capture. The cameras around the room track reflective markers and
@@ -63,8 +64,8 @@ stream positions at 50 Hz. All the decisions happen on this laptop and go out
 over a single radio.
 
 **"How fast are they going?"**
-Defenders are capped at 0.6 m/s, the attacker at 0.8 m/s — walking pace and a
-bit less. It looks faster than it is because the room is small.
+Everything is capped at 0.6 m/s, the attacker included — slower than
+walking pace. It looks faster than it is because the room is small.
 
 **"Why is that one a different colour?"**
 Colours are status, not decoration — role and stage. Red is the attacker,
@@ -94,8 +95,9 @@ improvising, and we want it to be beatable in a way we can reason about.
 **"How does the ring decide who blocks?"**
 It computes the bearing from the protected aircraft to the threat and rotates
 the whole formation so a defender lands on that bearing. Slots are assigned by
-bottleneck distance, not by drone name, so whichever aircraft is already
-closest takes the job and they never swap mid-run.
+their bearing around the protected aircraft, fixed once at the start, so
+they never swap places mid-run. Which defender blocks is simply whichever slot
+is already nearest the threat bearing, so the ring never turns more than 60°.
 
 **"Three defenders can't cover a circle."**
 Correct, and that is the honest framing: at a 1.0 m ring the gap between
@@ -106,9 +108,9 @@ the attacker got closer, not further away.
 
 **"So could it get through?"**
 Yes, if it is fast enough, and we know roughly where the line is. The race is
-angular, not linear — the defenders are on the inside track, so they win on
-angular rate even while moving slower. Break-even for this geometry is about
-0.99 m/s of attacker speed; it is flying at 0.8. That number is a calculation
+angular, not linear — the defenders are on the inside track, so at the same
+linear speed they win on angular rate. Break-even for this geometry is about
+0.99 m/s of attacker speed; it flies at 0.6 at most. That number is a calculation
 we have partially validated, not a measured wall.
 
 **"What's your latency?"**
@@ -167,8 +169,9 @@ target that is moving unpredictably, which is the part that generalises.
 
 **"Do the defenders physically stop it?"**
 No, and this is important: they hold their line and the attacker gives way.
-Collision avoidance is assigned to the attacker, which is exactly what lets
-the defenders hold position instead of backing off. Nobody rams anybody.
+Collision avoidance is assigned to the attacker (0.8 m), which is exactly
+what lets the defenders hold position instead of backing off; a defender only
+gives way as a last resort, inside 0.7 m. Nobody rams anybody.
 
 **"What's the detection range?"**
 There is no detection — the position comes from mocap, so it is given, not
@@ -227,8 +230,9 @@ it a demonstration of autonomy rather than a loop.
 **"What would you need to go further?"**
 Answer with the real blocker, not a wish list. The honest one is room: the
 arena limits both the number of aircraft and the speeds, and the walking-VIP
-case does not clear its separation margins at 0.30 m/s, which is why the pilot
-brief is 0.2.
+case does not clear its separation margins in simulation at any speed
+against the reactive attacker, which is why the pilot brief is to hold the
+protected aircraft still while it is under attack.
 
 ---
 
@@ -257,11 +261,14 @@ and every one of them is a better answer given freely than extracted.
 * **No sensing.** Positions are given to the system, not perceived.
 * **Three defenders do not seal a ring.** 1.73 m gaps; it rotates instead.
 * **The attacker yields, not the defenders.** Avoidance is assigned to the
-  attacker on purpose.
+  attacker on purpose (0.8 m); defenders give way only inside 0.7 m.
 * **The attacker can win if it is fast enough.** ~0.99 m/s break-even for this
-  geometry; it flies at 0.8.
-* **The walking case does not clear.** At a 0.30 m/s moving target the
-  separations drop below their floors in simulation. Pilot brief is 0.2 m/s.
+  geometry; it flies at 0.6 at most (its planner runs at 0.8, but its
+  commands go through the same 0.6 m/s guard as a defender's).
+* **The walking case does not clear.** Against the reactive attacker, any
+  motion of the protected aircraft during the attack takes a defender inside
+  0.75 m of the attacker in simulation (the scripted attacker clears
+  0.15 m/s). Pilot brief: hold still while it is under attack.
 * **Four aircraft, one radio.** Six-plus does not fit this room.
 * **The protected aircraft has a 0.90 m box.** Smaller than people expect, and
   the most likely thing to interrupt a run.
@@ -278,17 +285,19 @@ five separate times in this repo.
 ```
 defenders        3, capped 0.6 m/s, ring 1.0 m radius, 1.2 m up
                  (+0.30 m above the protected aircraft when it is flying)
-attacker         1, capped 0.8 m/s  (1.33x the defenders, and that is
-                 deliberate -- the race is angular, not linear)
+attacker         1, reactive; plans at 0.8 m/s, FLIES at 0.6 m/s max
+                 (same guard as a defender) -- the race is angular
 engagement       starts at 2.10 m, releases at 2.22 m
-separation       0.8 m defender-defender, 0.8 m defender-attacker,
-floors           1.0 m defender-to-protected-aircraft
+separation       0.8 m defender-defender, 1.0 m defender-to-protected,
+floors           attacker keeps 0.8 m off defenders, defenders yield at 0.7 m
+slot order       by bearing, fixed at the gather; nearest slot blocks
 arena            2.00 m tested radius, 1.90 m planned, ceiling 1.85 m
 pilot box        0.90 m from room centre; resumes inside 0.65 m
 mocap            50 Hz   setpoints 20 Hz per aircraft   one radio
 lost tracking    hold 0.3 s, land 1.0 s (0.4 / 2.0 s for the protected one)
 ring gap         1.73 m between adjacent defenders
 break-even       ~0.99 m/s attacker speed
+walking VIP      not cleared with the reactive attacker -- hold still
 ```
 
 Anything not on this card: `ros2 run crazyflie_shows plan_escort --marks`, or

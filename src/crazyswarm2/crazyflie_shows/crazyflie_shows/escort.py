@@ -140,9 +140,11 @@ class EscortConfig:
     # comfort setting: a slot moving round the ring travels at
     # ring_radius * phase_rate, and that comes straight out of the same speed
     # budget as following the VIP (see max_vip_speed).
-    # 0.3 rad/s puts a slot at 1.5*0.3 = 0.45 m/s, inside v_max with 0.15 m/s
-    # left for the P term. It also means a 120 deg swing takes ~7 s, which is
-    # slower than it sounds -- check it against the adversary's probe legs.
+    # 0.3 rad/s puts a slot at 1.0*0.3 = 0.30 m/s, inside v_max with 0.30 m/s
+    # left for following the VIP. While blocking the ring turns at
+    # engaged_phase_rate instead (0.55 rad/s -> 0.05 m/s left). Because the
+    # nearest slot always leads, the largest swing is 60 deg: ~3.5 s at rest,
+    # ~1.9 s engaged.
     phase_rate: float = 0.3        # rad/s
 
     #: When blocking, the wings leave their 120 deg posts and close up beside
@@ -164,10 +166,10 @@ class EscortConfig:
     wall_half_angle: float = np.radians(58.0)
 
     #: Seconds to close the wall, and to open back out. A wing travels
-    #: R*(120-50) deg = 1.8 m to take its post; 4 s asks 0.46 m/s of a
-    #: 0.60 m/s cap, and fits inside the 8 s probe leg so the wall is shut
-    #: before the adversary arrives. Slower is calmer (6 s holds 1.25 m
-    #: instead of 1.13 m) and later.
+    #: R*(120-58) deg = 1.08 m (at R = 1.0) to take its post; 4 s asks
+    #: 0.27 m/s of a 0.60 m/s cap, and fits inside the 8 s scripted probe leg
+    #: so the wall is shut before the adversary arrives. Slower is calmer and
+    #: later. (Figures before 2026-10-12 here were for R = 1.2 m and 50 deg.)
     wall_ramp_s: float = 4.0
 
     # -- when blocking engages (hysteresis, so it cannot chatter) ----------
@@ -240,7 +242,8 @@ class EscortConfig:
     #: 2.10 and not higher: it must stay below ReactiveAdversary.stand_off
     #: (2.30 m) or the attacker is engaged while still parked at its station
     #: and the demo never shows a clear->blocking transition at all. At 2.10
-    #: the ring is engaged 58% of the run; at 2.25 it is 79% for 0.04 m.
+    #: the ring was engaged 58% of the run when this was tuned, and 38% on
+    #: plan_escort's static case as of 2026-10-12; at 2.25 it was 79%.
     alert_radius: float = 2.10     # m, adversary-to-VIP distance that engages
     release_radius: float = 2.22   # m, and the larger one that disengages
 
@@ -434,9 +437,10 @@ class EscortConfig:
     #: commanded point stayed inside the arena for the whole fly-away.
     #:
     #: contain_margin is how far past arena_radius a real drone may be before
-    #: the show lands everything. 0.25 m puts the trip at 2.25 m, which is
-    #: essentially safety.ARENA_RADIUS_LOST (2.24 m) -- past there tracking is
-    #: gone anyway, so there is nothing to be gained by waiting.
+    #: the show lands everything. With arena_radius = ARENA_RADIUS_PLAN
+    #: (1.90 m), 0.25 m puts the trip at 2.15 m, inside
+    #: safety.ARENA_RADIUS_LOST (2.24 m) -- the show reacts while it can still
+    #: see the drone. (It was 2.25 m while arena_radius was 2.00 m.)
     contain_margin: float = 0.25   # m beyond arena_radius
 
     #: A drone that is NOT FOLLOWING is the earliest symptom there is, and it
@@ -622,9 +626,12 @@ def max_vip_speed(cfg):
     to actually close an error, so this is an upper bound on the walk speed,
     not a target.
 
-    With the shipped defaults: 0.6 - 1.5*0.3 = 0.15 m/s. That is a slow
-    deliberate walk and nothing more, and it is the number to quote when
-    someone asks how fast the person may move. Buying more of it means
+    With the shipped defaults: 0.6 - 1.0*0.3 = 0.30 m/s at rest. While
+    blocking the ring turns at ``engaged_phase_rate`` (0.55 rad/s), which
+    leaves 0.6 - 1.0*0.55 = 0.05 m/s -- so the VIP is meant to hold still
+    during an attack. ``plan_escort --sweep`` is stricter still (every
+    separation held end to end): 0.00 m/s against the reactive attacker,
+    0.15 m/s against the script (2026-10-12). Buying more of it means
     raising v_max (a safety decision about flying faster next to a person),
     slowing the ring (a slower block), or shrinking the radius (less room
     between the drones and the person) -- see ESCORT.md.
@@ -884,10 +891,10 @@ def _push_out(sp, other, dmin, reasons, tag):
 class AdversaryScript:
     """The adversary's path: a scripted probe, or nothing at all.
 
-    Scripted until the teleop stage, on purpose. The defenders' reaction is
-    the thing being demonstrated *and* the thing that can go wrong, so it is
-    the only part that should be free to vary; a scripted attacker also means
-    ``plan_escort`` can prove the whole encounter on the ground.
+    The ALTERNATIVE to :class:`ReactiveAdversary`, which is the default and
+    what flew on 2026-10-08 (``adversary:=scripted`` selects this). A script
+    keeps the defenders' reaction the only part that varies, and means
+    ``plan_escort --scripted`` can prove every leg on the ground.
 
     A leg is (duration_s, bearing_deg, radius_m): the adversary flies to a
     point at that bearing and distance from the VIP's *current* position, so
@@ -1068,10 +1075,10 @@ def adversary_start_problem(p_adv, p_vip, cfg):
     """Why this adversary position cannot start the demo, or None.
 
     An adversary sitting INSIDE the ring has already won before the show
-    starts, and its first leg out crosses the defenders' slots. With the
-    default roles (first three enabled drones defend, the fourth attacks) this
-    is not hypothetical: on 2026-09-24 the fourth drone stood 1.21 m from the
-    VIP mark, inside a 1.50 m ring.
+    starts, and its first leg out crosses the defenders' slots. With the OLD
+    default roles (first three enabled drones defend, the fourth attacks --
+    replaced by :func:`pick_roles`) this was not hypothetical: on 2026-09-24
+    the fourth drone stood 1.21 m from the VIP mark, inside a 1.50 m ring.
     """
     d = float(np.linalg.norm(np.asarray(p_adv, float)[:2]
                              - np.asarray(p_vip, float)[:2]))
@@ -1128,8 +1135,11 @@ class EscortController:
         #: 0 = resting ring, 1 = closed up as a wall. Ramped, never switched.
         self.close = 0.0
         #: Which slot holds the threat bearing. Chosen when blocking engages
-        #: (the one already nearest the adversary) and held until it releases,
-        #: so the wall cannot flip sides while it is closing.
+        #: (the one already nearest the adversary) and RE-CHECKED every step
+        #: while engaged (see step()): another slot takes over only when it is
+        #: nearer the threat by more than lead_swap_hyst. A hand-over while the
+        #: wall is closed moves the wing posts at once (only psi is
+        #: rate-limited); the guards' slew smooths the resulting step.
         self.lead = 0
 
     def assign(self, p_defenders, p_vip):
@@ -1320,7 +1330,12 @@ class ReactiveAdversary:
     """
 
     height: float = 1.2             # overwritten per step with the ring height
-    #: FASTER than a defender, and that is not a mistake.
+    #: The speed the attacker's PLANNER runs at. NOT the speed it flies:
+    #: escort_show passes its setpoint through a SetpointGuard built from the
+    #: defenders' EscortConfig, so v_max 0.60 m/s and a_max 1.0 m/s^2 cap the
+    #: aircraft too. plan_escort does not apply that guard, so it verifies
+    #: against this faster, harder 0.80 m/s attacker. The reasoning below is
+    #: why 0.80 was chosen for the planner.
     #:
     #: This was 0.45 against the defenders' 0.60 "so the ring can get ahead of
     #: it", which compared the wrong quantity. The race is ANGULAR and the
@@ -1382,12 +1397,10 @@ class ReactiveAdversary:
     def shell(self, cfg=None):
         """Closest the attacker may ever be to the VIP.
 
-        Derived, not chosen: ``ring_radius + min_adv_sep`` puts it one full
-        separation outside the ring on EVERY bearing, so it can press a gap
-        without ever being adjacent to a defender. It is the same radius the
-        old scripted probe used, for the same reason -- the difference is that
-        the attacker now picks its own bearing on that shell instead of being
-        told one.
+        ``attack_reach`` if set, else ``cfg.min_adv_sep`` (0.80 m) -- a
+        collision floor against the VIP, NOT ``ring_radius + min_adv_sep``
+        (the old scripted probe radius, which this used to return; see the
+        comment below for why it changed).
         """
         if self.attack_reach > 0.0:
             return self.attack_reach
@@ -1549,7 +1562,10 @@ class ReactiveAdversary:
 
     #: Hunt the ring's widest gap instead of pressing head-on.
     #:
-    #: OFF by default, and that is a measured decision, not timidity. Gap
+    #: ON (True) since 2026-10-06. The rest of this comment was written when
+    #: it was off; the fix it asks for at the end -- defenders no longer
+    #: yielding (defenders_yield = False, defender_yield_floor 0.70) -- is in
+    #: place, and plan_escort's static case passes with it on. Gap
     #: seeking makes the encounter move -- the attacker sweeps 460 deg around
     #: the VIP instead of 95, and the ring turns 216 deg instead of 85 -- but
     #: it also gets IN, every time, at every gain tried (18 combinations,
@@ -1561,7 +1577,6 @@ class ReactiveAdversary:
     #: The honest fix is the one that cannot be done two days before a demo:
     #: stop the defenders yielding, so the ring is a real obstacle and the
     #: attacker is deflected by bodies rather than by an invented barrier.
-    #: Until then this stays off and the attacker presses head-on.
     seek_gaps: bool = True
     #: A committed gap counts as CLOSED once a defender is within this angle
     #: of it; only then does the attacker pick a new one. Without commitment
@@ -1591,10 +1606,10 @@ class ReactiveAdversary:
         static too. Hunting the gap makes it travel: the ring turns to cover,
         the gap moves, it chases the gap, and the defence has to keep up.
 
-        The race is deliberately close. At ~1.8 m from the VIP the attacker's
-        0.45 m/s is 0.25 rad/s around it, against the ring's phase_rate of
-        0.30 rad/s -- so the ring can just outrun it. Tension, with the
-        defence winning.
+        The race is angular. At ~1.8 m from the VIP the attacker's planned
+        0.80 m/s is 0.44 rad/s around it (0.33 rad/s at the 0.60 m/s it
+        actually flies), against the ring's engaged_phase_rate of 0.55 rad/s
+        -- so the ring can outrun it. Tension, with the defence winning.
         """
         # VIP-RELATIVE, like the gap branch below. This returned the
         # attacker->VIP bearing, which is 180 deg out, and BOTH callers treat
@@ -1674,6 +1689,9 @@ class ReactiveAdversary:
         # reach and every gain. As a barrier it is the thing that makes the
         # defence hold, and it is also what the attacker would do anyway: it
         # wants to threaten the VIP, not collide with it.
+        # NOTE: attack_reach defaults to 0, so this soft term never fires as
+        # shipped; the HARD projection onto shell() in target() is what bounds
+        # the approach.
         if d_vip < self.attack_reach:
             v += (self.k_keepout * (1.0 - d_vip / self.attack_reach)
                   * (-to_vip / max(d_vip, 1e-6)))

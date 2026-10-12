@@ -31,10 +31,15 @@ consequences the other two scripts do not have to handle, and this one does:
   all -- it would take off, hover, and ignore every setpoint. Hardware takes
   both. Sending the guard's own velocity as the feedforward term is also
   better than sending position alone.
-* **The adversary is scripted** (``adversary:=scripted``) until somebody has
-  watched the block work. ``adversary:=external`` instead tracks a rigid body
-  flown by a human -- a teleoperated Crazyflie, or later something bigger --
-  and commands nothing.
+* **The adversary is reactive by default** (``adversary:=reactive``, what
+  flew for guests on 2026-10-08): :class:`escort.ReactiveAdversary` hunts the
+  ring's gaps and stands down when blocked. Its planner runs at 0.80 m/s, but
+  its setpoint goes through a :class:`escort.SetpointGuard` built from the same
+  config as the defenders', so the drone flies at 0.60 m/s at most.
+  ``adversary:=scripted`` flies the fixed three-leg probe instead, every leg
+  proven on the ground. ``adversary:=external`` tracks a rigid body flown by a
+  human -- a teleoperated Crazyflie, or later something bigger -- and commands
+  nothing.
 
 What bounds a manual adversary
 ------------------------------
@@ -47,8 +52,9 @@ replaced by a clamp at flight time.
 MEASURED in sim, 2026-10-02, with no clamp: holding one direction key flew the
 commanded adversary from -1.47 m straight THROUGH the VIP point, passing
 **0.036 m** from it, and it stopped only at the arena wall. The defenders were
-fine throughout (0.999 m against their 1.00 m VIP floor) -- they yield to the
-attacker by design, so nothing in the ring slows it down.
+fine throughout (0.999 m against their 1.00 m VIP floor) -- at the time they
+yielded to the attacker by design, so nothing in the ring slowed it down.
+(Since 2026-10-06 they yield only inside ``defender_yield_floor``, 0.70 m.)
 
 It now gets exactly one extra floor: ``min_adv_sep`` from the VIP, applied
 after the slew like every other separation. That is 0.80 m -- deliberately far
@@ -62,7 +68,8 @@ probe radius IS ``ring_radius + min_adv_sep``, so at the probe the lead
 defender stands exactly ``min_adv_sep`` away -- on the boundary, with a 1 mm
 deadband. Pushing both apart there would have the guards firing every step of
 every encounter, which is the condition they exist to REPORT. The defenders
-already give way, but with lag, and the VIP floor makes that lag WORSE: the
+give way only inside ``defender_yield_floor`` (0.70 m), and with lag; when this
+was measured (before that floor existed) the VIP floor made the lag WORSE: the
 attacker now parks 0.80 m off the VIP, which is where the blocker wants to
 stand, so measured adversary-to-defender fell from 0.758 m (no VIP floor) to
 0.643 m against a 0.800 m figure. That is slew, not policy, and 0.64 m between
@@ -84,17 +91,19 @@ Parameters (``--ros-args -p name:=value``)
 ``vip_point``           room centre m, the static VIP mark; defaults to
                         + offset   room centre + EscortConfig.vip_offset
 ``vip_name``            operator    rigid body to escort (vip_mode:=mocap)
-``adversary``           scripted    ``scripted`` | ``external`` | ``manual``
-                                    | ``none``. ``manual`` = /escort/adversary,
+``adversary``           reactive    ``reactive`` | ``scripted`` |
+                                    ``external`` | ``manual`` | ``none``.
+                                    ``manual`` = /escort/adversary,
                                     driven by escort_teleop. READ THE WARNING
                                     under "A manual adversary is unverified"
                                     below before flying it near anything.
 ``adversary_name``      adv         its rigid body (adversary:=external)
-``defenders``           ''          e.g. ``cf1,cf2,cf3``; default = first 3
-                                    enabled drones (comma-separated STRING,
-                                    not a list -- see the code comment)
-``adversary_drone``     ''          which drone flies the script; default =
-                                    the 4th enabled drone
+``defenders``           ''          e.g. ``cf1,cf2,cf3``; default = the 3
+                                    enabled drones nearest the VIP mark
+                                    (``escort.pick_roles``; comma-separated
+                                    STRING, not a list -- see the code comment)
+``adversary_drone``     ''          which drone attacks; default = the
+                                    enabled drone farthest from the VIP mark
 ``lights``              true*       LED cues (*off under use_sim_time)
 ``paced``               false       OPERATOR-PACED. The adversary holds its
                                     current leg until you press Enter, and
@@ -109,8 +118,8 @@ Parameters (``--ros-args -p name:=value``)
 ``placement_tol``       0.25        m, how far off a drone may be
 ``vip_airborne``        (auto)      ring rides the VIP's own altitude;
                                     defaults true only for vip_mode:=mocap
-``duration``            (script)    s. The script's own length for
-                                    adversary:=scripted, else 120 s
+``duration``            (script)    s, unpaced only. The script's own length
+                                    for adversary:=scripted, else 120 s
 ``use_sim_time``        false       REQUIRED under backend:=sim, NEVER on
                                     hardware
 ----------------------  ----------  ---------------------------------
@@ -176,11 +185,12 @@ from crazyflie_shows.swarm_show import (_param, check_placement,
 # deck at all (the cue raises keyError there and is swallowed by cue()).
 LED_DEFENDER = LIGHT['deep_blue']    # on the ring, nothing to do
 LED_ADVERSARY = LIGHT['red']         # the threat
-# CYAN, not amber. amber is wrgb(r=0xFF, g=0x50) and the adversary is
-# wrgb(r=0xFF) -- amber IS red with a little green, and across a room the
-# drone doing the blocking and the drone being blocked read as the same
-# colour. Reported from the first hardware flight, 2026-10-06. Cyan is the
-# only cue in the palette with no red channel at all.
+# WHITE (LIGHT['blocker'] = wrgb(w=0x7F)), not amber. amber is
+# wrgb(r=0xFF, g=0x50) and the adversary is wrgb(r=0xFF) -- amber IS red with
+# a little green, and across a room the drone doing the blocking and the drone
+# being blocked read as the same colour. Reported from the first hardware
+# flight, 2026-10-06. Cyan was tried next and failed against the resting
+# ring's deep_blue; it is now the geofence cue (LED_FENCE below).
 LED_BLOCKING = LIGHT['blocker']      # the LEAD, standing on the threat bearing
 LED_WING = LIGHT['violet']           # the other two, closed up beside the lead
 
@@ -372,7 +382,7 @@ def _fence_report(fence):
 LEG_DONE_TOL = 0.08    # m, commanded adversary to its leg target
 LEG_DONE_V = 0.05      # m/s, fastest commanded defender setpoint
 
-#: Operator pacing. The show is an encounter between three drones, a scripted
+#: Operator pacing. The show is an encounter between three drones, an
 #: attacker and a human flying a DJI; coordinating that on a wall clock means
 #: every party has to be ready at a time nobody chose. Paced mode replaces the
 #: adversary's timed legs with "the operator presses Enter", so the attacker
@@ -1126,8 +1136,9 @@ def main():
                 # the boundary with a 1 mm deadband. Pushing both apart there
                 # would have the guards firing every step of every encounter,
                 # which is the signal they exist to raise. The defenders
-                # already yield (they push away from p_adv); measured lag puts
-                # them 0.758 m from a 0.800 m floor, which is slew, not policy.
+                # yield only inside defender_yield_floor (0.70 m); before that
+                # floor existed, measured lag put them 0.758 m from a 0.800 m
+                # floor, which is slew, not policy.
                 #
                 # min_adv_sep, NOT ring_radius + min_adv_sep: the attacker has
                 # to be able to visibly penetrate the ring or the block means

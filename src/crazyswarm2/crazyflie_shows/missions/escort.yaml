@@ -31,12 +31,12 @@ options:
   - name: adversary
     label: Adversary
     choices:
-      scripted: the proven script -- every leg checked on the ground before takeoff
-      reactive: the reactive attacker (escort_show's own default)
+      reactive: the reactive attacker -- hunts the ring's gaps, stands down when blocked (flown for guests 2026-10-08)
+      scripted: the fixed three-leg probe -- every leg checked on the ground before takeoff
       manual: you steer it with the adversary keyboard; only floor is 0.80 m off the VIP
       external: tracks a rigid body somebody else flies; commands nothing
       none: no adversary -- the ring just escorts
-    default: scripted
+    default: reactive
   - name: paced
     label: Operator-paced (Continue at every leg)
     type: bool

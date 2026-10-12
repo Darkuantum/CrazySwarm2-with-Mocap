@@ -178,8 +178,9 @@ the `upstream` remote in every `git log` and `git push` you type afterwards.)
       walking case NOT cleared). Read it and `runbooks/ESCORT.runcard.md` at PR time and
       state exactly what they say. Getting this wrong in a PR is a safety claim.
 * [ ] **Resolve or publish `ESCORT.md` "Decisions still open".** Most of all #1: with the
-      shipped defaults `plan_escort --sweep` clears the ring only up to a **0.20 m/s** walk,
-      against a normal walk of 1.0–1.4 m/s. Upstream must be told this, not left to find it.
+      shipped defaults `plan_escort --sweep` clears **0.00 m/s** against the reactive
+      attacker (0.15 m/s against `--scripted`; re-run 2026-10-12), against a normal walk
+      of 1.0–1.4 m/s. Upstream must be told this, not left to find it.
 * [ ] **Say what a stock upstream server loses.** The fork's `UploadTrajectory.srv` (+6:
       `success`/`message`) and `crazyflie_py/crazyflie.py` (+14: raises on a failed upload)
       are what make a bad upload *loud*. The shows guard with

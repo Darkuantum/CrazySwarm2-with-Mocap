@@ -39,7 +39,7 @@ class ShippedSpecs(unittest.TestCase):
         _, cmd, _ = M.build(m, 'main', {})
         # runbooks/ESCORT.runcard.md, "the show, operator-paced (recommended)"
         self.assertEqual(cmd, 'ros2 run crazyflie_shows escort_show --ros-args '
-                              '-p vip_mode:=point -p adversary:=scripted -p paced:=true')
+                              '-p vip_mode:=point -p adversary:=reactive -p paced:=true')
 
     def test_escort_sim_and_helper(self):
         m = M.get('crazyflie_shows/escort')

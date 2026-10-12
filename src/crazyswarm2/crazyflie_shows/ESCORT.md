@@ -103,14 +103,17 @@ and outcomes as the best available record, not a data set.
   config (declared, never read). The geofence was timestamped so the LED
   colour changes could be matched to events afterwards, which had been
   impossible after that run.
-* **2026-10-08, hardware, shown to guests.** Several runs; the last was clean.
+* **2026-10-08, hardware, shown to guests.** Several runs, with the
+  **reactive** adversary (`adversary:=reactive`, now the default everywhere);
+  the last run was clean.
   The same morning Motive was recalibrated and the frame rotated 91.59
   degrees, which silently broke `vip_offset`, the adversary's absolute bearings
   and a private copy of the arena centre ([WRITING-A-SHOW §5.6](../../../docs/WRITING-A-SHOW.md)).
   The fixes are `f6ab833` and `c38f0ab` (both 2026-10-08).
-* **Not cleared:** the walking VIP. With the shipped numbers `plan_escort`
-  measures the ring holding only to a 0.20 m/s walk (and the runcard states the
-  failing margins). The demo flew with a hand-piloted DJI as the VIP.
+* **Not cleared:** the walking VIP. With the shipped numbers `plan_escort
+  --sweep` (re-run 2026-10-12) clears **0.00 m/s** against the reactive
+  adversary and **0.15 m/s** against the scripted one; see "Decisions still
+  open" item 1. The demo flew with a hand-piloted DJI as the VIP.
 * **Open:** adversary tracking near the arena edge. The adversary's waiting
   station is about 1.84 m from the arena centre, the setpoint clamp is
   1.90 m and tracking was lost at 2.24 m (`ARENA_RADIUS_LOST`); the
@@ -125,12 +128,17 @@ Added after this document's first draft; the code comments in `escort.py` and
 `escort_show.py` are the detailed source and the runcard is the operator view.
 
 * **`ReactiveAdversary`** (default adversary) replaces the fixed script with a
-  potential field: pulled toward the VIP, pushed by the nearest defender, held
-  inside the room, and it STANDS DOWN when blocked. `v_max` 0.80 m/s is
-  deliberately FASTER than a defender's 0.60: the race is angular and the
-  defenders are on the inside track, so the ring (turning at
-  `engaged_phase_rate` 0.55 rad/s) only loses beyond 0.55 x 1.80 = 0.99 m/s.
-  Making it slower made the demo look unaggressive. It cannot be proven like a
+  potential field: pulled toward the widest gap in the ring, pushed by every
+  defender within 1.70 m, held inside the room, and it STANDS DOWN when
+  blocked. Its planner runs at `v_max` 0.80 m/s, but **the drone flies at
+  0.60 m/s at most**: `escort_show` passes the attacker's setpoint through a
+  `SetpointGuard` built from the same `EscortConfig` as the defenders', so the
+  defenders' `v_max` (0.60) and `a_max` (1.0 m/s²) cap it too. `plan_escort`
+  does NOT apply that guard, so it verifies against a 0.80 m/s attacker, the
+  harder case. The race is angular and the defenders are on the inside track,
+  so the ring (turning at `engaged_phase_rate` 0.55 rad/s) only loses to an
+  attacker held at 1.80 m beyond 0.55 x 1.80 = 0.99 m/s. At the 0.60 m/s it
+  actually flies, that is 0.33 rad/s against the ring's 0.55. It cannot be proven like a
   script; `SetpointGuard` still enforces the separations. `defenders_yield`
   (default False) and `defender_yield_floor` govern whether defenders give way
   to it.
@@ -167,11 +175,21 @@ code's. `plan_escort` prints the consequences of whatever is chosen.
    is the one place the smaller ring pays rather than costs.)
    `plan_escort --sweep` measures the stricter, end-to-end case — every
    separation held for a whole run, not just the ring's shape — and with the
-   shipped numbers it **clears up to a 0.20 m/s walk** (2026-10-01). The
-   binding constraint is that `min_vip_dist` equals `ring_radius`, so any
-   inward lag at all is a violation: at 0.30 m/s the defenders sit 0.94 m from
-   a 1.00 m floor. Brief the pilot at **~0.2 m/s** — a hover with small
-   drifts. A normal walk is 1.0–1.4 m/s. Options,
+   shipped numbers it clears **0.00 m/s** against the reactive adversary and
+   **0.15 m/s** against `--scripted` (re-run 2026-10-12; the 0.20 m/s quoted
+   here before was measured on 2026-10-01, against the script, before the
+   reactive attacker and `defender_yield_floor` existed).
+   Two things bind. Against the reactive attacker it is defender-to-attacker
+   separation: the defenders only give way inside `defender_yield_floor`
+   (0.70 m), while the planner's verdict wants `min_adv_sep - 0.05` (0.75 m),
+   so a moving VIP that pushes the ring into the attacker fails it at once
+   (0.70 m at a 0.05 m/s walk). Against the script it is `min_vip_dist`, which
+   equals `ring_radius`, so any inward lag at all is a violation (0.93 m from
+   a 1.00 m floor at 0.30 m/s). And while blocking, the ring turns at
+   `engaged_phase_rate` 0.55 rad/s, which leaves `0.6 - 1.0*0.55 = 0.05 m/s`
+   of budget for following the VIP. Brief the pilot to **hold the DJI still
+   while the attacker is pressing**; small drifts before and after are fine.
+   A normal walk is 1.0–1.4 m/s. Options,
    in order of how much they cost elsewhere: have the VIP walk deliberately
    slowly; slow the ring (a lazier block); shrink `R` (less room between the
    drones and the person); raise `v_max` (a real safety decision about flying
@@ -202,7 +220,7 @@ code's. `plan_escort` prints the consequences of whatever is chosen.
    encounter toward the audience and took the adversary's mark off the arena
    edge (2.00 m from room centre at `R = 1.2`, 1.50 m at `R = 1.0`).
    `min_vip_dist` tracks `R` exactly, so the guard sits on its own boundary
-   with no margin — that is what caps the walk at 0.20 m/s. `h = 1.2 m` is
+   with no margin — that is what caps the scripted case at 0.15 m/s. `h = 1.2 m` is
    chest height on a standing adult, and the altitude the DJI is flown at.
    **If a HUMAN ever stands in as the VIP, put `R` back to 1.5 m** and accept
    that the demo then does not fit this room.
@@ -272,8 +290,9 @@ script's banner:
 
 With the shipped config that is **`arena_radius - ring_radius` = 0.90 m of
 room centre** (the runcard's "pilot box"; the earlier 1.00 m here was computed
-at arena 2.0) **and 0.30 m/s** in the worst case, and `--sweep` clears the whole run only to **0.20 m/s** — a hover
-with small drifts, not a flight. That is the honest state of it, and the knobs
+at arena 2.0) **and 0.30 m/s** at rest (0.05 m/s while blocking), and
+`--sweep` clears the whole run only to **0.00 m/s** with the reactive attacker
+(0.15 m/s scripted) — hold still during the attack, not a flight. That is the honest state of it, and the knobs
 trade against each other (keep-in = `arena - R`, VIP max = `v_max - R*rate`):
 
 | arena | ring R | phase_rate | v_max | keep-in | VIP max |
@@ -315,7 +334,7 @@ measurement rather than a guess.
 
 ## Operator-paced: the show waits for you
 
-The encounter involves three defenders, a scripted attacker and a human flying
+The encounter involves three defenders, an attacker and a human flying
 a DJI. Pacing that on a wall clock asks every party to be ready at a time none
 of them chose, which is how coordination accidents happen.
 
@@ -323,17 +342,19 @@ of them chose, which is how coordination accidents happen.
 ros2 run crazyflie_shows escort_show --ros-args -p paced:=true
 ```
 
-The adversary then holds its current leg until you press Enter, and arming
+The adversary then holds its current phase until you press Enter, and arming
 waits for you as well. Each press announces what the attacker is about to do
-(`leg 2/6: PROBE 1 - run at the VIP`), so you commit to the next move knowing
-what it is. `q` lands.
+(`leg 2/3 STARTED: ATTACK - it finds its own way in` for the reactive
+attacker), so you commit to the next move knowing what it is. The show also
+says when a phase is COMPLETE -- for the reactive attack, that is when it
+stands down. `q` lands.
 
 **What pacing does NOT slow down.** Show time still runs. The ring still turns
 at `phase_rate`, every `SetpointGuard` clamp is still enforced per setpoint,
 and the mocap staleness watchdogs are real-time (the VIP's: 0.4 s hold,
 2.0 s land; each drone's own, `self_stale_s` 0.3 s hold and
 `self_stale_land_s` 1.0 s land, added 2026-10-07). Only
-the attacker's place in its script is yours. The defence stays automatic
+the attacker's phase is yours. The defence stays automatic
 because it is the thing being demonstrated and the thing that must not wait
 for a human.
 
@@ -381,8 +402,9 @@ Four properties worth knowing, each of which is a deliberate refusal:
 * **The teleop clamps to the arena itself**, so what you steer is what the
   flight script will try to fly.
 
-`duration` (seconds) bounds the run; it defaults to the script's own length
-for `adversary:=scripted` and 120 s when a human is driving.
+`duration` (seconds) bounds an UNPACED run; it defaults to the script's own
+length for `adversary:=scripted` and 120 s otherwise (reactive, manual,
+external). Unpaced, the reactive attacker advances a phase every 40/3 s.
 
 ## Where to stand the drones
 
@@ -459,7 +481,7 @@ first leg out goes through the defenders' slots.
 
 | Stage | What runs | Gate to the next one |
 |---|---|---|
-| 1 | sim, static VIP point, scripted adversary | the block reads clearly in RViz |
+| 1 | sim, static VIP point, reactive adversary (`adversary:=scripted` for the fixed probe) | the block reads clearly in RViz |
 | 2 | hardware, static VIP point, no person in the volume | separations match `plan_escort` |
 | 3 | hat on a pole, carried, then worn; walk slowly | hat never drops out of Motive for > 0.4 s |
 | 4 | adversary Crazyflie (reactive by default, or scripted), red LED | the blocker gets between them every time |

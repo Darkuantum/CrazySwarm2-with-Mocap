@@ -36,9 +36,10 @@ than as a held-key latch.
 Two things this node will not let you do
 ----------------------------------------
 * **Outrun the escort.** A VIP target defaults to ``escort.max_vip_speed`` --
-  0.30 m/s with the shipped config, and note ``plan_escort --sweep`` only
-  clears the whole run to 0.20 m/s -- because that is the speed budget the
-  ring actually has left after turning. Steering a virtual person at 1 m/s
+  0.30 m/s with the shipped config, and note ``plan_escort --sweep`` clears
+  the whole run only to 0.00 m/s against the reactive attacker (0.15 m/s
+  scripted) -- because that is the speed budget the ring actually has left
+  after turning. Steering a virtual person at 1 m/s
   proves nothing except that the defenders cannot keep up. Raise ``speed`` on
   purpose, knowing that is what you are testing.
 * **Leave the room.** Every published point is clamped to the arena cylinder

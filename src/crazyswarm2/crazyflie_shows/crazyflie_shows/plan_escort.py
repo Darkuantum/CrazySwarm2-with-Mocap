@@ -2,7 +2,8 @@
 """Verify the escort demo offline. No ROS, no radio, no mocap, no drones.
 
 Same idea as ``plan_show``: build and run the *same* controller
-``escort_show`` flies, against a simulated VIP and a scripted adversary, and
+``escort_show`` flies, against a simulated VIP and the reactive adversary
+(``--scripted`` for the fixed-leg one), and
 refuse if any separation, speed or boundary is violated. Unlike the shows,
 the escort is reactive -- there is no fixed trajectory to sample -- so this
 integrates the control law at ``rate_hz`` and measures what it produces.
@@ -18,6 +19,11 @@ It also runs straight from the source tree with nothing sourced::
 
 What this does NOT prove
 ------------------------
+The attacker's flown speed. ``escort_show`` passes the attacker's setpoint
+through a ``SetpointGuard`` (0.60 m/s, 1.0 m/s^2); this feeds the attacker's
+planned point straight in, at up to 0.80 m/s -- a harder attacker than flies.
+
+
 Controller lag. ``plan_show`` carries a measured TRACKING_MARGIN because
 flown separations came out ~0.06 m tighter than planned; nothing equivalent
 has been measured for the escort yet, so the margins here are the planned

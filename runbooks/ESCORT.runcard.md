@@ -21,7 +21,10 @@ ros2 run crazyflie_shows plan_escort --plot /tmp/escort.png
 `plan_escort` verifies the *same* objects the flight commands, so a pass here
 is worth something. It currently reports **"the walking case is NOT cleared"** —
 that is expected and refers to a 0.30 m/s walking VIP. The static case, which
-is what you fly, passes.
+is what you fly, passes. `--sweep` reports **0.00 m/s** with the reactive
+attacker (any VIP motion during the attack takes a defender inside 0.75 m of
+it) and 0.15 m/s with `--scripted`: brief the pilot to **hold the DJI still
+while the attacker is pressing**.
 
 ## 1. Place the drones and sync
 
@@ -55,7 +58,7 @@ ros2 run crazyflie_shows escort_show --ros-args -p dry_run:=true
 
 # the show, operator-paced (recommended)
 ros2 run crazyflie_shows escort_show --ros-args \
-    -p vip_mode:=point -p adversary:=scripted -p paced:=true
+    -p vip_mode:=point -p adversary:=reactive -p paced:=true
 ```
 
 In **sim**, add `-p use_sim_time:=true` to this *and* to any teleop. On
@@ -75,18 +78,21 @@ paced             false      Enter gates arming AND every leg; 'q' lands
 check_placement   true       compare live pose to initial_position
 placement_tol     0.25   m   how far off that may be
 lights            true*      LED cues (*forced off under use_sim_time)
-duration          <script>   s; the script's own length, or 120 when a human
-                             drives the adversary
+duration          <script>   s, unpaced only; the script's own length for
+                             adversary:=scripted, else 120
 use_sim_time      false      REQUIRED in sim, NEVER on hardware
 
 vip_mode          point      point | mocap | manual
 vip_point         <mark>     m, static VIP; default room centre + vip_offset
 vip_name          operator   rigid body to escort      (vip_mode:=mocap)
 vip_airborne      <auto>     default true only when vip_mode:=mocap
-adversary         scripted   scripted | external | manual | none
+adversary         reactive   reactive | scripted | external | manual | none
+                             (reactive flew for guests 2026-10-08)
 adversary_name    adv        its rigid body            (adversary:=external)
-defenders         ''         e.g. cf1,cf2,cf3 -- comma-separated STRING
-adversary_drone   ''         which drone attacks; default = the 4th enabled
+defenders         ''         e.g. cf1,cf2,cf3 -- comma-separated STRING;
+                             default = the 3 enabled drones nearest the VIP mark
+adversary_drone   ''         which drone attacks; default = the enabled drone
+                             farthest from the VIP mark
 
 # EscortConfig overrides -- each re-verified before takeoff, refused if it
 # does not check out
@@ -146,7 +152,11 @@ geofence        VIP may stray 0.90 m from room centre (arena 1.90 - ring 1.00),
                 then the ring HOLDS and all three defenders go CYAN. It
                 resumes once the DJI is back within 0.65 m AND inside the
                 parked ring -- so fly it to the MIDDLE, not just back in.
-VIP speed       0.30 m/s worst case; --sweep clears the run only to 0.20 m/s
+VIP speed       0.30 m/s budget at rest, 0.05 m/s while blocking (the ring
+                turns at 0.55 rad/s then); --sweep clears 0.00 m/s with the
+                reactive attacker, 0.15 m/s scripted -- hover during the attack
+attacker        plans at 0.80 m/s but its setpoint goes through the same guard
+                as a defender's, so it FLIES at 0.60 m/s at most
 ```
 
 Marks move whenever `ring_radius` or `vip_offset` does — **print them, do not

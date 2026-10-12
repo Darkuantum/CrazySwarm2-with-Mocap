@@ -69,10 +69,10 @@ demonstration that nothing is pre-planned.*
 > becomes the blocker — it turns **white** — and the formation rotates to
 > keep it between the attacker and the DJI. The other two close up alongside.
 >
-> The counter-intuitive bit: the attacker is *faster* than the defenders. It
-> still cannot get through, because the defenders are flying a tighter circle
-> — they cover the same angle in less distance. They win on geometry, not on
-> speed."
+> The counter-intuitive bit: the attacker is just as fast as the defenders.
+> It still cannot get through, because the defenders are flying a tighter
+> circle — they cover the same angle in less distance. They win on geometry,
+> not on speed."
 
 ## 5 — it stands down
 
@@ -115,9 +115,11 @@ and they resume on their own.
 ## If they ask
 
 **"Could it get through?"**
-Honestly, that depends on the numbers. In this room, with these three
-defenders, no. Give the attacker enough of a speed advantage and it
-eventually out-turns them; we know roughly where that line is.
+Honestly, that depends on the numbers. Against a DJI holding still, at the
+speed it flies here, it has not since we moved the engagement distance out on
+7 October — before that it did. Give the attacker enough of a speed advantage
+(about 1 m/s here) or move the DJI during the attack, and it can; we know
+roughly where that line is.
 
 **"What stops a crash?"**
 Minimum separations enforced in software on every command, a geofence so the
@@ -147,5 +149,9 @@ on a laptop, and radioed out.
   the attacker's path.
 * Do not describe the defenders as physically stopping the attacker by
   contact. They hold their line and the attacker gives way — collision
-  avoidance is assigned to the attacker, which is what lets the defenders
-  hold position instead of backing off.
+  avoidance is assigned to the attacker (0.8 m), which is what lets the
+  defenders hold position instead of backing off; a defender only gives way
+  as a last resort, inside 0.7 m.
+* **"Faster than the defenders"** is NOT true on the aircraft: the attacker's
+  planner runs at 0.8 m/s, but its commands go through the same 0.6 m/s cap
+  as a defender's. Say "as fast as", never "faster".
