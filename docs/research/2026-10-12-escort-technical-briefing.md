@@ -10,6 +10,46 @@ file, which lists the constants and the doc corrections, is in git at `9e9bf8a`.
 
 ---
 
+## Notation
+
+Every symbol used in the equations below, in one place. Each equation also has its own
+"where" legend directly under it. Values are the shipped `EscortConfig` defaults (print the
+live ones with `plan_escort`).
+
+| Symbol | Meaning | Value in the demo |
+|---|---|---|
+| $p_{\text{VIP}}$ | position of the VIP (the DJI), from mocap | measured |
+| $p_k^{\ast}$ | target position of slot $k$ on the ring | computed |
+| $k$ | slot index | $0, 1, 2$ |
+| $R$ | ring radius: horizontal distance from the VIP to each slot | 1.0 m |
+| $\psi$ | ring phase: the one angle that rotates the whole ring | chosen by the controller |
+| $\psi^{\ast}$ | phase target (puts the blocker's slot on the threat bearing) | computed |
+| $\theta_k$ | angular offset of slot $k$ from $\psi$ | 0°, 120°, 240° at rest |
+| $\beta_k$ | measured bearing of drone $k$ around the VIP | measured |
+| $\alpha$ | wall half-angle: how far each wing sits from the blocker when closed | 58° |
+| $\omega$ | ring turn rate (rate limit on $\psi$) | 0.30 rad/s at rest, 0.55 rad/s blocking |
+| $\Delta t$ | control period | 0.05 s (20 Hz) |
+| $v_k$ | velocity of slot $k$ | computed |
+| $v_{\text{VIP}}$ | velocity of the VIP | estimated (low-pass filtered) |
+| $\hat t_k$ | unit tangent to the ring at slot $k$ (direction of travel round the ring) | geometric |
+| $v_{\max}$ | speed cap on every defender setpoint (and the flown attacker) | 0.60 m/s |
+| $p,\ c,\ d$ | a setpoint, the centre of a keep-out disc, and that disc's radius | see §5.2 |
+| $\sigma$ | fraction of the way along a gather leg, from 0 (start) to 1 (end) | $0 \ldots 1$ |
+| $d_0,\ \Delta$ | relative position of two drones at the start of a leg, and its change over the leg | computed |
+| $k_a,\ k_r$ | attacker's attraction and repulsion gains | 1.0, 3.5 |
+| $b$ | approach band: distance over which the attraction fades out | 0.60 m |
+| $\rho$ | repulsion range around each defender | 1.70 m |
+| $\hat u$ | a unit direction vector | geometric |
+| $v^{\text{att}}_{\max}$ | attacker *planner* speed cap (the flown drone is capped at $v_{\max}$) | 0.80 m/s |
+| $r_{\text{att}}$ | attacker's distance from the VIP while held outside the ring | about 1.8 m |
+| $\omega_{\text{att}},\ \omega_{\text{ring}}$ | angular rate of the attacker, and of the ring, about the VIP | computed |
+| $\mathrm{clamp}(x, lo, hi)$ | limit $x$ to the range $[lo, hi]$ | |
+| $\mathrm{wrap}(\cdot)$ | wrap an angle into $(-\pi, \pi]$, i.e. take the short way round | |
+| $(x)_{+}$ | $\max(x, 0)$ | |
+| $\lVert\cdot\rVert$ | length of a vector (horizontal plane) | |
+
+---
+
 ## 1. The problem, in one picture
 
 Three small drones must keep a moving, hand-flown VIP (a DJI) protected from a fourth drone
@@ -156,6 +196,14 @@ p_k^{\ast} = p_{\text{VIP}} + R\begin{bmatrix}\cos(\psi + \theta_k)\\ \sin(\psi 
 \qquad \theta_k = \tfrac{2\pi k}{3}\ \text{(at rest)}
 $$
 
+| Where | |
+|---|---|
+| $p_k^{\ast}$ | where slot $k$ wants its drone to be (horizontal; altitude is set separately) |
+| $p_{\text{VIP}}$ | the VIP's measured position: the centre of the ring |
+| $R$ | ring radius (1.0 m) |
+| $\psi$ | ring phase, the single angle the controller turns |
+| $\theta_k$ | slot $k$'s fixed offset from $\psi$: 0°, 120°, 240° at rest, and pulled in toward the blocker when the wall closes (§3.4) |
+
 The whole formation has **three degrees of freedom**: the centre (the VIP's position, which is
 *given*) and one angle ψ (which is *chosen*). Controlling one angle instead of three drones
 is what keeps the decision logic small enough to reason about.
@@ -193,7 +241,9 @@ can never pass each other, because their angular separation is constant. Only th
 
 The initial phase is chosen as the **circular mean** of each drone's bearing minus its slot
 angle. That is the angle that minimises total turning to reach the slots, i.e. it maximises
-$\sum_k \cos(\beta_k - \theta_k - \psi)$.
+$\sum_k \cos(\beta_k - \theta_k - \psi)$, where $\beta_k$ is drone $k$'s measured bearing
+around the VIP and $\theta_k$ its slot's offset. Each cosine is 1 when a drone already sits
+exactly on its slot, so the sum is largest when the drones have least far to turn.
 
 ### 3.3 Which defender blocks: nearest slot, with hysteresis
 
@@ -222,7 +272,8 @@ Theory points:
   Interpolating raw values once sent a wing the long way round, straight through the
   blocker's post.
 * **The wall's width is limited by the separation floor.** The blocker–wing distance is the
-  chord $2R\sin(\alpha/2)$. Shrinking the ring therefore *forces* the wall to open, which is a
+  chord $2R\sin(\alpha/2)$, where $\alpha$ is the wall half-angle (the angle between the
+  blocker and each wing, 58°) and $R$ the ring radius. Shrinking the ring therefore *forces* the wall to open, which is a
   geometric coupling between two parameters that look independent.
 
 ---
@@ -262,7 +313,17 @@ $$
 \psi_{t+1} = \psi_t + \mathrm{clamp}\!\big(\mathrm{wrap}(\psi^{\ast} - \psi_t),\ -\omega\,\Delta t,\ +\omega\,\Delta t\big)
 $$
 
-This bounds how fast any slot can move ($R\omega$), it makes the motion readable for an
+| Where | |
+|---|---|
+| $\psi_t$, $\psi_{t+1}$ | ring phase now, and one control step later |
+| $\psi^{\ast}$ | phase target: the angle that puts the blocker's slot on the threat bearing (or the current phase, when clear) |
+| $\mathrm{wrap}(\psi^{\ast} - \psi_t)$ | the remaining turn, taken the short way round (between −180° and +180°) |
+| $\omega$ | maximum turn rate: 0.30 rad/s at rest, 0.55 rad/s while blocking |
+| $\Delta t$ | control period, 0.05 s at 20 Hz, so one step turns at most $\omega\,\Delta t$ |
+| $\mathrm{clamp}$ | cut the turn to $\pm\,\omega\,\Delta t$ |
+
+This bounds how fast any slot can move round the ring ($R\omega$: ring radius times turn
+rate), it makes the motion readable for an
 audience, and it makes the ring immune to a target that jumps (a mocap glitch, or the
 attacker crossing behind the VIP). Two rates are used. The ring turns gently at rest, and
 faster while blocking, because during an encounter the VIP is meant to hold still and the
@@ -284,6 +345,18 @@ v_k = v_{\text{VIP}} + \omega R\,\hat t_k
 \quad\Rightarrow\quad
 \lVert v_{\text{VIP}}\rVert \le v_{\max} - \omega R
 $$
+
+| Where | |
+|---|---|
+| $v_k$ | velocity of slot $k$ (what defender $k$ must fly to keep up) |
+| $v_{\text{VIP}}$ | the VIP's velocity: the whole ring translates with it |
+| $\omega R\,\hat t_k$ | the slot's speed round the ring ($\omega$ turn rate times $R$ radius), along the tangent $\hat t_k$ |
+| $v_{\max}$ | the defenders' speed cap (0.60 m/s) |
+| first $\Rightarrow$ | the triangle inequality: the two speeds can at worst add up |
+
+Ignored here: the wings' extra motion while the wall closes, which only makes it tighter.
+With the shipped numbers the right-hand side is $0.60 - 0.30 \times 1.0 = 0.30$ m/s at rest
+and $0.60 - 0.55 \times 1.0 = 0.05$ m/s while blocking.
 
 Every defender has one speed cap, and turning and following draw on the same budget. The
 faster the ring turns, the less the VIP may move. While blocking, the ring turns fast enough
@@ -345,6 +418,9 @@ flowchart LR
 * **Each separation is a projection.** "Stay at least *d* from point *c*" is the set outside
   a disc. Its nearest-point projection is a radial push:
   $p \leftarrow c + d\,\frac{p - c}{\lVert p - c\rVert}$ when $\lVert p - c\rVert < d$.
+  Here $p$ is the setpoint being checked, $c$ the centre of the keep-out disc (the VIP, the
+  attacker or another defender) and $d$ the minimum allowed distance. $\frac{p - c}{\lVert p - c\rVert}$ is the unit direction from $c$ to $p$, so the setpoint is moved straight outward
+  until it sits exactly $d$ from $c$.
 * **Several constraints means cyclic projection**, the same idea as alternating projections
   or POCS. For *convex* sets cyclic projection converges to a point in the intersection. The
   outside-of-a-disc sets are **not convex**, so there is no convergence guarantee. The design
@@ -424,8 +500,12 @@ Three design ideas worth naming:
   curve for each. Every drone is therefore at the same *fraction* $\sigma(t)$ of its
   straight-line leg at every instant, so each pair's relative position is linear in σ. The
   minimum distance is then the closed-form **closest point of approach**,
-  $s^\ast = \mathrm{clamp}\!\big(-\tfrac{d_0\cdot\Delta}{\lVert\Delta\rVert^2},0,1\big)$,
-  and it is *exact*, not sampled.
+  $\sigma^\ast = \mathrm{clamp}\!\big(-\tfrac{d_0\cdot\Delta}{\lVert\Delta\rVert^2},0,1\big)$,
+  giving the minimum separation $\lVert d_0 + \sigma^\ast\Delta\rVert$. It is *exact*, not
+  sampled. Here $d_0$ is the vector between the two drones at the start of the leg, $\Delta$
+  is how much that vector changes by the end ($d_1 - d_0$), so their separation during the
+  leg is $d_0 + \sigma\Delta$. $\sigma^\ast$ is the fraction of the leg at which they are
+  closest; the clamp keeps it within the leg ($0$ = start, $1$ = end).
 * **Graceful, ordered responses.** Lose the VIP briefly and the ring holds. Lose it longer and
   everything lands. Let the VIP stray and the ring **parks** rather than chasing it into a
   wall. Re-acquiring needs *two* conditions (back inside the arena **and** back inside the
@@ -504,8 +584,19 @@ $$
 v = k_a\,\min\!\Big(1, \tfrac{d_{\text{goal}}}{b}\Big)\hat u_{\text{goal}}
 \;+\; \sum_{\text{defenders}} k_r\Big(1 - \tfrac{d_j}{\rho}\Big)_{\!+}\hat u_{\text{away},j}
 \;+\; \text{wall term},
-\qquad \lVert v\rVert \le v_{\max}
+\qquad \lVert v\rVert \le v^{\text{att}}_{\max}
 $$
+
+| Where | |
+|---|---|
+| $v$ | the velocity the attacker's planner asks for this step |
+| $k_a$, $\hat u_{\text{goal}}$ | attraction gain (1.0), and the unit direction toward the goal: the point it aims for on the keep-out shell around the VIP, on the bearing of the gap it chose |
+| $d_{\text{goal}}$, $b$ | distance to that goal, and the approach band (0.60 m): inside $b$ the pull fades linearly to zero so it settles instead of overshooting |
+| $k_r$, $\hat u_{\text{away},j}$ | repulsion gain (3.5), and the unit direction from defender $j$ toward the attacker |
+| $d_j$, $\rho$ | distance to defender $j$, and the repulsion range (1.70 m); $(1 - d_j/\rho)_{+}$ is full strength on contact and zero at range $\rho$ |
+| $(x)_{+}$ | $\max(x, 0)$: defenders farther than $\rho$ do not push at all |
+| wall term | the same shape of push away from the arena edge, within 0.40 m of it |
+| $v^{\text{att}}_{\max}$ | the planner's speed cap (0.80 m/s). The command then passes the defenders' safety filter, so the drone flies at $v_{\max}$ = 0.60 m/s at most (§8.3) |
 
 ![Attacker potential field](../img/escort/potential_field.svg)
 
@@ -555,6 +646,16 @@ $$
 \qquad\text{vs}\qquad
 \omega_{\text{ring}} \le \frac{v_{\max}}{R}, \quad R < r_{\text{attacker}}
 $$
+
+| Where | |
+|---|---|
+| $\omega_{\text{attacker}}$ | how fast the attacker's bearing around the VIP can change |
+| $v_{\text{attacker}}$ | its speed (at most 0.60 m/s as flown, 0.80 m/s as planned) |
+| $r_{\text{attacker}}$ | its distance from the VIP while the ring holds it off, about $R$ + 0.8 m = 1.8 m |
+| $\omega_{\text{ring}}$ | how fast the ring can turn: its rate limit (0.55 rad/s blocking), and never more than $v_{\max}/R$ |
+| $v_{\max}$, $R$ | defender speed cap (0.60 m/s) and ring radius (1.0 m) |
+
+Break-even is $v_{\text{attacker}} = \omega_{\text{ring}}\,r_{\text{attacker}} \approx 0.55 \times 1.8 \approx 0.99$ m/s. As flown, the attacker turns at $0.60 / 1.8 \approx 0.33$ rad/s against the ring's 0.55.
 
 The block holds when the attacker's angular rate is below the ring's, which gives a concrete
 break-even attacker speed. One caveat to be honest about: the argument assumes the defenders
