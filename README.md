@@ -765,6 +765,7 @@ documents overlap, the one marked **owns** is the one to trust.
 | Document | Audience | One line |
 |---|---|---|
 | [CLAUDE.md](CLAUDE.md) | maintainer, Claude Code | **owns** the hard-won gotchas and the firmware stall/upload root-cause record |
+| [docs/PROVENANCE.md](docs/PROVENANCE.md) | maintainer | who owns each layer (Bitcraze, OptiTrack, IMRCLab, AI-DA-STC, this fork), measured against upstream; where refactoring is cheap |
 | [docs/SERVER-CHANGES.md](docs/SERVER-CHANGES.md) | maintainer | what the fork changed in the C++ server and libraries vs AI-DA-STC, and why |
 | [WORKSPACE-NOTES.md](WORKSPACE-NOTES.md) | maintainer | the fork: branches, never PR from `main`, the owed sim-arity PR |
 | [docs/CONTRIBUTING-UPSTREAM.md](docs/CONTRIBUTING-UPSTREAM.md) | fork owner | how to give the shows and console back to AI-DA-STC without polluting it |
