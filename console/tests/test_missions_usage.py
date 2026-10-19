@@ -110,6 +110,31 @@ class SpecValidation(unittest.TestCase):
             with self.assertRaises(M.SpecError):
                 M._regex(bad, 'x')
 
+    def test_arena(self):
+        # absent -> DEFAULT_ARENA; the shipped shows that plan against
+        # arena.yaml say so explicitly, so they never depend on the default
+        self.assertEqual(M._arena(None), M._arena(M.DEFAULT_ARENA))
+        self.assertEqual(M._arena('room'), [{'kind': 'room'}])
+        self.assertEqual(M._arena('none'), [])
+        self.assertEqual(M._arena(False), [])
+        two = M._arena(['room', {'circle': [0, 0, 1.5], 'label': 'c', 'ceiling': 2}])
+        self.assertEqual([e['kind'] for e in two], ['room', 'circle'])
+        self.assertEqual(two[1]['circle'], [0.0, 0.0, 1.5])
+        self.assertEqual(two[1]['ceiling'], 2.0)
+        for bad in ({'rect': [1, 0, 0, 1]}, {'rect': [0, 0, 1]}, {'rect': [0, 0, 'a', 1]},
+                    {'circle': [0, 0, 0]}, {'rect': [0, 0, 1, 1], 'circle': [0, 0, 1]},
+                    {'rect': [0, 0, 1, 1], 'color': 'red'}, {'rect': [0, 0, 1, 1], 'oops': 1},
+                    {'rect': [0, 0, 1, 1], 'ceiling': -1}, {'rect': [0, 0, True, 1]}, 'roomy'):
+            with self.assertRaises(M.SpecError, msg=repr(bad)):
+                M._arena(bad)
+
+    def test_shipped_arenas(self):
+        d = os.path.join(os.path.dirname(__file__), '..', '..', 'src', 'crazyswarm2',
+                         'crazyflie_shows', 'missions')
+        for name in ('escort', 'carousel', 'constellation'):
+            m = M.load(os.path.join(d, name + '.yaml'), 'crazyflie_shows', name)
+            self.assertEqual(m['arena'], [{'kind': 'room'}], name)
+
     def test_asset_path_stays_in_the_spec_dir(self):
         with tempfile.TemporaryDirectory() as d:
             open(os.path.join(d, 'view.mjs'), 'w').close()

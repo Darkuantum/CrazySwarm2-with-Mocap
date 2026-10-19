@@ -80,6 +80,10 @@ helpers:
 topics:
   markers: [/escort/markers]
 
+# The measured room (arena.yaml): escort.py and plan_escort check the plan against it, so this
+# window draws it. Without this line a window draws nothing (DEFAULT_ARENA).
+arena: room
+
 gate:
   # operator_gate() and every paced leg print ">>> ..." then CONTINUE_HINT
   prompt: '^\s*>>>\s*(?P<text>.+)$'

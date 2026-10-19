@@ -8,9 +8,11 @@
  *         the orientation plan_escort --plot and escort_teleop's keys use, so
  *         "w" moves a target UP the screen here as well.
  *
- * Drawn from the arena.yaml the planners read (radius_tested amber,
- * radius_lost red, ceiling_tested as the cage top) and from crazyflies.yaml's
- * parking marks. It enforces nothing: it is a picture of the same numbers.
+ * The boundary is whatever the mission's `arena:` asks for (boundary.mjs):
+ * the measured room from arena.yaml (radius_tested amber, radius_lost red,
+ * ceiling_tested as the cage top), a rectangle or circle of the mission's
+ * own, several of those, or nothing. Parking marks are crazyflies.yaml's.
+ * It enforces nothing: it is a picture of the same numbers.
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -20,6 +22,7 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { asShapes, boundsOf } from './boundary.mjs';
 
 const C = {
   floor: 0x0b1017, grid: 0x1c2735, grid2: 0x141c27, tested: 0xd8a11d, lost: 0xf0564f,
@@ -98,72 +101,89 @@ export function createScene(host, opts = {}) {
   let centre = new THREE.Vector3(0, 0, 0);
   let span = 2.4;
 
-  // ---------------------------------------------------------- the room
-  function setArena(a) {
+  // ------------------------------------------------- the boundary/boundaries
+  // `shapes` from boundary.resolveBoundaries (the mission's `arena:`); a bare
+  // arena.yaml mapping or null still means "the room" (asShapes).
+  function setArena(shapesIn) {
     arenaG.clear();
-    const cx = a && a.centre ? a.centre[0] : 0;
-    const cy = a && a.centre ? a.centre[1] : 0;
-    const rt = (a && a.radius_tested) || 2.0;
-    const rl = (a && a.radius_lost) || rt + 0.25;
-    const ceil = (a && a.ceiling_tested) || 2.0;
-    centre = new THREE.Vector3(cx, cy, 0);
-    span = rl + 0.4;
+    const shapes = asShapes(shapesIn);
+    const b = boundsOf(shapes);
+    centre = new THREE.Vector3(b.cx, b.cy, 0);
+    span = b.half + 0.4;
 
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(rl + 0.35, 96),
-      new THREE.MeshBasicMaterial({ color: C.floor }));
-    floor.position.set(cx, cy, -0.002);
-    arenaG.add(floor);
-
-    const grid = new THREE.GridHelper(Math.ceil(rl * 2 + 2), Math.ceil(rl * 2 + 2) * 2, C.grid, C.grid2);
-    grid.rotation.x = Math.PI / 2;
-    grid.position.set(Math.round(cx), Math.round(cy), 0);
-    arenaG.add(grid);
-
-    const ring = (r, color, w, z = 0, dashed = false, opacity = 1) => {
+    const add = (o, x = 0, y = 0) => { o.position.set(x, y, o.position.z); arenaG.add(o); return o; };
+    const poly = (pts, color, w, opts2 = {}) => {
       const g = new LineGeometry();
-      g.setPositions(circlePoints(r, z));
-      const l = new Line2(g, lineMat(color, w, { dashed, opacity }));
+      g.setPositions(pts);
+      const l = new Line2(g, lineMat(color, w, opts2));
       l.computeLineDistances();
-      l.position.set(cx, cy, 0);
-      arenaG.add(l);
       return l;
     };
-    ring(rt, C.tested, 2.2);
-    ring(rl, C.lost, 1.6, 0, true, 0.85);
-    ring(rt, C.cage, 1.2, ceil, true, 0.55);
-    const cage = [];
-    for (let i = 0; i < 12; i += 1) {
-      const ang = (i / 12) * Math.PI * 2;
-      cage.push(rt * Math.cos(ang), rt * Math.sin(ang), 0, rt * Math.cos(ang), rt * Math.sin(ang), ceil);
-    }
-    const cg = new LineSegmentsGeometry();
-    cg.setPositions(cage);
-    const cl = new LineSegments2(cg, lineMat(C.cage, 1, { opacity: 0.45 }));
-    cl.position.set(cx, cy, 0);
-    arenaG.add(cl);
+    const posts = (xy, z1, color) => {
+      const g = new LineSegmentsGeometry();
+      g.setPositions(xy.flatMap(([x, y]) => [x, y, 0, x, y, z1]));
+      return new LineSegments2(g, lineMat(color, 1, { opacity: 0.45 }));
+    };
+    const floorG = (geo, x, y) => {
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: C.floor }));
+      m.position.set(x, y, -0.002);
+      arenaG.add(m);
+    };
+    const tag = (text, x, y, z, cls = 'room') => { const t = label(text, cls); t.position.set(x, y, z); arenaG.add(t); };
 
-    // centre cross and the world axes
-    const cross = new LineSegmentsGeometry();
-    cross.setPositions([cx - 0.12, cy, 0.001, cx + 0.12, cy, 0.001, cx, cy - 0.12, 0.001, cx, cy + 0.12, 0.001]);
-    arenaG.add(new LineSegments2(cross, lineMat(C.tested, 1.5, { opacity: 0.8 })));
+    for (const sh of shapes) {
+      if (sh.kind === 'room') {
+        const { cx, cy, rt, rl, ceil } = sh;
+        floorG(new THREE.CircleGeometry(rl + 0.35, 96), cx, cy);
+        add(poly(circlePoints(rt), C.tested, 2.2), cx, cy);
+        add(poly(circlePoints(rl), C.lost, 1.6, { dashed: true, opacity: 0.85 }), cx, cy);
+        add(poly(circlePoints(rt, ceil), C.cage, 1.2, { dashed: true, opacity: 0.55 }), cx, cy);
+        const ring12 = [];
+        for (let i = 0; i < 12; i += 1) {
+          const ang = (i / 12) * Math.PI * 2;
+          ring12.push([cx + rt * Math.cos(ang), cy + rt * Math.sin(ang)]);
+        }
+        arenaG.add(posts(ring12, ceil, C.cage));
+        const cross = new LineSegmentsGeometry();
+        cross.setPositions([cx - 0.12, cy, 0.001, cx + 0.12, cy, 0.001, cx, cy - 0.12, 0.001, cx, cy + 0.12, 0.001]);
+        arenaG.add(new LineSegments2(cross, lineMat(C.tested, 1.5, { opacity: 0.8 })));
+        tag(`radius_tested ${rt.toFixed(2)} m`, cx + rt * Math.cos(-0.6), cy + rt * Math.sin(-0.6), 0.02);
+        tag(`lost ${rl.toFixed(2)} m`, cx + rl * Math.cos(-0.75), cy + rl * Math.sin(-0.75), 0.02, 'room lost');
+        tag(`ceiling ${ceil.toFixed(2)} m`, cx + rt * Math.cos(2.4), cy + rt * Math.sin(2.4), ceil);
+      } else if (sh.kind === 'rect') {
+        const { x0, y0, x1, y1, ceil } = sh;
+        const col = new THREE.Color(sh.color);
+        floorG(new THREE.PlaneGeometry(x1 - x0 + 0.5, y1 - y0 + 0.5), (x0 + x1) / 2, (y0 + y1) / 2);
+        const loop = (z) => [x0, y0, z, x1, y0, z, x1, y1, z, x0, y1, z, x0, y0, z];
+        arenaG.add(poly(loop(0), col, 2.2, { dashed: sh.dashed }));
+        if (ceil) {
+          arenaG.add(poly(loop(ceil), C.cage, 1.2, { dashed: true, opacity: 0.55 }));
+          arenaG.add(posts([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], ceil, C.cage));
+        }
+        tag(sh.label || `${(x1 - x0).toFixed(2)} x ${(y1 - y0).toFixed(2)} m`, x1, y0, 0.02);
+      } else if (sh.kind === 'circle') {
+        const { cx, cy, r, ceil } = sh;
+        const col = new THREE.Color(sh.color);
+        floorG(new THREE.CircleGeometry(r + 0.35, 96), cx, cy);
+        add(poly(circlePoints(r), col, 2.2, { dashed: sh.dashed }), cx, cy);
+        if (ceil) add(poly(circlePoints(r, ceil), C.cage, 1.2, { dashed: true, opacity: 0.55 }), cx, cy);
+        tag(sh.label || `r ${r.toFixed(2)} m`, cx + r * Math.cos(-0.6), cy + r * Math.sin(-0.6), 0.02);
+      }
+    }
+
+    // the grid over everything drawn, and the world axes at the origin
+    const n = Math.ceil(b.half * 2 + 2);
+    const grid = new THREE.GridHelper(n, n * 2, C.grid, C.grid2);
+    grid.rotation.x = Math.PI / 2;
+    grid.position.set(Math.round(b.cx), Math.round(b.cy), 0);
+    arenaG.add(grid);
     const axes = [[0.5, 0, 0, C.axisX, 'x'], [0, 0.5, 0, C.axisY, 'y'], [0, 0, 0.5, C.axisZ, 'z']];
     for (const [x, y, z, col, name] of axes) {
       const g = new LineGeometry();
       g.setPositions([0, 0, 0.002, x, y, z + 0.002]);
       arenaG.add(new Line2(g, lineMat(col, 2.5)));
-      const t = label(name, 'axis');
-      t.position.set(x * 1.12, y * 1.12, z * 1.12);
-      arenaG.add(t);
+      tag(name, x * 1.12, y * 1.12, z * 1.12, 'axis');
     }
-    const tl = label(`radius_tested ${rt.toFixed(2)} m`, 'room');
-    tl.position.set(cx + rt * Math.cos(-0.6), cy + rt * Math.sin(-0.6), 0.02);
-    arenaG.add(tl);
-    const ll = label(`lost ${rl.toFixed(2)} m`, 'room lost');
-    ll.position.set(cx + rl * Math.cos(-0.75), cy + rl * Math.sin(-0.75), 0.02);
-    arenaG.add(ll);
-    const cel = label(`ceiling ${ceil.toFixed(2)} m`, 'room');
-    cel.position.set(cx + rt * Math.cos(2.4), cy + rt * Math.sin(2.4), ceil);
-    arenaG.add(cel);
     resetView();
   }
 

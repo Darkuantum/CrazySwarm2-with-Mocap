@@ -10,6 +10,8 @@
  * same either way. Altitude is written next to each drone.
  */
 
+import { asShapes, boundsOf } from './boundary.mjs';
+
 export function createPlan2D(host, opts = {}) {
   const canvas = document.createElement('canvas');
   canvas.style.display = 'block';
@@ -22,7 +24,8 @@ export function createPlan2D(host, opts = {}) {
     : '2D plan view';
   host.appendChild(banner);
 
-  let arena = { cx: 0, cy: 0, rt: 2.0, rl: 2.25, ceil: 1.95 };
+  let shapes = asShapes(null);
+  let arena = { cx: 0, cy: 0, half: 2.0 };     // boundsOf(shapes): the view's frame
   let marks = [];
   const bodies = new Map();
   const markers = new Map();
@@ -31,11 +34,11 @@ export function createPlan2D(host, opts = {}) {
   let pan = [0, 0];
   const TRAIL_N = 300;
 
+  // `shapes` from boundary.resolveBoundaries; a bare arena.yaml mapping or
+  // null still means "the room".
   function setArena(a) {
-    if (!a) return;
-    arena = { cx: a.centre ? a.centre[0] : 0, cy: a.centre ? a.centre[1] : 0,
-      rt: a.radius_tested || 2.0, rl: a.radius_lost || (a.radius_tested || 2.0) + 0.25,
-      ceil: a.ceiling_tested || 1.95 };
+    shapes = asShapes(a);
+    arena = boundsOf(shapes);
   }
   function setMarks(fleet) { marks = (fleet || []).filter((d) => d.initial_position); }
 
@@ -141,18 +144,32 @@ export function createPlan2D(host, opts = {}) {
     if (!running) return;
     requestAnimationFrame(frame);
     if (W !== host.clientWidth || H !== host.clientHeight) resize();
-    scale = (Math.min(W, H) / 2 - 18) / (arena.rl + 0.35) * zoom;
+    scale = (Math.min(W, H) / 2 - 18) / (arena.half + 0.35) * zoom;
     ox = W / 2 + pan[0]; oy = H / 2 + pan[1];
     ctx.fillStyle = '#070a0f'; ctx.fillRect(0, 0, W, H);
     // grid, 0.5 m
     ctx.strokeStyle = 'rgba(28,39,53,.9)'; ctx.lineWidth = 1;
-    const g0x = Math.floor(arena.cx - arena.rl - 1); const g1x = Math.ceil(arena.cx + arena.rl + 1);
+    const g0x = Math.floor(arena.cx - arena.half - 1); const g1x = Math.ceil(arena.cx + arena.half + 1);
     for (let x = g0x; x <= g1x; x += 0.5) { ctx.beginPath(); ctx.moveTo(X(x), 0); ctx.lineTo(X(x), H); ctx.stroke(); }
-    const g0y = Math.floor(arena.cy - arena.rl - 1); const g1y = Math.ceil(arena.cy + arena.rl + 1);
+    const g0y = Math.floor(arena.cy - arena.half - 1); const g1y = Math.ceil(arena.cy + arena.half + 1);
     for (let y = g0y; y <= g1y; y += 0.5) { ctx.beginPath(); ctx.moveTo(0, Y(y)); ctx.lineTo(W, Y(y)); ctx.stroke(); }
-    circle(arena.cx, arena.cy, arena.rl, '#f0564f', null, [6, 4]);
-    circle(arena.cx, arena.cy, arena.rt, '#d8a11d', null, null, 2);
-    text(`radius_tested ${arena.rt.toFixed(2)} m`, arena.cx + arena.rt * 0.72, arena.cy - arena.rt * 0.72, '#c8a24a', '500 10px ui-monospace,monospace');
+    const small = '500 10px ui-monospace,monospace';
+    for (const sh of shapes) {
+      if (sh.kind === 'room') {
+        circle(sh.cx, sh.cy, sh.rl, '#f0564f', null, [6, 4]);
+        circle(sh.cx, sh.cy, sh.rt, '#d8a11d', null, null, 2);
+        text(`radius_tested ${sh.rt.toFixed(2)} m`, sh.cx + sh.rt * 0.72, sh.cy - sh.rt * 0.72, '#c8a24a', small);
+      } else if (sh.kind === 'rect') {
+        ctx.strokeStyle = sh.color; ctx.lineWidth = 2; ctx.setLineDash(sh.dashed ? [6, 4] : []);
+        ctx.strokeRect(X(sh.x0), Y(sh.y1), (sh.x1 - sh.x0) * scale, (sh.y1 - sh.y0) * scale);
+        ctx.setLineDash([]);
+        text(sh.label || `${(sh.x1 - sh.x0).toFixed(2)} x ${(sh.y1 - sh.y0).toFixed(2)} m`,
+          sh.x1, sh.y0, sh.color, small, -4, 14);
+      } else if (sh.kind === 'circle') {
+        circle(sh.cx, sh.cy, sh.r, sh.color, null, sh.dashed ? [6, 4] : null, 2);
+        text(sh.label || `r ${sh.r.toFixed(2)} m`, sh.cx + sh.r * 0.72, sh.cy - sh.r * 0.72, sh.color, small);
+      }
+    }
     // world axes
     ctx.lineWidth = 2;
     ctx.strokeStyle = '#f0564f'; ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(0.5), Y(0)); ctx.stroke();

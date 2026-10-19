@@ -28,6 +28,10 @@ options:
     default: true
     omit_default: true
 
+# The measured room (arena.yaml): plan_show check the plan against it, so this
+# window draws it. Without this line a window draws nothing (DEFAULT_ARENA).
+arena: room
+
 gate: false
 
 indicators:

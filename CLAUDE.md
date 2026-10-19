@@ -813,7 +813,9 @@ it. These rules hold it together; keep them when editing:
 - **Mission windows: per-demo dashboards, defined by the demo** (2026-10-09,
   `docs/MISSIONS.md`). `crazyflie_shows/missions/<name>.yaml` (escort, carousel,
   constellation) is discovered like flight scripts and rendered at
-  `/mission?m=<pkg>/<name>` (`missions.py` + `static/mission/`): 3D view, the
+  `/mission?m=<pkg>/<name>` (`missions.py` + `static/mission/`): 3D view (its
+  boundary is the spec's `arena:` -- `room` = arena.yaml, `none`, or a rect/circle
+  of the show's own; absent = `missions.DEFAULT_ARENA`, `none` since 2026-10-13), the
   script's `>>>` prompts as buttons, teleop key pads driving the helper's pty,
   status tiles regexed from stdout, Abort & land = one SIGINT. **A new demo is a
   new YAML file, never a console edit.** The specs are inert data: nothing in

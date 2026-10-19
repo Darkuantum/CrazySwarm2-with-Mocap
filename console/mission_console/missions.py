@@ -79,6 +79,15 @@ DEFAULT_LAYOUT = {
 }
 WIDGETS = {'scene', 'gate', 'indicators', 'teleop', 'fleet', 'launch', 'events', 'output'}
 
+#: What a mission window draws as its boundary when its spec has no `arena:`
+#: key. `none` (2026-10-13): the room in arena.yaml was measured for the
+#: escort demo, not as the boundary of every show, so a window only draws it
+#: when its spec asks (`arena: room`) -- the three shows whose planners check
+#: against arena.yaml all do. Change this to 'room' once arena.yaml describes
+#: a room every show should be drawn in (e.g. the 14 m x 14 m arena, measured).
+DEFAULT_ARENA = 'none'
+_COLOR = re.compile(r'^#[0-9a-fA-F]{6}$')
+
 
 class SpecError(ValueError):
     pass
@@ -321,6 +330,66 @@ def _teleop(v, what):
     raise SpecError(f'{what}: a preset name or a list of keys')
 
 
+def _num(v, what):
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        raise SpecError(f'{what} must be a number')
+    return float(v)
+
+
+def _arena(v):
+    """`arena:` -> the list of boundaries the 3D view draws (boundary.mjs).
+
+    room                    the measured room, arena.yaml (what the planners read)
+    none                    no boundary; grid and axes only
+    {rect: [x0, y0, x1, y1]}   a rectangle, metres, world frame
+    {circle: [cx, cy, r]}      a circle
+    or a list of any of these, drawn together. A rect/circle takes optional
+    label, ceiling (m, draws the cage top), color ('#rrggbb') and dashed.
+    Absent -> DEFAULT_ARENA. Only a picture: nothing here is enforced.
+    """
+    if v is None:
+        v = DEFAULT_ARENA
+    if v is False or v == 'none':
+        return []
+    items = v if isinstance(v, list) else [v]
+    out = []
+    for i, e in enumerate(items):
+        what = f'arena[{i}]' if isinstance(v, list) else 'arena'
+        if e == 'room':
+            out.append({'kind': 'room'})
+            continue
+        if not isinstance(e, dict):
+            raise SpecError(f'{what}: room, none, {{rect: [...]}} or {{circle: [...]}}')
+        kinds = [k for k in ('rect', 'circle') if k in e]
+        if len(kinds) != 1:
+            raise SpecError(f'{what}: give exactly one of rect / circle')
+        kind = kinds[0]
+        unknown = set(e) - {kind, 'label', 'ceiling', 'color', 'dashed'}
+        if unknown:
+            raise SpecError(f'{what}: unknown key(s) {", ".join(sorted(unknown))}')
+        nums = e[kind]
+        n = 4 if kind == 'rect' else 3
+        if not isinstance(nums, list) or len(nums) != n:
+            raise SpecError(f'{what}.{kind}: expected {n} numbers')
+        nums = [_num(x, f'{what}.{kind}') for x in nums]
+        if kind == 'rect' and not (nums[0] < nums[2] and nums[1] < nums[3]):
+            raise SpecError(f'{what}.rect: need x0 < x1 and y0 < y1')
+        if kind == 'circle' and nums[2] <= 0:
+            raise SpecError(f'{what}.circle: the radius must be > 0')
+        ent = {'kind': kind, kind: nums, 'label': str(e.get('label') or ''),
+               'dashed': bool(e.get('dashed', False))}
+        if e.get('ceiling') is not None:
+            ent['ceiling'] = _num(e['ceiling'], f'{what}.ceiling')
+            if ent['ceiling'] <= 0:
+                raise SpecError(f'{what}.ceiling must be > 0')
+        if e.get('color') is not None:
+            if not _COLOR.match(str(e['color'])):
+                raise SpecError(f'{what}.color: {e["color"]!r} is not #rrggbb')
+            ent['color'] = str(e['color'])
+        out.append(ent)
+    return out
+
+
 def normalise(raw, pkg, mid, base_dir):
     ver = raw.get('mission', SPEC_VERSION)
     if ver != SPEC_VERSION:
@@ -434,6 +503,7 @@ def normalise(raw, pkg, mid, base_dir):
         'options': options, 'helpers': helpers, 'gate': gate,
         'indicators': indicators, 'events': events,
         'topics': {'markers': [str(t) for t in markers]},
+        'arena': _arena(raw.get('arena')),
         'layout': layout, 'view': view, 'base_dir': base_dir,
         'path': os.path.join(base_dir, ''), 'error': None,
     }

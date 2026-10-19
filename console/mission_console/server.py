@@ -685,6 +685,9 @@ def _arena():
         out['error'] = str(exc)
     cf = configio.load('crazyflies')
     out['fleet'] = configio.fleet_summary(cf['doc']) if cf['doc'] else []
+    # what a window with no mission spec draws -- the same rule a spec
+    # without `arena:` gets (missions.DEFAULT_ARENA)
+    out['default_arena'] = missions._arena(None)
     return out
 
 
