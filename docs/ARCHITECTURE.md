@@ -202,10 +202,10 @@ CrazySwarm2-with-Mocap/
 |   |   |   `-- deps/libmotioncapture  deps/librigidbodytracker   [VEND] (one edit: optitrack.cpp)
 |   |   `-- motion_capture_tracking_interfaces/   [VEND] msgs, incl. NamedPoseArray
 |   |
-|   `-- natnet_ros2/            [CUST] ALT mocap driver (+ vendored NatNet SDK)
+|   `-- natnet_ros2/            [CUST] ALT mocap driver (NatNet SDK fetched at build)
 |       |-- src/natnet_ros2.cpp (+9)   launch/natnet_ros2.launch.py (+11, namespace:=mocap)
 |       |-- config/ include/ srv/ scripts/ ui/ natnet_ros2_py/   marker_poses_server.cpp nn_filter.cpp
-|       `-- deps/NatNetSDK/     [VEND] x86_64 SDK; its contents are [ign] via src/natnet_ros2/.gitignore
+|       `-- deps/NatNetSDK/     [ign]  downloaded by install_sdk.sh at build; NOT committed
 |
 |-- data/                     [1P] measurement artefacts — the evidence behind the docs
 |   |-- arena/                  climb_cf5.csv verify_cf3.csv (arena survey flights)

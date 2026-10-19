@@ -24,7 +24,7 @@ Files compared with line endings ignored. "Diff lines" counts added plus removed
 | `src/crazyswarm2` (excluding `crazyflie/deps`) | IMRCLab `ae23edc` | 374 | 18 | `crazyflie_shows/`, `arena.yaml`, 6 AI-DA-STC files, 1 STL example |
 | `src/crazyswarm2/crazyflie/deps` (crazyflie_cpp, crazyflie-link-cpp) | submodules of `ae23edc` | 528 | 8 | none |
 | `src/motion_capture_tracking` | IMRCLab `ros2@64d3af2`, libmotioncapture `24321e4` | 1828 | 4 | 3 patches + `VENDORED.md` |
-| `src/natnet_ros2` | L2S-lab `883b095` | 30 | 2 | the vendored NatNet SDK |
+| `src/natnet_ros2` | L2S-lab `883b095` | 30 | 2 | the NatNet SDK is NOT committed: `install_sdk.sh` downloads it at build time |
 
 Who changed the 26 changed Crazyswarm2 files (diff lines):
 

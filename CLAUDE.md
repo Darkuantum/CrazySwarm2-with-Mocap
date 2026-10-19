@@ -116,7 +116,7 @@ src/                # VENDORED source (committed)
                       #   the planner (plan_show AND plan_constellation) after a position
                       #   sync -- the planners are the only thing that re-checks
                       #   separation against the live marks.
-  natnet_ros2/        # OptiTrack driver (+ vendored NatNetSDK)
+  natnet_ros2/        # OptiTrack driver (NatNet SDK downloaded at build, NOT committed)
   motion_capture_tracking/  # VENDORED mocap driver: IMRCLab ros2@64d3af2 + NatNet-4.2 modeldef patch.
                             # NEVER apt-install it: apt 1.0.9 hard-codes IP 141.23.110.162 → no /poses (VENDORED.md)
                             # OptiTrack is the ONLY backend built — Qualisys/Vicon/VRPN/FZMotion are
@@ -331,8 +331,10 @@ what this laptop runs. (This line said the opposite until 2026-10-12.)
 - **ROS apt 404 churn.** `ros-<distro>-{sensor-msgs,tf2-ros,ament-cmake-auto}` can
   404 when apt tries to *upgrade* to a pruned pool version. `install_deps.sh` uses
   `--no-upgrade` for these (desktop already provides them).
-- **natnet NatNet SDK** is vendored under `src/natnet_ros2/deps/NatNetSDK/`
-  (x86_64). On a different arch the build re-downloads it via `wget` (needs internet).
+- **natnet NatNet SDK is NOT committed.** `src/natnet_ros2/.gitignore` excludes
+  `deps/NatNetSDK/*`; CMake runs `install_sdk.sh`, which downloads it with `wget`
+  (x86_64 or ARM) on the first build. A fresh clone therefore needs internet once,
+  and the rig network has none: build on another network first, or copy the folder.
 - **Same-process DDS loopback failure.** On this rig a node's OWN
   `/parameter_events` messages are never delivered back to itself (events from
   *other* processes arrive fine). Three consequences: (1) runtime firmware-param

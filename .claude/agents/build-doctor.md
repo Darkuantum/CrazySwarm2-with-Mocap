@@ -43,8 +43,8 @@ config-editor.**
 - **Low-RAM/SBC OOM** → `LOW_MEM=1 ./scripts/build.sh` (serial build).
 - **apt 404 on upgrade** of `ros-<distro>-{sensor-msgs,tf2-ros,ament-cmake-auto}` →
   `install_deps.sh` uses `--no-upgrade` (desktop already provides them).
-- **natnet NatNet SDK** is vendored under `src/natnet_ros2/deps/NatNetSDK/` (x86_64); on
-  another arch the build re-downloads via `wget` (needs internet).
+- **natnet NatNet SDK** is NOT committed (`src/natnet_ros2/.gitignore`): `install_sdk.sh`
+  downloads it via `wget` on the first build (x86_64 or ARM), so a fresh clone needs internet.
 - Missing submodule headers (`crazyflie_tools`, link-cpp) →
   `cd src/crazyswarm2 && git submodule update --init --recursive`, then rebuild.
 
