@@ -1,0 +1,74 @@
+# Mission view for the STL pursuit-evasion game (stl_show) -- read by the
+# mission console, never by the show. Format: docs/MISSIONS.md.
+#
+# Not choreographed, but not reactive either: the game runs in its own model
+# (it never reads mocap), so the whole flight is fixed by the seed before
+# takeoff and the show checks it then. No gates, no teleop. The window adds
+# the 3D view, per-intruder results as they happen, and an abort that goes
+# through abort.py instead of the E-STOP.
+mission: 1
+title: STL pursuit-evasion
+summary: >
+  5 defenders vs 5 intruders, the colleague's STL-gradient game (10 drones).
+  The seed fixes the flight: every run prints it, and seed:=N replays it.
+  plan_stl checks seeds offline.
+docs: src/crazyswarm2/crazyflie_shows/STL.md
+run: stl_show
+flight: true
+abort: sigint
+
+options:
+  - name: dry_run
+    label: Dry run (every check, arm nothing)
+    type: bool
+    default: false
+    omit_default: true
+  - name: seed
+    label: Seed (-1 = draw one)
+    type: number
+    default: -1
+    omit_default: true
+  - name: min_sep
+    label: Separation floor (m)
+    type: number
+    default: 0.15
+    omit_default: true
+  - name: check_placement
+    label: Check placement (mocap vs initial_position)
+    type: bool
+    default: true
+    omit_default: true
+
+# The game's own boundary, not the measured room: stl_game's ARENA_X/Y_MIN/MAX
+# (it clamps drones 0.02 m inside). These numbers MIRROR stl_game.py -- a
+# spec is inert data and cannot import it -- so change both together.
+arena:
+  rect: [-2.0, -2.0, 2.0, 2.0]
+  label: STL game square 4 x 4 m
+
+gate: false
+
+indicators:
+  - {label: Phase, match: 'STL GAME  seed', value: checking, initial: idle}
+  - {label: Phase, match: 'REFUSING TO FLY', value: REFUSED, tone: {REFUSED: fail}}
+  - {label: Phase, match: 'MOCAP CHECK', value: checking mocap}
+  - {label: Phase, match: 'GAME START', value: FLYING, tone: {FLYING: ok}}
+  - {label: Phase, match: 'defenders returning', value: returning}
+  - {label: Phase, match: 'landed, disarmed', value: landed}
+  - {label: Phase, match: '\*\*\* ABORT', value: ABORT, tone: {ABORT: fail}}
+  - {label: Phase, match: 'dry_run - plan and preflight checks done', value: dry run OK, tone: {dry run OK: ok}}
+  - {label: Seed, match: 'STL GAME  seed (?P<seed>\d+)', value: '$seed', initial: '--'}
+  - {label: Closest, match: '^\s*game: closest (?P<d>[\d.]+ m)', value: '$d', initial: '--'}
+  - {label: Intruder 1, match: 'Intruder 1 (?P<r>REACHED|BLOCKED)', value: '$r', tone: {BLOCKED: ok, REACHED: warn}, initial: active}
+  - {label: Intruder 2, match: 'Intruder 2 (?P<r>REACHED|BLOCKED)', value: '$r', tone: {BLOCKED: ok, REACHED: warn}, initial: active}
+  - {label: Intruder 3, match: 'Intruder 3 (?P<r>REACHED|BLOCKED)', value: '$r', tone: {BLOCKED: ok, REACHED: warn}, initial: active}
+  - {label: Intruder 4, match: 'Intruder 4 (?P<r>REACHED|BLOCKED)', value: '$r', tone: {BLOCKED: ok, REACHED: warn}, initial: active}
+  - {label: Intruder 5, match: 'Intruder 5 (?P<r>REACHED|BLOCKED)', value: '$r', tone: {BLOCKED: ok, REACHED: warn}, initial: active}
+  - {label: Outcome, match: '^Outcome: (?P<o>.+)$', value: '$o', initial: '--'}
+
+events: ['STL GAME', 'REFUSING', 'GAME START', 'REACHED', 'BLOCKED', 'returning', 'Outcome', '\*\*\*', 'landed']
+
+layout:
+  main: [scene]
+  side: [indicators, fleet, launch]
+  bottom: [events, output]

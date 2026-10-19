@@ -24,7 +24,9 @@ Alt mocap path: Motive → natnet_ros2 → /mocap/<body>/pose → pose_bridge.py
 ```
 
 Fleet = the enabled subset of the yaml, on **ONE Crazyradio dongle**
-(`radio://0/80/2M`). Six airframes are declared; how many are enabled changes
+(`radio://0/80/2M`) — except cf10–cf14 (added 2026-10-13, the STL show's
+intruders), which sit on a SECOND dongle, `radio://1/90/2M`, and are
+`enabled: false` by default so no other show needs that dongle plugged in. Six airframes are declared; how many are enabled changes
 per show (it was five, it is four as of 2026-10-08). **Do not write the count
 here** — `./scripts/scan_fleet.sh --list` prints it.
 **`crazyflies.yaml` is the ground truth for the fleet, and this paragraph
@@ -101,6 +103,14 @@ src/                # VENDORED source (committed)
                       #     the shipped defaults plan_escort --sweep clears 0.00 m/s
                       #     against the reactive attacker (0.15 scripted; re-run
                       #     2026-10-12): hold the VIP still during the attack.
+                      #   * STL pursuit-evasion, 5v5 = TEN drones (stl_show /
+                      #     plan_stl) - STL.md. A COPY of a colleague's script; his
+                      #     original stays unchanged in crazyflie_examples and arrives
+                      #     over Slack. Open loop (never reads mocap), so the seed fixes
+                      #     the flight and it is verified before arming.
+                      #     `plan_stl --against <original.py>` must say IDENTICAL after
+                      #     any port or edit. v3 refuses by default: cf5 passes 0.108 m
+                      #     from a just-BLOCKED, still-airborne cf13 (INTR_KEEP_OUT 0.04).
                       #   Folded in 2026-09-18 from ~/near-intern/swarm-shows (retired,
                       #   commit 714affe). Rig knowledge: its HANDOVER.md. Always re-run
                       #   the planner (plan_show AND plan_constellation) after a position

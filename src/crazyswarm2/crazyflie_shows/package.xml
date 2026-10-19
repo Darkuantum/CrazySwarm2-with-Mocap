@@ -18,6 +18,8 @@
   <!-- plan_show reads crazyflies.yaml directly, so it can verify a show with
        no ROS graph running at all. -->
   <depend>python3-yaml</depend>
+  <!-- stl_game: the Hungarian assignment (scipy.optimize.linear_sum_assignment). -->
+  <depend>python3-scipy</depend>
   <!-- Optional: only the plot output of plan_show needs it; the tool
        degrades to text when it is absent. -->
   <exec_depend>python3-matplotlib</exec_depend>

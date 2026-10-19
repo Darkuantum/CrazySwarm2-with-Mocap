@@ -134,6 +134,8 @@ class SpecValidation(unittest.TestCase):
         for name in ('escort', 'carousel', 'constellation'):
             m = M.load(os.path.join(d, name + '.yaml'), 'crazyflie_shows', name)
             self.assertEqual(m['arena'], [{'kind': 'room'}], name)
+        stl = M.load(os.path.join(d, 'stl.yaml'), 'crazyflie_shows', 'stl')
+        self.assertEqual([e['rect'] for e in stl['arena']], [[-2.0, -2.0, 2.0, 2.0]])
 
     def test_asset_path_stays_in_the_spec_dir(self):
         with tempfile.TemporaryDirectory() as d:
