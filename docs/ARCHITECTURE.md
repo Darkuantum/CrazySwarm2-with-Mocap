@@ -172,7 +172,6 @@ CrazySwarm2-with-Mocap/
 |   |   |   |-- missions/               escort.yaml carousel.yaml constellation.yaml: the console's
 |   |   |   |                           MISSION WINDOW specs (docs/MISSIONS.md). Inert data — no show
 |   |   |   |                           reads them; they parse the shows' prints, edit them together
-|   |   |   |-- scripts/mocap_diag.sh   mocap diagnosis
 |   |   |   |-- reference/              firmware log/param TOC csv + two HTML reports; frozen
 |   |   |   |-- data/                   empty (.gitkeep)
 |   |   |   |-- SHOW_GUIDE.md CONSTELLATION.md ESCORT.md HANDOVER.md PROVENANCE.md

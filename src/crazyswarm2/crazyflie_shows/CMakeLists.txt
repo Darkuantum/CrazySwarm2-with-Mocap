@@ -28,10 +28,4 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 
-# Lab diagnostics, executable in place: ros2 run crazyflie_shows mocap_diag.sh
-install(PROGRAMS
-  scripts/mocap_diag.sh
-  DESTINATION lib/${PROJECT_NAME}
-)
-
 ament_package()
