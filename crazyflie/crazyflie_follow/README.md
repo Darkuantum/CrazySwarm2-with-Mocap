@@ -21,8 +21,8 @@ later flies on the Starling. This package is the adapter.
 ## Install
 
 ```bash
-cp -r crazyflie_follow ~/CrazySwarm2-with-Mocap/src/
-cd ~/CrazySwarm2-with-Mocap
+cp -r crazyflie_follow ~/CrazySwarm2-Strike-and-Guard/src/
+cd ~/CrazySwarm2-Strike-and-Guard
 colcon build --packages-select crazyflie_follow
 source install/setup.bash
 ```

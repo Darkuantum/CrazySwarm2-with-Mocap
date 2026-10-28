@@ -13,7 +13,7 @@ follow_core has no setup.py/pyproject.toml of its own, by design: it is
 imported by inserting its repo root onto sys.path, the same way
 follow-drone/tests/conftest.py already does for the unit tests. That is fine
 inside follow-drone/, but this package is built to be copied out of
-~/near-intern/follow-drone/crazyflie/ into ~/CrazySwarm2-with-Mocap/src/ as a
+~/near-intern/follow-drone/crazyflie/ into ~/CrazySwarm2-Strike-and-Guard/src/ as a
 drop-in (see HANDOVER.md) -- and follow_core's repo root will *not*
 automatically be on sys.path in that workspace's Python environment.
 
@@ -33,7 +33,7 @@ package is imported:
      tried before, not instead of, option 4.
   4. ~/near-intern/follow-drone, the fixed path this whole project has lived
      at throughout development -- the common case when this package has been
-     copied into ~/CrazySwarm2-with-Mocap/src/ but follow-drone itself has
+     copied into ~/CrazySwarm2-Strike-and-Guard/src/ but follow-drone itself has
      not moved.
 
 If none of those make `import follow_core` succeed, every entry point in this
