@@ -65,6 +65,9 @@ Tags worth knowing: `archive/swarm-shows-714affe` is the original history of the
 out-of-tree show repo that was folded into `crazyflie_shows/` (see that
 package's `PROVENANCE.md`) — it is on `origin` as well as local (`git ls-remote --tags origin`
 printed it 2026-10-08), so it is no longer the only copy.
+`archive/follow-drone-e868409` is the same for the person-following prototype,
+folded in 2026-10-28 as the inert archive `prototypes/follow-drone/` (its
+`PROVENANCE.md`; `COLCON_IGNORE` keeps it out of the build).
 
 ## Restoring this clone to a stock checkout
 

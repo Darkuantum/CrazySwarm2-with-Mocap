@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>follow_ros2</name>
+  <version>0.1.0</version>
+  <description>
+    Thin ROS 2 adapter nodes around the platform-independent follow_core
+    person-following logic: follow_node, detector_bridge, uwb_node and
+    mapper_bridge. Must build and run on both ROS 2 Foxy (VOXL 2 target) and
+    Humble (developer workstation) -- see README.md.
+  </description>
+  <maintainer email="hwehuang.stengg@gmail.com">follow_drone</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>follow_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>builtin_interfaces</depend>
+
+  <!-- Debian package name for pyserial. -->
+  <exec_depend>python3-serial</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

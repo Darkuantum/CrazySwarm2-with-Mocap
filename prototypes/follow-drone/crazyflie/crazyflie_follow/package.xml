@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>crazyflie_follow</name>
+  <version>0.1.0</version>
+  <description>
+    Crazyflie prototyping phase of the person-following drone project: OptiTrack
+    stands in for real perception (an "operator" rigid body plays the role the
+    Starling's UWB tag + camera will play later) so follow_core's control law,
+    arbiter, governor and supervisor can be validated in the mocap volume
+    before any real sensor exists.
+  </description>
+  <maintainer email="hwehuang.stengg@gmail.com">jeremy</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>crazyflie_py</depend>
+  <depend>crazyflie_interfaces</depend>
+  <depend>geometry_msgs</depend>
+  <depend>motion_capture_tracking_interfaces</depend>
+  <depend>python3-numpy</depend>
+  <!-- safety.py's `check_safety` entry point reads config/follow.yaml directly,
+       with no ROS graph running at all -- same reason plan_show in
+       crazyflie_shows depends on it. -->
+  <depend>python3-yaml</depend>
+  <!-- Not in the original dependency list: keyboard_cmd and follow_node are
+       separate processes (the keyboard stand-in has to reach the arbiter
+       living inside follow_node's Follower instance), so a command channel
+       between them is unavoidable. std_msgs/String is the simplest thing
+       that carries a mode token, and it ships with every ROS 2 install as a
+       dependency of rclpy itself -- see HANDOVER.md "Deviations". -->
+  <depend>std_msgs</depend>
+
+  <!-- NOTE: follow_core (the platform-independent control law this package
+       adapts) is deliberately NOT declared here -- it is not a ROS/rosdep
+       package, it is a plain Python package at
+       ~/near-intern/follow-drone/follow_core with no setup.py of its own.
+       See crazyflie_follow/__init__.py and HANDOVER.md for how it is made
+       importable after this package is copied into another workspace. -->
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

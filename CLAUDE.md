@@ -140,6 +140,9 @@ console/            # OPTIONAL mission-console GUI (its own README). Self-contai
                     #   /mission = per-demo MISSION WINDOWS, each defined by a
                     #   crazyflie_shows/missions/<name>.yaml (docs/MISSIONS.md).
                     #   console/usage/ (git-ignored) = the operator's usage log.
+prototypes/follow-drone/  # ARCHIVE, not built (COLCON_IGNORE): the person-following
+                    #   prototype the escort inherited its standoff/speed defaults from.
+                    #   Folded in 2026-10-28; history = tag archive/follow-drone-e868409.
 runbooks/           # OPERATOR cards, moved out of crazyflie_shows 2026-10-08:
                     #   one per show + the escort's guest narrative and Q&A
 docs/               # MISSIONS (2026-10-09: the mission-window spec format),

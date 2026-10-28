@@ -1,0 +1,80 @@
+# Default parameters for the person-following stack.
+#
+# Values here are placeholders where hardware-specific calibration is needed
+# (camera intrinsics, serial port, exact voxl-mpa-to-ros2 / voxl-mapper topic
+# names) -- see README.md's deployment checklist before flying. Everything
+# else mirrors follow_core.FollowParams' own defaults (see follow_core/types.py)
+# so this file only needs to list what you actually want to change.
+
+follow_node:
+  ros__parameters:
+    rate_hz: 20.0
+    # 'enu_flu' (no conversion) or 'ned_frd' -- VERIFY against your actual
+    # odometry source. See follow_node.py's module docstring.
+    vio_frame_convention: "enu_flu"
+    # UNCONFIRMED without hardware -- run `ros2 topic list` on the VOXL 2 and
+    # fix this to match the real voxl-mpa-to-ros2 VIO topic.
+    vehicle_odom_topic: "/qvio"
+    range_topic: "/uwb/range"
+    bearing_topic: "/person/bearing"
+    command_topic: "/follow/command"
+    estimate_topic: "/follow/target_estimate"
+    status_topic: "/follow/status"
+    goal_pose_topic: "/follow/goal_pose"
+    markers_topic: "/follow/markers"
+    world_frame_id: "world"
+
+    # Static camera extrinsic: additional tilt on top of a level,
+    # forward-facing baseline (see follow_node.py). MEASURE your actual
+    # mount; these zeros assume a perfectly level, forward-facing camera.
+    cam_roll_deg: 0.0
+    cam_pitch_deg: 0.0
+    cam_yaw_deg: 0.0
+    cam_offset_x_m: 0.08
+    cam_offset_y_m: 0.0
+    cam_offset_z_m: 0.02
+
+    # follow_core.FollowParams tunables -- shown here at their library
+    # defaults as a reminder of what's available; edit as needed.
+    standoff_m: 2.5
+    height_m: 2.0
+    min_standoff_m: 1.5
+    speed_cap_far_m_s: 3.0
+    speed_cap_near_m_s: 0.6
+
+detector_bridge:
+  ros__parameters:
+    detection_topic: "/detector/boxes"
+    bearing_topic: "/person/bearing"
+    # PLACEHOLDER intrinsics for a 640x480 stream -- REPLACE with your real
+    # calibration. See detector_bridge.py's module docstring.
+    fx: 460.0
+    fy: 460.0
+    cx: 320.0
+    cy: 240.0
+    person_class_id: 0
+    min_score: 0.3
+
+uwb_node:
+  ros__parameters:
+    # UNCONFIRMED without hardware -- the actual serial device the band
+    # shows up as on VOXL 2 (USB-serial vs a UART) must be verified.
+    serial_port: "/dev/ttyHS1"
+    baud_rate: 115200
+    poll_rate_hz: 100.0
+    range_topic: "/uwb/range"
+    command_topic: "/follow/command"
+    range_std_m: 0.10
+    gesture_min_confidence: 60
+
+mapper_bridge:
+  ros__parameters:
+    goal_pose_topic: "/follow/goal_pose"
+    # UNCONFIRMED without hardware -- see mapper_bridge.py's module
+    # docstring. Confirm against the actual voxl-mapper ROS 2 interface.
+    mapper_goal_topic: "/mapper/goal_pose"
+    mapper_plan_topic: "/mapper/path"
+    command_topic: "/follow/command"
+    plan_timeout_s: 1.0
+    min_plan_poses: 2
+    check_rate_hz: 10.0

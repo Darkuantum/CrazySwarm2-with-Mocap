@@ -1,0 +1,125 @@
+# Crazyflie 2.1 Brushless prototyping-phase configuration.
+#
+# This is the config for the EARLY prototyping phase of the project: the
+# same follow_core control/estimation stack, run against a Crazyflie 2.1
+# Brushless in an OptiTrack volume instead of the Starling 2 Max, so the
+# follow logic and safety governor (follow_core.FollowParams) can be
+# validated on cheap, crash-tolerant hardware before it ever flies on the
+# Starling. OptiTrack replaces both qVIO (vehicle pose) and the vision
+# bearing estimator (person direction) with ground-truth rigid-body poses,
+# so this phase specifically exercises the follow/estimation/safety-governor
+# logic, NOT the onboard perception or UWB ranging stack.
+#
+# A backup (safety) pilot always holds a Crazyradio-linked transmitter/
+# Cfclient session capable of taking manual control or killing the motors;
+# see docs/SAFETY.md for the full role definition and E-stop procedure.
+
+mocap:
+  # OptiTrack Motive server. REPLACE with your lab's actual host: this is
+  # the machine running Motive and streaming via the NatNet SDK, typically
+  # on the same subnet as the ROS 2 / ground-control laptop.
+  # MEASURE/CONFIRM: `ping` the Motive host and confirm NatNet streaming is
+  # enabled in Motive > View > Data Streaming with "Local Interface" set to
+  # the NIC that reaches this subnet.
+  server_address: "192.168.1.50"
+  natnet_command_port: 1510
+  natnet_data_port: 1511
+  # Multicast group Motive streams on by default. Only change this if your
+  # Motive install has been reconfigured to unicast or a different group.
+  multicast_address: "239.255.42.99"
+
+  # Rigid bodies as named/created in Motive. These names are exactly what
+  # must appear in Motive's asset list -- rename the assets there to match,
+  # or edit these to match Motive, but keep the two in sync.
+  rigid_bodies:
+    drone:
+      name: "cf_follow_drone"
+      # Marker set: 4+ markers in an asymmetric pattern on the Crazyflie's
+      # frame arms, per standard Crazyflie OptiTrack mounting practice.
+      # Re-created in Motive if the marker pattern is ever disturbed.
+    operator:
+      name: "operator_helmet"
+      # Rigid body defined by markers on a helmet or hard hat worn by the
+      # operator being followed. A helmet mount (vs. a chest/vest mount) is
+      # used in this prototyping phase because it keeps the marker
+      # constellation rigid and unoccluded by the operator's own arms
+      # during gesture commands -- the wearable gesture band is a separate
+      # piece of hardware on the wrist/forearm, not the mocap markers.
+
+  # Frame convention: OptiTrack/Motive is right-handed with Y-up by default
+  # for NatNet streaming. follow_core expects Z-up ENU-like world frame
+  # (see follow_core/types.py) -- the ROS 2 mocap bridge node is
+  # responsible for the Y-up -> Z-up axis remap; this file does not perform
+  # that remap itself, it only names the source rigid bodies.
+
+radio:
+  # Crazyradio PA URI for this specific Crazyflie. Format:
+  # radio://<devid>/<channel>/<datarate>/<address>
+  #   devid    Crazyradio USB dongle index (0 = first/only dongle plugged in)
+  #   channel  RF channel, 0-125. 80 is the cflib/Bitcraze default.
+  #   datarate 250K / 1M / 2M. 2M is used here for lower latency at the
+  #            short range this project flies at (a few metres, indoors).
+  #   address  5-byte radio address programmed into this Crazyflie.
+  #            E7E7E7E7E7 is the Bitcraze factory-default address -- CHANGE
+  #            THIS if more than one Crazyflie is ever powered on in the
+  #            same room, or two vehicles will both answer the same URI.
+  uri: "radio://0/80/2M/E7E7E7E7E7"
+
+  # Firmware watchdog: if no setpoint is received for this long, the
+  # Crazyflie's own firmware failsafe takes over independent of anything
+  # the offboard stack does (matches the Crazyflie firmware's built-in
+  # commander watchdog behaviour).
+  setpoint_watchdog_timeout_s: 0.5
+
+safety:
+  # Software boundary, defined in the SAME world frame follow_core uses
+  # (Z-up, origin at the OptiTrack volume's calibrated origin). This is a
+  # soft-boundary check the ROS 2 supervisor enforces in software -- unlike
+  # PX4's geofence on the Starling, there is no autopilot-level geofence on
+  # the Crazyflie's stock firmware, so this boundary is only as good as the
+  # supervisor node that reads it. It must trigger a HOLD/land command, not
+  # just a warning; see docs/SAFETY.md for the enforcement requirement.
+  boundary:
+    shape: "box"
+    x_min_m: -4.0
+    x_max_m: 4.0
+    y_min_m: -4.0
+    y_max_m: 4.0
+    # 8 x 8 m footprint (x_max - x_min = 8, y_max - y_min = 8), centred on
+    # the OptiTrack origin. MEASURE/CONFIRM against your actual tracked
+    # volume and netting -- this assumes the tracked volume is at least
+    # this large with margin to the net; shrink the box, not the net
+    # clearance, if the room is smaller.
+    z_min_m: 0.2
+    z_max_m: 2.5
+    # z_min keeps the vehicle from ground-effect skimming into a marker
+    # occlusion zone right at floor level; z_max stays well under typical
+    # mocap-room ceiling / camera mounting height. MEASURE/CONFIRM ceiling
+    # and camera height and keep z_max at least 1 m below both.
+
+  # Capped so a backup pilot has time to react and take over manually --
+  # these are deliberately far below the Crazyflie's mechanical limits.
+  max_velocity_m_s: 1.0
+  max_acceleration_m_s2: 2.0
+  max_yaw_rate_deg_s: 90.0
+
+  # If the vehicle's OptiTrack pose goes stale (marker occlusion, rigid
+  # body lost) for longer than this, the supervisor must command a hold/
+  # land rather than continue flying on a dead-reckoned or last-known pose.
+  mocap_timeout_s: 0.3
+
+  # Minimum horizontal standoff the follower is allowed to command from
+  # the operator rigid body, mirrored from follow_core.FollowParams
+  # (min_standoff_m = 1.5 m) so this prototyping config never asks the
+  # Crazyflie to fly closer to the operator's helmet than the eventual
+  # Starling deployment will. See docs/SAFETY.md for why this number.
+  min_standoff_from_operator_m: 1.5
+
+battery:
+  # Below this pack voltage the supervisor should command an immediate
+  # land, independent of any command source (matches Bitcraze's documented
+  # low-battery cutoff behaviour for the stock Crazyflie 2.1 Brushless
+  # single-cell pack; confirm against the specific pack/BQ this project
+  # ends up flying if it differs from the stock single-cell pack).
+  low_voltage_land_v: 3.2
+  critical_voltage_v: 3.0
